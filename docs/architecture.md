@@ -293,7 +293,7 @@ Claude Code has **no native typed return channel** for subagents — a subagent 
 Therefore:
 
 - Every agent's system prompt instructs it that **its final message must be exactly one fenced ` ```yaml ` block conforming to the contract below — no prose before or after.**
-- The **skill (main thread)** extracts the fenced `yaml` block from the returned message and parses it: reading `status` to drive control flow, and passing `summary` / `issues` forward to the next agent.
+- The **skill (main thread)** extracts the **last** fenced `yaml` block from the returned message and parses it: reading `status` to drive control flow, and passing `summary` / `issues` forward to the next agent.
 - The contract is "machine-checkable" because **the skill parses and validates it** — not because the harness enforces a schema. There is no native validation. If an agent returns malformed or missing YAML, the skill fails loudly and escalates to the developer (see [Section 5](#5-loop-cap-escalation-and-cost-reporting)).
 
 ### Schema
