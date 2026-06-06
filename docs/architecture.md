@@ -73,7 +73,13 @@ How many in-skill interceptions each skill has, and exactly where, is an impleme
 
 `CLAUDE.md` is loaded automatically into the main thread and into every agent (see [Section 6](#6-claudemd-as-the-single-source-of-project-context)) — it is not passed explicitly.
 
-**Legend** — `[agent]` = work delegated to a specialist agent (cognitive work) · `[skill]` = orchestration & external I/O done by the skill itself in the main thread · `[human gate]` = developer interception point · `STOP` = run halts and the developer must act. Each diagram reads top → bottom.
+**Legend** — 
+- `[agent]` = work delegated to a specialist agent (cognitive work)
+- `[skill]` = orchestration & external I/O done by the skill itself in the main thread
+- `[human gate]` = developer interception point
+- `STOP` = run halts and is escalated to the developer, who fixes the problem and re-runs the skill
+
+Each diagram reads top → bottom; a right-side channel (`<-+`) routes a branch back to an earlier step or forward past skipped steps.
 
 #### `create-issue`
 
@@ -82,17 +88,18 @@ How many in-skill interceptions each skill has, and exactly where, is an impleme
      |
      v
 +----------------------------------------------+
-| [agent] issue-writer                         |
-|   draft structured GitHub issue              |
-+----------------------------------------------+
+| [agent] issue-writer                         | <-+
+|   draft structured GitHub issue              |   |
++----------------------------------------------+   |
+     |                                             |
+     v                                             |
++----------------------------------------------+   |
+| [human gate]                                 |   |
+|   developer reviews draft                    |   |
++----------------------------------------------+   |
+     +--- changes requested -----------------------+
      |
-     v
-+----------------------------------------------+
-| [human gate]                                 |
-|   developer reviews draft                    |
-+----------------------------------------------+
-     |
-     v
+     v  (approved)
 +----------------------------------------------+
 | [skill] post issue via gh; print URL         |
 +----------------------------------------------+
@@ -134,29 +141,29 @@ How many in-skill interceptions each skill has, and exactly where, is an impleme
      |
      v
 +----------------------------------------------+
-| [agent] implementation-planner               |
-|   produce plan (incl. minor findings)        |
-+----------------------------------------------+
+| [agent] implementation-planner               | <-+
+|   produce plan (incl. minor findings)        |   |
++----------------------------------------------+   |
+     |                                             |
+     v                                             |
++----------------------------------------------+   |
+| [human gate]                                 |   |
+|   developer reviews + confirms plan          |   |
++----------------------------------------------+   |
+     +--- changes requested -----------------------+
      |
-     v
+     v  (approved)
 +----------------------------------------------+
-| [human gate]                                 |
-|   developer reviews + confirms plan          |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] full-stack-dev                       |
-|   implement the plan                         |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] implementation-verifier              |
-|   run tests + linter                         |
-+----------------------------------------------+
-     |
-     |--- fail, retries < 2 -------> back to [agent] full-stack-dev
+| [agent] full-stack-dev                       | <-+
+|   implement the plan                         |   |
++----------------------------------------------+   |
+     |                                             |
+     v                                             |
++----------------------------------------------+   |
+| [agent] implementation-verifier              |   |
+|   run tests + linter                         |   |
++----------------------------------------------+   |
+     +--- fail, retries < 2 -----------------------+
      |--- fail, retries exhausted -> STOP: escalate failure report
      |
      v  (pass)
@@ -189,31 +196,38 @@ How many in-skill interceptions each skill has, and exactly where, is an impleme
 |   developer selects findings to fix          |
 |   (AskUserQuestion)                          |
 +----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] full-stack-dev                       |
-|   apply approved fixes                       |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] implementation-verifier              |
-|   run tests + linter                         |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] quality-assurer                      |
+     +--- no findings to fix ----------------------+
+     |                                             |
+     v  (fixes approved)                           |
++----------------------------------------------+   |
+| [agent] full-stack-dev                       |   |
+|   apply approved fixes                       |   |
++----------------------------------------------+   |
+     |                                             |
+     v                                             |
++----------------------------------------------+   |
+| [agent] implementation-verifier              |   |
+|   run tests + linter                         |   |
++----------------------------------------------+   |
+     |                                             |
+     |--- fail -> STOP                             |
+     |                                             |
+     v  (pass)                                     |
++----------------------------------------------+   |
+| [agent] quality-assurer                      | <-+
 |   final spec check                           |
 +----------------------------------------------+
      |
-     v
+     |--- criteria unmet -> STOP
+     |
+     v  (criteria met)
 +----------------------------------------------+
 | [skill] run pre-merge validation (CLAUDE.md) |
 +----------------------------------------------+
      |
-     v
+     |--- fail -> STOP
+     |
+     v  (pass)
 +----------------------------------------------+
 | [skill] post PR via gh; print URL            |
 +----------------------------------------------+
@@ -332,7 +346,26 @@ The schema is uniform; this documents which fields carry the meaningful payload:
 
 ### `check-out` fix loop
 
-After the human gate, `full-stack-dev` applies only the developer-approved fixes, then `implementation-verifier` confirms tests still pass, then `quality-assurer` runs once. **There is no retry loop at this stage** — if `quality-assurer` finds unmet criteria, the developer re-evaluates before re-running `check-out`.
+After the human gate, `full-stack-dev` applies only the developer-approved fixes, then `implementation-verifier` confirms tests still pass, then `quality-assurer` runs once, then the skill runs the pre-merge validation.
+
+- **Skip path.** If the reviewers surface nothing — or the developer approves no fixes — there is nothing to implement: `full-stack-dev` and the post-fix `implementation-verifier` are skipped and the flow goes straight to `quality-assurer`.
+- **No retry loop — failures STOP and escalate.** Unlike `check-in`, `check-out` has no auto-retry. Any failure at this stage halts the run and escalates to the developer, who fixes the problem and re-runs `check-out`:
+  - `implementation-verifier` returns `status: failure` → STOP
+  - `quality-assurer` finds unmet criteria → STOP
+  - pre-merge validation fails → STOP
+
+  This is deliberate: `check-out` is the final human-controlled finalization stage, so the developer — not the factory — decides how to resolve a failure.
+
+### Verification scope — two tiers
+
+The factory has two distinct verification points with deliberately different scopes:
+
+- **`implementation-verifier` (scoped, in-loop).** Runs a **targeted subset** of the test suite — the tests covering the changed area/module (e.g. the affected Django app, or the affected CDK service/resource), not merely the changed test files and not the whole suite. It runs inside the `check-in` retry loop (up to 3×), so a scoped run keeps that loop fast and cheap.
+- **Pre-merge validation (full, at the gate).** Runs the project's **full** test/lint suite once at `check-out` — the final safety net that catches any cross-module regression a scoped run could not see.
+
+This two-tier split is the reason both points exist: fast scoped feedback during implementation, full validation before the PR.
+
+**Implementation-defined:** how the affected area/module is determined (e.g. derived from `full-stack-dev`'s reported `artifacts` plus project conventions) and the exact scoped and full commands are **project-specific and sourced from `CLAUDE.md`** — not fixed by this architecture.
 
 ### `issue-validator` escalation
 
@@ -340,7 +373,13 @@ When `issue-validator` returns any finding with `severity: error` (blocker), the
 
 ### Malformed-contract escalation
 
-If any agent returns a missing or unparseable output contract, the skill stops and escalates to the developer rather than proceeding on a bad parse.
+Contract parsing must be defensive — the whole pipeline depends on it. The skill must:
+
+1. Extract the **last** fenced ` ```yaml ` block from the agent's final message.
+2. Parse it, and **validate** that all required keys are present and that enum fields hold allowed values (`status` ∈ {success, failure, needs_retry}; `severity` ∈ {error, warning}; `action` ∈ {created, modified, deleted}).
+3. On any missing block, parse error, missing key, or invalid enum value → **STOP and escalate to the developer, including the agent's raw output** in the report so the failure is diagnosable.
+
+The skill never proceeds on a partial or guessed parse.
 
 ### Cost and time reporting
 
