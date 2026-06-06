@@ -10,7 +10,7 @@ The factory accelerates and structures the work; it does not replace human judge
 
 ## Getting started
 
-Install PAF on any machine with a single command (available from Milestone 6):
+Install PAF on any machine with a single command:
 
 ```bash
 curl -sSL <install-url> | bash
