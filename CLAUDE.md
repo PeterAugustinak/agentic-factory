@@ -2,6 +2,15 @@
 
 Guidance for agents (and humans) working **on** the factory itself. This file must stay under 300 lines.
 
+## No guessing — verify everything
+
+Contributing to this project — implementing the current issues or any future enhancement — **must not rely on guesses**. Every architecture decision and implementation choice MUST be verified against an actual source:
+
+- Prefer official **Anthropic / Claude Code documentation** (code.claude.com/docs, docs.anthropic.com).
+- Otherwise, a current **industry standard or established best practice**, cited explicitly.
+
+If something is genuinely undocumented, say so and verify it empirically before deciding — never present a guess as a recommendation. Decisions captured in issues and in `docs/architecture.md` carry their source so they stay auditable; keep it that way.
+
 ## Repository layout
 
 ```
