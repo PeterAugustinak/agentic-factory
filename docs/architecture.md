@@ -45,6 +45,7 @@ Therefore:
 - **Agents are chained from the main thread.** Each agent completes its task and returns results to the main thread, which then passes relevant context into the next agent's delegation prompt.(2)
 - **Each agent is invoked explicitly by name** (via the Agent tool / `@agent-<name>`), never by autonomous natural-language delegation. Explicit invocation guarantees the named subagent runs; natural-language naming only lets Claude *decide whether* to delegate.(3)
 - **Sequencing is prompt-based, not harness-enforced.** Claude Code skills are prompt-based — there is no harness-level deterministic state machine. The fixed sequence is enforced by explicit, imperative skill instructions ("Step N: invoke the `<exact-agent>` agent with this context"), executed by the main-thread model. Skills must therefore be written imperatively, not suggestively.
+- **Agents are caller-agnostic.** An agent definition must never reference a specific skill — not by name and not by behaviour. Agents are reusable specialists: any caller may invoke any agent — a skill, or a developer invoking it directly (e.g. `@code-simplifier review the current branch`). An agent's prompt describes only what it receives and what it returns, never who invokes it or where it sits in a pipeline. The same rule applies between agents — an agent does not name another agent; it operates solely on the input it is handed and the output contract it returns.
 
 #### External I/O and VCS state are skill-owned
 
@@ -325,11 +326,12 @@ The skill uses this field to branch.
 
 ### Field usage by agent category
 
-The schema is uniform; this documents which fields carry the meaningful payload:
+The schema is uniform; this documents which fields carry the meaningful payload. `summary` carries the agent's primary **textual deliverable** — a short paragraph for most agents, but the complete document for an agent whose product *is* text (see synthesis, below). `artifacts` carries **files** only: an agent with no write access produces no artifacts and reports its product in `summary`.
 
 - **Builder (`full-stack-dev`):** `artifacts` is the primary payload; `issues` usually `[]`.
 - **Reviewers (`issue-validator`, `senior-engineer-reviewer`, `code-simplifier`, `security-engineer`, `quality-assurer`):** `issues` is the primary payload; `artifacts` is `[]`.
 - **Read/analyse (`code-explorer`, `implementation-planner`):** `summary` is the primary payload; `artifacts` and `issues` usually `[]`.
+- **Synthesis (`issue-writer`):** the full drafted issue (title, body, acceptance criteria, suggested labels) is the `summary` payload — it has no write access, so it produces no file artifacts; `artifacts` and `issues` are `[]`.
 - **`implementation-verifier`:** `status` plus `issues` (the failures) are the primary payload.
 
 ---
