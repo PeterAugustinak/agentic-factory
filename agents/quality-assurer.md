@@ -27,7 +27,7 @@ You are given the final implemented state — the relevant files and/or diff —
 
 ## Output
 
-Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `status` plus `issues` (any unmet criteria); `artifacts` is `[]`.
+Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable. You are a **final gate**: your primary payload is `status` plus `issues` — set `status: failure` when any acceptance criterion is unmet (listing each in `issues`) and `status: success` only when all are met, so the caller can halt on failure. `artifacts` is `[]`.
 
 ```yaml
 agent: "quality-assurer"         # required — all agents

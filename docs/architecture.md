@@ -28,10 +28,10 @@ Each agent declares its `model` as an alias (`haiku`, `sonnet`, `opus`) — alia
 
 Agents fall into a few stable shapes. The category drives tool scope (§3) and output field usage (§4):
 
-- **Analysis / read** — explore or reason over code and return a summary or plan. Read-only.
+- **Analysis / read** — explore or reason over code and return a summary or plan. Read, plus **read-only Bash** for codebase exploration (§3).
 - **Synthesis** — produce a document (e.g. an issue) as text. Read-only.
 - **Builder** — edit files, write tests, run commands. Read + write, project-confined.
-- **Review** — inspect implemented code and report findings. Read-only.
+- **Review / validation** — inspect implemented code, or check a proposed approach against authoritative sources, and report findings. Read-only, plus web lookup when validating against external documentation (§3).
 - **Verification** — run tests/linter and report pass/fail. Read + execute, no writes.
 
 There is intentionally **no `github-*` or I/O agent** — GitHub and git interaction is mechanical, not cognitive, and is owned by the skill (see [Section 2](#external-io-and-vcs-state-are-skill-owned)).
@@ -327,7 +327,7 @@ The skill uses this field to branch.
 The schema is uniform; this documents which fields carry the meaningful payload, by category (§1). `summary` carries the agent's primary **textual deliverable** — a short paragraph for most agents, but the complete document for an agent whose product *is* text (synthesis). `artifacts` carries **files** only: an agent with no write access produces no artifacts and reports its product in `summary`.
 
 - **Builder** → `artifacts` is the primary payload; `issues` usually `[]`.
-- **Review** → `issues` is the primary payload; `artifacts` is `[]`.
+- **Review / validation** → `issues` is the primary payload; `artifacts` is `[]`. By default `status` is `success` on completion regardless of what was found — reporting findings is the job, and the skill/developer decides how to act on them. The one exception is a **final gate** review (a spec-conformance check that the skill treats as a STOP point): it sets `status: failure` when the work does not meet the criteria, so the skill can halt. An agent that acts as such a gate states this in its own Output section.
 - **Analysis / read** → `summary` is the primary payload; `artifacts` and `issues` usually `[]`.
 - **Synthesis** → the produced document is the `summary` payload; no write access, so `artifacts` is `[]`.
 - **Verification** → `status` plus `issues` (the failures) are the primary payload.

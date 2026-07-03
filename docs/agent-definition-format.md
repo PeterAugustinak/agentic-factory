@@ -52,15 +52,15 @@ Every PAF agent body has the same five sections, in this order:
 2. **`## Input`** — what the caller passes in the invocation prompt, described by *what is received*, never by *who sends it* (a skill, or a developer invoking the agent directly). The agent does not fetch its own work; it is handed context.
 3. **`## Task`** — the concrete steps the agent performs.
 4. **`## Constraints`** — boundaries: the tool scope in plain language (mirroring the "Blocked" column and any hook-enforced sub-tool limits), and the universal rules — agents never orchestrate other agents, never call `gh`, never change git state.
-5. **`## Output`** — the output contract (below), reproduced verbatim.
+5. **`## Output`** — the output contract (below), reproduced with only the `agent:` value substituted (see below).
 
 ---
 
 ## Output contract
 
-This is the **canonical copy** of the output contract. It is identical to `architecture.md` §4. Because Claude Code does not expand `@path` imports inside an agent body — the body is delivered as a raw system prompt, verified empirically (an agent given `@file` syntax in its body sees the literal string, never the file's content)(5) — the contract block cannot be referenced from a shared file at runtime. Each agent file therefore reproduces the block below exactly. If the contract ever changes, it changes here and in `architecture.md` §4, and the agent files are updated to match.
+This is the **canonical copy** of the output contract. It is identical to `architecture.md` §4. Because Claude Code does not expand `@path` imports inside an agent body — the body is delivered as a raw system prompt, verified empirically (an agent given `@file` syntax in its body sees the literal string, never the file's content)(5) — the contract block cannot be referenced from a shared file at runtime. Each agent file therefore reproduces the block below, with a **single per-file substitution**: the `agent:` value is set to that agent's own name (e.g. `agent: "code-explorer"`) instead of the `"<agent-name>"` placeholder. Everything else — every other field, comment, ordering, and the surrounding instruction — is copied exactly. If the contract ever changes, it changes here and in `architecture.md` §4, and the agent files are updated to match.
 
-Every agent body's **`## Output`** section contains exactly this instruction and block:
+Every agent body's **`## Output`** section contains exactly this instruction and block (with `agent:` set to the file's own name):
 
 > Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable.
 >
