@@ -14,7 +14,7 @@ skills/
     └── SKILL.md        # Required — main instructions and orchestration logic
 ```
 
-Skill names are lowercase, hyphenated. Examples: `create-issue`, `check-in`, `check-out`.
+Skill names are lowercase, hyphenated. Examples: `create-issue`, `implement-issue`, `check-out`.
 
 ## Install target
 
@@ -25,5 +25,5 @@ The installer places skill directories at `~/.claude/skills/paf/<skill-name>/`.
 | Skill | Command | Purpose |
 |-------|---------|---------|
 | `create-issue` | `/create-issue` | Produce a structured GitHub issue from a feature idea |
-| `check-in` | `/check-in` | Plan and implement a feature from an approved issue |
+| `implement-issue` | `/implement-issue` | Plan and implement a feature from an approved issue |
 | `check-out` | `/check-out` | Review, fix, and post a PR for completed work |

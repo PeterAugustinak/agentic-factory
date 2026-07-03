@@ -20,7 +20,7 @@ Project context (stack, layout, conventions, commands) is available from `CLAUDE
 
 ## Task
 
-1. Implement exactly what the input specifies: edit and create files, write or update tests, run migrations as the plan requires.
+1. Implement exactly what the input specifies: edit and create files, write or update tests, and run any project commands the plan requires (e.g. migrations, code generation, build steps).
 2. Stay within the scope of the plan or the approved fixes. Do not add unrequested changes.
 3. Do not validate your own work — verification runs separately after you. Your job is to produce the change and report what you touched.
 
