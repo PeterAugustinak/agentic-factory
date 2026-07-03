@@ -3,10 +3,10 @@
 ## Adding a skill
 
 1. Create a directory under `skills/`: `skills/<skill-name>/`
-2. Add `skills/<skill-name>/SKILL.md` with YAML frontmatter and orchestration instructions
-3. Required frontmatter fields: `description` (when to invoke), `invocation: explicit` (factory skills are always explicit-invocation only)
+2. Add `skills/<skill-name>/SKILL.md` following `docs/skill-definition-format.md`
+3. Required frontmatter: `description` (what + when), and `disable-model-invocation: true` — factory skills are explicit-invocation only. Never set `context: fork` (a forked skill runs as a subagent and cannot orchestrate agents).
 4. Skills are orchestrators — they invoke agents, enforce human gates, handle GitHub I/O, and report cost. No cognitive work in skill files.
-5. Document the new skill in `skills/README.md`
+5. Document the new skill in `skills/README.md`, and add its human-facing explanation (diagram, flow) in `docs/<skill-name>.md`
 
 Invoke after install: `/skill-name`
 
