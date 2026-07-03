@@ -18,7 +18,7 @@ PAF provides three core slash commands. Full skill documentation lives in the fa
 | Command | When to use |
 |---------|-------------|
 | `/create-issue` | Starting a new feature — discuss the idea and produce a structured GitHub issue |
-| `/check-in` | Beginning implementation — validate, plan, implement, and verify against an approved issue |
+| `/implement-issue` | Beginning implementation — validate, plan, implement, and verify against an approved issue |
 | `/check-out` | Finishing work — review, fix, and post a PR for completed, developer-validated work |
 
 ## Project conventions

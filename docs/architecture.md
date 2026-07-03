@@ -12,24 +12,29 @@ Every decision here has been verified against official Claude Code documentation
 
 ---
 
-## 1. Agent roster and model assignments
+## 1. Agents
 
-PAF defines ten specialist agents. The `model` field in each agent definition accepts a model alias (`haiku`, `sonnet`, `opus`), a full model ID, or `inherit`.(1)
+A PAF agent is a specialist subagent owning one cognitive responsibility, with a tool scope (§3) and a model suited to its task. Agents are caller-agnostic (§2) and all follow the output contract (§4). This section defines *how an agent is shaped*, not which agents exist: the agents are self-describing in `agents/<name>.md`, and how to author one is in [`agent-definition-format.md`](agent-definition-format.md). The architecture keeps no roster — read `agents/` for the current set.
 
-| Agent | Responsibility | Model | Rationale |
-|---|---|---|---|
-| `code-explorer` | Read and summarise relevant files, symbols, and dependencies; produce a structured summary for other agents | Haiku | Mechanical I/O — no reasoning required; keeping this cheap matters because it runs at the start of every flow |
-| `issue-writer` | Synthesise the developer's idea into a structured GitHub issue (title, description, acceptance criteria, labels) | Sonnet | Requires judgement to translate intent into a well-scoped issue |
-| `issue-validator` | Independently verify the technical validity of the proposed approach against real documentation; report findings; block on critical findings, pass minor findings forward | Sonnet | Requires reasoning over external documentation and technical judgement about correctness |
-| `implementation-planner` | Produce a full implementation plan from the approved issue, incorporating any minor findings from `issue-validator`: files to touch, changes per file, test strategy | Sonnet | Requires deep reasoning over codebase context and requirements |
-| `full-stack-dev` | Execute the approved plan or apply approved review findings: edit files, write tests, run migrations | Sonnet | Requires judgement even when following a plan; Haiku is not appropriate here |
-| `implementation-verifier` | Run tests and linter; report pass/fail with structured output | Sonnet | Interprets ambiguous test output; must distinguish real failures from flaky infra |
-| `senior-engineer-reviewer` | Deep functional review of the implemented code: catch bugs, logic errors, and incorrect assumptions | Sonnet | Requires the same reasoning depth as writing the code |
-| `code-simplifier` | Review the implemented code for unnecessary complexity: DRY violations, over-engineering, readability issues | Sonnet | Requires judgement about intent vs implementation |
-| `security-engineer` | Review the implemented code purely from a security perspective: vulnerabilities, unsafe patterns, exposure | Sonnet | Security review requires specialist reasoning that cannot be folded into generic review |
-| `quality-assurer` | Compare the final implemented state to the spec; confirm every acceptance criterion is met or flag what is missing | Sonnet | Requires cross-referencing spec against code — runs last, after all fixes are applied and tests pass |
+### Model selection
 
-There is intentionally **no `github-*` or I/O agent** — GitHub and git interaction is mechanical, not cognitive (see [Section 2](#external-io-and-vcs-state-are-skill-owned)).
+Each agent declares its `model` as an alias (`haiku`, `sonnet`, `opus`) — aliases, not pinned IDs, so model upgrades apply automatically.(1) Choose by the nature of the work:
+
+- **Mechanical / I-O-bound, no reasoning** (e.g. reading and summarising files) → the cheapest capable model (currently `haiku`). Such agents often run at the start of every flow, so keeping them cheap matters.
+- **Requires reasoning, judgement, or interpretation** (planning, building, reviewing, validating, verifying) → the mid-tier model (currently `sonnet`).
+- Reserve the top model (`opus`) for work that genuinely needs the deepest reasoning; do not default to it.
+
+### Agent categories
+
+Agents fall into a few stable shapes. The category drives tool scope (§3) and output field usage (§4):
+
+- **Analysis / read** — explore or reason over code and return a summary or plan. Read, plus **read-only Bash** for codebase exploration (§3).
+- **Synthesis** — produce a document (e.g. an issue) as text. Read-only.
+- **Builder** — edit files, write tests, run commands. Read + write, project-confined.
+- **Review / validation** — inspect implemented code, or check a proposed approach against authoritative sources, and report findings. Read-only, plus web lookup when validating against external documentation (§3).
+- **Verification** — run tests/linter and report pass/fail. Read + execute, no writes.
+
+There is intentionally **no `github-*` or I/O agent** — GitHub and git interaction is mechanical, not cognitive, and is owned by the skill (see [Section 2](#external-io-and-vcs-state-are-skill-owned)).
 
 ---
 
@@ -45,6 +50,7 @@ Therefore:
 - **Agents are chained from the main thread.** Each agent completes its task and returns results to the main thread, which then passes relevant context into the next agent's delegation prompt.(2)
 - **Each agent is invoked explicitly by name** (via the Agent tool / `@agent-<name>`), never by autonomous natural-language delegation. Explicit invocation guarantees the named subagent runs; natural-language naming only lets Claude *decide whether* to delegate.(3)
 - **Sequencing is prompt-based, not harness-enforced.** Claude Code skills are prompt-based — there is no harness-level deterministic state machine. The fixed sequence is enforced by explicit, imperative skill instructions ("Step N: invoke the `<exact-agent>` agent with this context"), executed by the main-thread model. Skills must therefore be written imperatively, not suggestively.
+- **Agents are caller-agnostic.** An agent definition must never reference a specific skill — not by name and not by behaviour. Agents are reusable specialists: any caller may invoke any agent — a skill, or a developer invoking it directly (e.g. `@code-simplifier review the current branch`). An agent's prompt describes only what it receives and what it returns, never who invokes it or where it sits in a pipeline. The same rule applies between agents — an agent does not name another agent; it operates solely on the input it is handed and the output contract it returns.
 
 #### External I/O and VCS state are skill-owned
 
@@ -57,7 +63,7 @@ Where the same `gh`/`git` sequences recur across skills, they are factored into 
 The primary human interception points are **the skill boundaries themselves**. The factory is deliberately three separate, developer-invoked skills — not a single end-to-end skill. The developer runs one skill, reviews the result, then runs the next:
 
 1. Run `create-issue` → finishes → **interception 1**: developer reviews the GitHub issue before any implementation.
-2. Run `check-in` → finishes → **interception 2**: developer reviews the implemented code and tests.
+2. Run `implement-issue` → finishes → **interception 2**: developer reviews the implemented code and tests.
 3. Run `check-out` → finishes → developer reviews and merges the PR.
 
 This three-skill split *is* the human-control architecture; the gaps between skills are the mandatory review gates.
@@ -110,10 +116,10 @@ Each diagram reads top → bottom; a right-side channel (`<-+`) routes a branch 
 +----------------------------------------------+
 ```
 
-#### `check-in`
+#### `implement-issue`
 
 ```text
-/check-in <issue>
+/implement-issue <issue>
      |
      v
 +----------------------------------------------+
@@ -256,31 +262,24 @@ Tool restriction is enforced in three layers:
 
 **One centralized hook, not per-agent hooks.** Claude Code supports per-agent scoped hooks via the `hooks` frontmatter field, but PAF uses a single global `PreToolUse` hook keyed on `agent_type`. This centralizes the policy in one file and avoids duplicating enforcement logic across ten agent definitions.
 
+### Scoping an agent
+
+An agent's tool scope is declared as a `tools` **allowlist** containing only what its job needs; every other tool — including all MCP tools — is denied by omission (default-deny).(4) Derive the allowlist from the agent's category (§1):
+
+- **Read / analysis / synthesis / review** → `Read` only; add `WebSearch`, `WebFetch` only if the job needs external lookups.
+- **Exploration / planning** → also `Bash` (the hook restricts it to read-only commands).
+- **Builder** → also `Edit`, `Write`, `Bash` (the hook confines writes and Bash to the project root).
+- **Verification** → also `Bash` for running tests/linters; no `Edit`/`Write`.
+
+No agent is ever granted `gh` or git-state mutation — external I/O and VCS are skill-owned (§2). Each agent's exact allowlist lives in its file (`agents/<name>.md`); the architecture keeps no per-agent table.
+
 ### Hook enforcement policy (layer 3)
 
-The architecture fixes the *policy*; the exact command patterns are an implementation detail of the hook.
+The architecture fixes the *policy patterns*; the exact command patterns are an implementation detail of the hook. Which pattern applies to an agent follows from its scope (above), so adding an agent needs no change here.
 
-- **Read-only Bash (`code-explorer`, `implementation-planner`):** the hook uses an **allowlist (default-deny)** — only an explicit set of read-only commands (e.g. `grep`, `find`, `git log`, `git diff`, `cat`, `ls`) is permitted; every other Bash command is blocked. Default-deny is required because a denylist of mutating commands inevitably leaks.
-- **Project-path containment (`full-stack-dev`):** the hook blocks any `Edit`, `Write`, or path-targeting Bash command whose target resolves **outside the project root**. The project root is read from the `CLAUDE_PROJECT_DIR` environment variable available to hooks.(7)
-
-### Per-agent tool scope
-
-This is the contract. The "Allowed" / "Blocked" columns map to frontmatter `tools` / `disallowedTools` (layer 2). Restrictions in parentheses (read-only, project-paths-only) are enforced by the `PreToolUse` hook (layer 3).
-
-| Agent | Allowed tools | Explicitly blocked |
-|---|---|---|
-| `code-explorer` | Read, Bash (read-only: grep, find, git log, git diff) | Edit, Write, WebFetch, WebSearch |
-| `issue-writer` | Read | Edit, Write, Bash, WebFetch, WebSearch |
-| `issue-validator` | Read, WebSearch, WebFetch | Edit, Write, Bash |
-| `implementation-planner` | Read, Bash (read-only) | Edit, Write, WebFetch, WebSearch |
-| `full-stack-dev` | Read, Edit, Write, Bash (within project paths only) | WebFetch, WebSearch, gh CLI |
-| `implementation-verifier` | Read, Bash (test runner, linter — no file writes) | Edit, Write |
-| `senior-engineer-reviewer` | Read | Edit, Write, Bash |
-| `code-simplifier` | Read | Edit, Write, Bash |
-| `security-engineer` | Read | Edit, Write, Bash |
-| `quality-assurer` | Read | Edit, Write, Bash |
-
-`full-stack-dev` is blocked from `gh` (a Bash invocation) at the hook layer — external I/O is skill-only.
+- **Read-only Bash** (any agent granted Bash for exploration only): the hook uses an **allowlist (default-deny)** — only an explicit set of read-only commands (e.g. `grep`, `find`, `git log`, `git diff`, `cat`, `ls`) is permitted; every other Bash command is blocked. Default-deny is required because a denylist of mutating commands inevitably leaks.
+- **Project-path containment** (any agent with write access): the hook blocks any `Edit`, `Write`, or path-targeting Bash command whose target resolves **outside the project root**. The project root is read from the `CLAUDE_PROJECT_DIR` environment variable available to hooks.(7)
+- **No external I/O** (all agents): `gh` and other external I/O is blocked at the hook even where `Bash` is allowed; only the skill (main thread) performs it.
 
 ---
 
@@ -318,30 +317,31 @@ There is **no `cost` block** in the agent contract — an agent cannot reliably 
 
 ### Severity semantics
 
-- **`severity: error`** denotes a **blocker** — a finding that stops the flow and requires developer action (e.g. `issue-validator` error findings halt `check-in`).
+- **`severity: error`** denotes a **blocker** — a finding that stops the flow and requires developer action (e.g. `issue-validator` error findings halt `implement-issue`).
 - **`severity: warning`** denotes a **minor / non-blocking** finding that is passed forward (e.g. to `implementation-planner`) or surfaced for the developer to decide on.
 
 The skill uses this field to branch.
 
 ### Field usage by agent category
 
-The schema is uniform; this documents which fields carry the meaningful payload:
+The schema is uniform; this documents which fields carry the meaningful payload, by category (§1). `summary` carries the agent's primary **textual deliverable** — a short paragraph for most agents, but the complete document for an agent whose product *is* text (synthesis). `artifacts` carries **files** only: an agent with no write access produces no artifacts and reports its product in `summary`.
 
-- **Builder (`full-stack-dev`):** `artifacts` is the primary payload; `issues` usually `[]`.
-- **Reviewers (`issue-validator`, `senior-engineer-reviewer`, `code-simplifier`, `security-engineer`, `quality-assurer`):** `issues` is the primary payload; `artifacts` is `[]`.
-- **Read/analyse (`code-explorer`, `implementation-planner`):** `summary` is the primary payload; `artifacts` and `issues` usually `[]`.
-- **`implementation-verifier`:** `status` plus `issues` (the failures) are the primary payload.
+- **Builder** → `artifacts` is the primary payload; `issues` usually `[]`.
+- **Review / validation** → `issues` is the primary payload; `artifacts` is `[]`. By default `status` is `success` on completion regardless of what was found — reporting findings is the job, and the skill/developer decides how to act on them. The one exception is a **final gate** review (a spec-conformance check that the skill treats as a STOP point): it sets `status: failure` when the work does not meet the criteria, so the skill can halt. An agent that acts as such a gate states this in its own Output section.
+- **Analysis / read** → `summary` is the primary payload; `artifacts` and `issues` usually `[]`.
+- **Synthesis** → the produced document is the `summary` payload; no write access, so `artifacts` is `[]`.
+- **Verification** → `status` plus `issues` (the failures) are the primary payload.
 
 ---
 
 ## 5. Loop cap, escalation, and cost reporting
 
-### `check-in` retry loop
+### `implement-issue` retry loop
 
 - **Max retries:** 2 — `full-stack-dev` is reinvoked at most twice after an initial failure.
 - **Trigger:** `implementation-verifier` returns `status: failure` (test or lint failures).
 - **Passed to the builder on retry:** the original plan + the failed run's output contract (structured failure context, not free-form prose).
-- **On retry exhaustion:** the skill stops and prints a structured escalation report to the developer containing what failed, the last `implementation-verifier` output, and a suggested next action. The developer reviews, adjusts the plan or issue, and re-invokes `check-in` manually.
+- **On retry exhaustion:** the skill stops and prints a structured escalation report to the developer containing what failed, the last `implementation-verifier` output, and a suggested next action. The developer reviews, adjusts the plan or issue, and re-invokes `implement-issue` manually.
 - **No self-validation:** the builder never validates its own fix — `implementation-verifier` always runs as a separate agent after every `full-stack-dev` invocation.
 
 ### `check-out` fix loop
@@ -349,7 +349,7 @@ The schema is uniform; this documents which fields carry the meaningful payload:
 After the human gate, `full-stack-dev` applies only the developer-approved fixes, then `implementation-verifier` confirms tests still pass, then `quality-assurer` runs once, then the skill runs the pre-merge validation.
 
 - **Skip path.** If the reviewers surface nothing — or the developer approves no fixes — there is nothing to implement: `full-stack-dev` and the post-fix `implementation-verifier` are skipped and the flow goes straight to `quality-assurer`.
-- **No retry loop — failures STOP and escalate.** Unlike `check-in`, `check-out` has no auto-retry. Any failure at this stage halts the run and escalates to the developer, who fixes the problem and re-runs `check-out`:
+- **No retry loop — failures STOP and escalate.** Unlike `implement-issue`, `check-out` has no auto-retry. Any failure at this stage halts the run and escalates to the developer, who fixes the problem and re-runs `check-out`:
   - `implementation-verifier` returns `status: failure` → STOP
   - `quality-assurer` finds unmet criteria → STOP
   - pre-merge validation fails → STOP
@@ -360,7 +360,7 @@ After the human gate, `full-stack-dev` applies only the developer-approved fixes
 
 The factory has two distinct verification points with deliberately different scopes:
 
-- **`implementation-verifier` (scoped, in-loop).** Runs a **targeted subset** of the test suite — the tests covering the changed area/module (e.g. the affected Django app, or the affected CDK service/resource), not merely the changed test files and not the whole suite. It runs inside the `check-in` retry loop (up to 3×), so a scoped run keeps that loop fast and cheap.
+- **`implementation-verifier` (scoped, in-loop).** Runs a **targeted subset** of the test suite — the tests covering the changed area/module (e.g. the affected Django app, or the affected CDK service/resource), not merely the changed test files and not the whole suite. It runs inside the `implement-issue` retry loop (up to 3×), so a scoped run keeps that loop fast and cheap.
 - **Pre-merge validation (full, at the gate).** Runs the project's **full** test/lint suite once at `check-out` — the final safety net that catches any cross-module regression a scoped run could not see.
 
 This two-tier split is the reason both points exist: fast scoped feedback during implementation, full validation before the PR.
@@ -369,7 +369,7 @@ This two-tier split is the reason both points exist: fast scoped feedback during
 
 ### `issue-validator` escalation
 
-When `issue-validator` returns any finding with `severity: error` (blocker), the skill posts the findings as a GitHub issue comment, then stops; the developer must update the issue before re-running `check-in`. Findings with only `severity: warning` (minor) are posted as a comment and passed forward to `implementation-planner`. The validator never calls `gh` itself — the skill posts on its behalf.
+When `issue-validator` returns any finding with `severity: error` (blocker), the skill posts the findings as a GitHub issue comment, then stops; the developer must update the issue before re-running `implement-issue`. Findings with only `severity: warning` (minor) are posted as a comment and passed forward to `implementation-planner`. The validator never calls `gh` itself — the skill posts on its behalf.
 
 ### Malformed-contract escalation
 
