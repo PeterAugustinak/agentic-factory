@@ -1,0 +1,33 @@
+{
+  "_comment": "PAF model pricing table — maintained by the factory, used by the cost-reporting helper. USD per 1,000,000 tokens. Cache rates follow the documented multipliers: cache write (5m TTL) = 1.25x input, cache write (1h TTL) = 2x input, cache read = 0.1x input.",
+  "_source": "https://claude.com/pricing#api and Claude API pricing reference (claude-api skill), captured 2026-06-08",
+  "_updated": "2026-06-08",
+  "currency": "USD",
+  "unit_tokens": 1000000,
+  "usd_to_eur": 0.92,
+  "_usd_to_eur_source": "ECB euro reference rates (https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates) — maintained; update alongside the model rates. Captured 2026-06-08.",
+  "models": {
+    "claude-haiku-4-5": {
+      "input": 1.00,
+      "output": 5.00,
+      "cache_write_5m": 1.25,
+      "cache_write_1h": 2.00,
+      "cache_read": 0.10
+    },
+    "claude-sonnet-5": {
+      "input": 3.00,
+      "output": 15.00,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6.00,
+      "cache_read": 0.30,
+      "_note": "Introductory pricing $2.00 input / $10.00 output per MTok runs through 2026-08-31; standard rates listed here."
+    },
+    "claude-opus-4-8": {
+      "input": 5.00,
+      "output": 25.00,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10.00,
+      "cache_read": 0.50
+    }
+  }
+}
