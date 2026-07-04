@@ -25,7 +25,7 @@ A PAF skill's frontmatter uses these fields, in this order:
 | `name` | The skill's display name in listings; kept identical to the directory/command name for clarity.(2) |
 | `description` | One or two sentences: **what** the skill does and **when** to use it. The effective `description` (+ `when_to_use`) is truncated at 1,536 characters in the skill listing, so lead with the key use case.(2) |
 | `disable-model-invocation` | **Always `true` for PAF skills.** This is the native mechanism that makes a skill **explicit-invocation only** — only the developer can invoke it via `/name`; Claude never auto-triggers it.(3) |
-| `argument-hint` | For skills that take an argument (e.g. `implement-issue` → `[issue-number]`), shown during autocomplete.(2) |
+| `argument-hint` | For skills that take an argument, shown during autocomplete. **Always quote it** — e.g. `argument-hint: "[issue-number]"`. Unquoted `[issue-number]` is a YAML *flow sequence* (a list), not a string; Claude Code's lenient parser accepts it, but a strict schema validator rejects it as `invalid type: sequence, expected a string`.(2) |
 | `allowed-tools` | Optional. Pre-approves the specific `gh`/`git`/test Bash commands the skill runs, so the developer is not prompted for each one. Does **not** restrict tools — it only removes approval prompts.(6) |
 
 ### Why `disable-model-invocation: true` on every PAF skill
@@ -69,6 +69,8 @@ A skill's material is split by *who reads it and when*:
 - **`docs/<skill-name>.md`** — human-facing explanation: the orchestration diagram, how the skill works, which agents it uses. **Never loaded by Claude**; it is documentation for the developer. Per-skill docs live here, not inside the skill folder (`architecture.md` decision; issue #5).
 
 Shared, side-effectful `gh`/`git` sequences that recur across skills are factored into **`scripts/`** at the repo root and invoked via Bash — not duplicated in each `SKILL.md` and not pushed into agents (`architecture.md` §2).
+
+**`skills/_shared/` — cross-skill runtime material.** Reference docs and helper scripts that *every* skill needs at run time (the output-contract parsing rules, the cost-reporting helper, the pricing table) live once in `skills/_shared/` and are reached from any skill via `${CLAUDE_SKILL_DIR}/../_shared/…`. This keeps them DRY and installed alongside the skills (reachable at run time), which `scripts/` — reserved for the installer and dev utilities — is not. `_shared/` has no `SKILL.md`, so Claude Code does not load it as a skill.
 
 ---
 

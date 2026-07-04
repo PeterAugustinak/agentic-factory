@@ -87,34 +87,11 @@ How many in-skill interceptions each skill has, and exactly where, is an impleme
 
 Each diagram reads top → bottom; a right-side channel (`<-+`) routes a branch back to an earlier step or forward past skipped steps.
 
+Once a skill is implemented, its detailed, up-to-date flow lives in its own document under `docs/<skill>.md`; the maps below are the design intent for skills not yet built and are relocated to the per-skill doc as each is built.
+
 #### `create-issue`
 
-```text
-/create-issue
-     |
-     v
-+----------------------------------------------+
-| [agent] issue-writer                         | <-+
-|   draft structured GitHub issue              |   |
-+----------------------------------------------+   |
-     |                                             |
-     v                                             |
-+----------------------------------------------+   |
-| [human gate]                                 |   |
-|   developer reviews draft                    |   |
-+----------------------------------------------+   |
-     +--- changes requested -----------------------+
-     |
-     v  (approved)
-+----------------------------------------------+
-| [skill] post issue via gh; print URL         |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [skill] report cost + wall-clock             |
-+----------------------------------------------+
-```
+Implemented — see [`docs/create-issue.md`](create-issue.md) for the current orchestration diagram and explanation.
 
 #### `implement-issue`
 

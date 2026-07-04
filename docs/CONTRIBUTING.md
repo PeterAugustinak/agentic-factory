@@ -27,6 +27,6 @@ Invoke after install: `/skill-name`
 
 ## PR process
 
-- Branch from `develop`: `git checkout -b feature/<short-description>`
+- Branch from `develop`: `git checkout -b feature/<issue-number>-<short-description>`
 - PR targets `develop`
 - Merge to `master` via a release PR from `develop`

@@ -25,7 +25,7 @@ PAF provides three core slash commands. Full skill documentation lives in the fa
 
 - **GitHub repo:** `<owner>/<repo>`
 - **Default branch:** `master`
-- **Feature branches:** `feature/<short-description>`
+- **Feature branches:** `feature/<issue-number>-<short-description>` (the issue number links the branch to its issue and lets the factory attribute cost to the feature)
 - **PR target:** `develop`
 - **Labels:** <!-- list any standard labels used on issues/PRs -->
 - **Merge strategy:** squash merge
