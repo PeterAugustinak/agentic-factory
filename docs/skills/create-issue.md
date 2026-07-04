@@ -1,6 +1,6 @@
 # create-issue
 
-Human-facing documentation for the `create-issue` skill. The operational definition is [`skills/create-issue/SKILL.md`](../skills/create-issue/SKILL.md); this file explains how the skill works and is not loaded by Claude at run time.
+Human-facing documentation for the `create-issue` skill. The operational definition is [`skills/create-issue/SKILL.md`](../../skills/create-issue/SKILL.md); this file explains how the skill works and is not loaded by Claude at run time.
 
 ## Purpose
 
@@ -67,7 +67,7 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 
 ## Agents used
 
-- **`issue-writer`** (Sonnet, read-only) — the only agent. It synthesises the discussed idea into the structured issue draft and returns it via the [output contract](../skills/_shared/output-contract.md); the skill parses that, gates it on the developer, and posts it.
+- **`issue-writer`** (Sonnet, read-only) — the only agent. It synthesises the discussed idea into the structured issue draft and returns it via the [output contract](../../skills/_shared/output-contract.md); the skill parses that, gates it on the developer, and posts it.
 
 No other agents run in this skill: validation, planning, and implementation belong to `/implement-issue`.
 
@@ -79,9 +79,9 @@ No other agents run in this skill: validation, planning, and implementation belo
 
 ## Cost and time reporting
 
-The final step runs [`skills/_shared/paf-report-cost.py`](../skills/_shared/paf-report-cost.py) in `record` mode. It:
+The final step runs [`skills/_shared/paf-report-cost.py`](../../skills/_shared/paf-report-cost.py) in `record` mode. It:
 
-- prices the run from the session transcript (main-thread + any agent usage) using [`pricing.json`](../skills/_shared/pricing.json), converts the total to **EUR**, and derives wall-clock from the transcript's first→last timestamps — so the idea-discussion time and tokens are included;
+- prices the run from the session transcript (main-thread + any agent usage) using [`pricing.json`](../../skills/_shared/pricing.json), converts the total to **EUR**, and derives wall-clock from the transcript's first→last timestamps — so the idea-discussion time and tokens are included;
 - appends an entry to the per-feature ledger at `~/.claude/paf/costs/<project>/<issue>.jsonl` (user scope — no footprint in the target repository);
 - keyed by the **issue number**, so `/implement-issue` and `/check-out` add to the same ledger and `/check-out` reports the **total** feature cost in the PR.
 
@@ -89,9 +89,9 @@ This rests on one assumption: the create-issue-phase session is focused on that 
 
 ## Related files
 
-- [`skills/create-issue/SKILL.md`](../skills/create-issue/SKILL.md) — the operational definition (what Claude executes).
-- [`skills/_shared/output-contract.md`](../skills/_shared/output-contract.md) — agent output parsing rules.
-- [`skills/_shared/paf-report-cost.py`](../skills/_shared/paf-report-cost.py) / [`pricing.json`](../skills/_shared/pricing.json) — cost + time reporting.
-- [`agents/issue-writer.md`](../agents/issue-writer.md) — the agent definition.
-- [`docs/architecture.md`](architecture.md) — the factory-wide design this skill follows.
+- [`skills/create-issue/SKILL.md`](../../skills/create-issue/SKILL.md) — the operational definition (what Claude executes).
+- [`skills/_shared/output-contract.md`](../../skills/_shared/output-contract.md) — agent output parsing rules.
+- [`skills/_shared/paf-report-cost.py`](../../skills/_shared/paf-report-cost.py) / [`pricing.json`](../../skills/_shared/pricing.json) — cost + time reporting.
+- [`agents/issue-writer.md`](../../agents/issue-writer.md) — the agent definition.
+- [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```

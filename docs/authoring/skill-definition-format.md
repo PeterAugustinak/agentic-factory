@@ -1,6 +1,6 @@
 # PAF Skill Definition Format
 
-This document defines the authoring format every PAF skill follows. It operationalizes [`architecture.md`](architecture.md): the architecture decides *what* the skills do (orchestration, human gates, I/O ownership, loop/escalation, cost reporting); this document fixes *how* a skill is written as a `SKILL.md` so all three read consistently. It is the skill-side counterpart to [`agent-definition-format.md`](agent-definition-format.md).
+This document defines the authoring format every PAF skill follows. It operationalizes [`architecture.md`](../architecture.md): the architecture decides *what* the skills do (orchestration, human gates, I/O ownership, loop/escalation, cost reporting); this document fixes *how* a skill is written as a `SKILL.md` so all three read consistently. It is the skill-side counterpart to [`agent-definition-format.md`](agent-definition-format.md).
 
 Every choice is grounded in the official Claude Code skills documentation, the Agent Skills open standard, and Anthropic's own skill examples; sources are listed at the end. Nothing is guessed.
 

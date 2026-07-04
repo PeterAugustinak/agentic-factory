@@ -22,7 +22,9 @@ agentic-factory/
 ├── docs/
 │   ├── architecture.md       # Single source of truth for all design decisions
 │   ├── CONTRIBUTING.md       # How to add skills, agents, and hooks
-│   └── CLAUDE-template.md    # CLAUDE.md template for projects adopting PAF
+│   ├── authoring/            # How to author a component (agent/skill definition formats)
+│   ├── skills/               # Per-skill documentation (diagram + how it works)
+│   └── templates/            # CLAUDE-template.md — CLAUDE.md template for adopting projects
 ├── CLAUDE.md       # This file
 └── README.md       # Project overview and install command
 ```

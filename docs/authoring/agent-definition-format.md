@@ -1,6 +1,6 @@
 # PAF Agent Definition Format
 
-This document defines the authoring format every PAF agent file follows. It operationalizes [`architecture.md`](architecture.md): the architecture decides *what* each agent is (model, tool scope, role, output contract); this document fixes *how* that is written into a file so all ten agents read identically.
+This document defines the authoring format every PAF agent file follows. It operationalizes [`architecture.md`](../architecture.md): the architecture decides *what* each agent is (model, tool scope, role, output contract); this document fixes *how* that is written into a file so all ten agents read identically.
 
 Every choice here is grounded in the official Claude Code subagents documentation; sources are listed at the end. Nothing is guessed — where a behaviour was not fully documented, it was verified empirically and the result is recorded.
 

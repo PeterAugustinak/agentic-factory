@@ -14,7 +14,7 @@ Every decision here has been verified against official Claude Code documentation
 
 ## 1. Agents
 
-A PAF agent is a specialist subagent owning one cognitive responsibility, with a tool scope (§3) and a model suited to its task. Agents are caller-agnostic (§2) and all follow the output contract (§4). This section defines *how an agent is shaped*, not which agents exist: the agents are self-describing in `agents/<name>.md`, and how to author one is in [`agent-definition-format.md`](agent-definition-format.md). The architecture keeps no roster — read `agents/` for the current set.
+A PAF agent is a specialist subagent owning one cognitive responsibility, with a tool scope (§3) and a model suited to its task. Agents are caller-agnostic (§2) and all follow the output contract (§4). This section defines *how an agent is shaped*, not which agents exist: the agents are self-describing in `agents/<name>.md`, and how to author one is in [`agent-definition-format.md`](authoring/agent-definition-format.md). The architecture keeps no roster — read `agents/` for the current set.
 
 ### Model selection
 
@@ -91,7 +91,7 @@ Once a skill is implemented, its detailed, up-to-date flow lives in its own docu
 
 #### `create-issue`
 
-Implemented — see [`docs/create-issue.md`](create-issue.md) for the current orchestration diagram and explanation.
+Implemented — see [`docs/skills/create-issue.md`](skills/create-issue.md) for the current orchestration diagram and explanation.
 
 #### `implement-issue`
 
