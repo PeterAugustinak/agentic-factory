@@ -42,11 +42,16 @@ There is intentionally **no `github-*` or I/O agent** — GitHub and git interac
 
 ### Orchestration model
 
-The topology is dictated by a hard Claude Code constraint: **subagents cannot spawn other subagents.** Nested delegation must be driven from the main conversation, and skills run in the main conversation context, not in an isolated subagent.(2)
+The orchestrator is always the **main conversation (the skill)**, never a subagent — because two things PAF depends on only work in the main thread:
+
+- **Human interception.** PAF is human-gated, and the human-gate tools — `AskUserQuestion` and plan mode — are **main-thread-only**; they are unavailable to subagents even when listed in `tools`.(2) A subagent orchestrator could not pause for a developer decision.
+- **External I/O and cost accounting.** The skill owns all `gh`/git I/O and computes the run's cost from the transcript — main-thread concerns (see below and [Section 5](#5-loop-cap-escalation-and-cost-reporting)).
+
+Claude Code *does* now allow a subagent to spawn its own subagents, up to a fixed depth of five (as of v2.1.172).(2) PAF deliberately does **not** use nested delegation: orchestration stays **flat and in the main thread**. Nested agent hierarchies hide intermediate work from the developer, from the human gates, and from cost attribution — the opposite of PAF's human-control design. Agents are therefore single-responsibility specialists that do not orchestrate other agents — by choice, not by limitation.
 
 Therefore:
 
-- **The skill runs in the main thread.** The main thread is the orchestrator and is the only context that can spawn agents.
+- **The skill runs in the main thread.** The main thread is the orchestrator; keeping orchestration here is what makes the human gates, external I/O, and cost accounting possible.
 - **Agents are chained from the main thread.** Each agent completes its task and returns results to the main thread, which then passes relevant context into the next agent's delegation prompt.(2)
 - **Each agent is invoked explicitly by name** (via the Agent tool / `@agent-<name>`), never by autonomous natural-language delegation. Explicit invocation guarantees the named subagent runs; natural-language naming only lets Claude *decide whether* to delegate.(3)
 - **Sequencing is prompt-based, not harness-enforced.** Claude Code skills are prompt-based — there is no harness-level deterministic state machine. The fixed sequence is enforced by explicit, imperative skill instructions ("Step N: invoke the `<exact-agent>` agent with this context"), executed by the main-thread model. Skills must therefore be written imperatively, not suggestively.
@@ -385,7 +390,7 @@ This is why skills do not manually inject CLAUDE.md sections into agents — it 
 All architecture decisions are grounded in the official Claude Code documentation. Inline citations above use these numbers:
 
 1. Subagents — Choose a model. https://code.claude.com/docs/en/sub-agents#choose-a-model
-2. Subagents — Chain subagents / Choose between subagents and main conversation / What loads at startup. https://code.claude.com/docs/en/sub-agents#chain-subagents
+2. Subagents — Chain subagents / What loads at startup / Available tools (`AskUserQuestion` is main-thread-only, unavailable to subagents) / Spawn nested subagents (a subagent may spawn subagents up to depth 5, as of v2.1.172). https://code.claude.com/docs/en/sub-agents#chain-subagents
 3. Subagents — Invoke subagents explicitly. https://code.claude.com/docs/en/sub-agents#invoke-subagents-explicitly
 4. Subagents — Control subagent capabilities. https://code.claude.com/docs/en/sub-agents#control-subagent-capabilities
 5. Subagents — Supported frontmatter fields (`name` is received by hooks as `agent_type`). https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields

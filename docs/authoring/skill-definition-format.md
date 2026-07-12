@@ -34,7 +34,7 @@ PAF skills are **explicit-invocation only** — the three-skill split *is* the h
 
 ### Fields deliberately not used
 
-- **`context: fork` (and `agent`)** — **must not be used.** A forked skill runs as a *subagent*, and subagents cannot spawn other subagents (`architecture.md` §2). A PAF skill is the orchestrator: it must run in the **main thread** so it can invoke agents. Forking would make orchestration impossible. PAF skills therefore always run inline (default context).(5)
+- **`context: fork` (and `agent`)** — **must not be used.** A forked skill runs as a *subagent*. Even though a subagent can now spawn its own subagents (Claude Code v2.1.172), it still **cannot run the human-gate tools** — `AskUserQuestion` and plan mode are main-thread-only.(5) A PAF skill is a human-gated orchestrator, so it must run **inline in the main thread**; forking would make the developer gates impossible. PAF skills therefore always run inline (default context).
 - **`when_to_use`, `paths`** — auto-invocation aids; irrelevant because PAF skills are never auto-invoked.
 - **`model`, `effort`, `hooks`, `disallowed-tools`** — left at defaults; the main thread is intentionally unrestricted (tool enforcement targets agents via the central hook, `architecture.md` §3), and per-skill model/effort tuning is not needed.
 
@@ -89,7 +89,7 @@ Two native mechanisms are available; use them deliberately:
 2. Skills — Frontmatter reference (`name`, `description`, `argument-hint`, `arguments`; 1,536-char listing cap). https://code.claude.com/docs/en/skills#frontmatter-reference
 3. Skills — Control who invokes a skill (`disable-model-invocation`). https://code.claude.com/docs/en/skills#control-who-invokes-a-skill
 4. Anthropic Skills repository — SKILL.md authoring conventions (case-sensitive filename, kebab-case, no README in skill folder). https://github.com/anthropics/skills
-5. Skills — Run skills in a subagent (`context: fork` runs as a subagent). https://code.claude.com/docs/en/skills#run-skills-in-a-subagent
+5. Subagents — Available tools (`AskUserQuestion` and other UI/session tools are main-thread-only, unavailable to subagents) and Spawn nested subagents (a subagent may spawn subagents up to depth 5, as of v2.1.172): https://code.claude.com/docs/en/sub-agents#available-tools — with Skills — Run skills in a subagent (`context: fork` runs as a subagent): https://code.claude.com/docs/en/skills#run-skills-in-a-subagent
 6. Skills — Pre-approve tools for a skill (`allowed-tools` grants permission, does not restrict). https://code.claude.com/docs/en/skills#pre-approve-tools-for-a-skill
 7. Skills — Skill content lifecycle / keep the body concise / keep SKILL.md under 500 lines. https://code.claude.com/docs/en/skills#skill-content-lifecycle
 8. Skills — Pass arguments to skills (`$ARGUMENTS`, `$N`, named `arguments`). https://code.claude.com/docs/en/skills#pass-arguments-to-skills
