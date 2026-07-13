@@ -100,65 +100,7 @@ Implemented — see [`docs/skills/create-issue.md`](skills/create-issue.md) for 
 
 #### `implement-issue`
 
-```text
-/implement-issue <issue>
-     |
-     v
-+----------------------------------------------+
-| [skill] read linked issue via gh             |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] issue-validator                      |
-|   verify approach vs docs -> findings        |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [skill] post findings comment on issue       |
-+----------------------------------------------+
-     |
-     |--- severity: error (blocker) --> STOP: developer updates issue & re-runs
-     |
-     v  (severity: warning / minor only -> passed to planner)
-+----------------------------------------------+
-| [agent] code-explorer                        |
-|   explore relevant codebase                  |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] implementation-planner               | <-+
-|   produce plan (incl. minor findings)        |   |
-+----------------------------------------------+   |
-     |                                             |
-     v                                             |
-+----------------------------------------------+   |
-| [human gate]                                 |   |
-|   developer reviews + confirms plan          |   |
-+----------------------------------------------+   |
-     +--- changes requested -----------------------+
-     |
-     v  (approved)
-+----------------------------------------------+
-| [agent] full-stack-dev                       | <-+
-|   implement the plan                         |   |
-+----------------------------------------------+   |
-     |                                             |
-     v                                             |
-+----------------------------------------------+   |
-| [agent] implementation-verifier              |   |
-|   run tests + linter                         |   |
-+----------------------------------------------+   |
-     +--- fail, retries < 2 -----------------------+
-     |--- fail, retries exhausted -> STOP: escalate failure report
-     |
-     v  (pass)
-+----------------------------------------------+
-| [skill] report cost + wall-clock             |
-+----------------------------------------------+
-```
+Implemented — see [`docs/skills/implement-issue.md`](skills/implement-issue.md) for the current orchestration diagram and explanation.
 
 #### `check-out`
 
