@@ -10,9 +10,9 @@ Every choice is grounded in the official Claude Code skills documentation, the A
 
 - One directory per skill, with a required `SKILL.md` entrypoint: `skills/<skill-name>/SKILL.md`.(1)
 - `SKILL.md` is **case-sensitive** and must be spelled exactly; `skill.md` will not load.(4)
-- The directory name is **kebab-case** and becomes the slash command: `skills/create-issue/` → `/create-issue`.(1)
+- The directory name is **kebab-case**. A skill is invocable **both** by its directory name (`skills/create-issue/` → `/create-issue`) **and** by its frontmatter `name` — verified empirically; the docs understate the `name` field. PAF uses the `name` field to namespace the command (see Frontmatter).
 - Do **not** place a `README.md` inside a skill folder. Human-facing documentation lives in `docs/` (see [Progressive disclosure](#progressive-disclosure)).(4)
-- The installer places skills under the PAF namespace in `~/.claude/skills/` (see `skills/README.md`). The command-name-from-directory rule and any namespace prefix behaviour is an installer (M6) concern; the source files here are authored as `skills/<name>/SKILL.md`.
+- **Personal skills are discovered only by a top-level directory** under `~/.claude/skills/` — a `paf/` *subfolder* is **not** discovered (verified empirically). So the installer places each skill flat at `~/.claude/skills/<name>/`, not under a namespace directory. The `paf:` command prefix comes from the frontmatter `name`, not the path. (`skills/_shared/` installs alongside them so `${CLAUDE_SKILL_DIR}/../_shared/` resolves; it has no `SKILL.md`, so it is not itself a skill.)
 
 ---
 
@@ -22,7 +22,7 @@ A PAF skill's frontmatter uses these fields, in this order:
 
 | Field | Use in PAF |
 |---|---|
-| `name` | The skill's display name in listings; kept identical to the directory/command name for clarity.(2) |
+| `name` | Set to the **`paf:`-prefixed** command, quoted because it contains a colon — e.g. `name: "paf:create-issue"`. This is both the display name in the skill listing and an invocation command, so the skill appears and runs as `/paf:create-issue`. (It is also invocable by its bare directory name, `/create-issue`; the `paf:`-prefixed name is the canonical, listed command.)(2) |
 | `description` | One or two sentences: **what** the skill does and **when** to use it. The effective `description` (+ `when_to_use`) is truncated at 1,536 characters in the skill listing, so lead with the key use case.(2) |
 | `disable-model-invocation` | **Always `true` for PAF skills.** This is the native mechanism that makes a skill **explicit-invocation only** — only the developer can invoke it via `/name`; Claude never auto-triggers it.(3) |
 | `argument-hint` | For skills that take an argument, shown during autocomplete. **Always quote it** — e.g. `argument-hint: "[issue-number]"`. Unquoted `[issue-number]` is a YAML *flow sequence* (a list), not a string; Claude Code's lenient parser accepts it, but a strict schema validator rejects it as `invalid type: sequence, expected a string`.(2) |

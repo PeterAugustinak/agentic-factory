@@ -4,14 +4,14 @@ Human-facing documentation for the `implement-issue` skill. The operational defi
 
 ## Purpose
 
-Take an approved GitHub issue from *validated approach* to *implemented, verified code on a feature branch*. `implement-issue` is the **second** skill — it runs after `/create-issue` and before `/check-out`. Its output is verified, **uncommitted** work on a feature branch that the developer reviews, then finishes with `/check-out`.
+Take an approved GitHub issue from *validated approach* to *implemented, verified code on a feature branch*. `implement-issue` is the **second** skill — it runs after `/paf:create-issue` and before `/paf:check-out`. Its output is verified, **uncommitted** work on a feature branch that the developer reviews, then finishes with `/paf:check-out`.
 
 ## When and how to invoke
 
 Once an issue exists and its approach is sound enough to build:
 
 ```
-/implement-issue <issue-number>
+/paf:implement-issue <issue-number>
 ```
 
 ## How it works
@@ -26,13 +26,13 @@ Once an issue exists and its approach is sound enough to build:
 6. **Branch** (skill) — create `feature/<issue>-<short-description>` from the base branch.
 7. **Implement** — `full-stack-dev` executes the approved plan on the branch.
 8. **Verify** — `implementation-verifier` runs the project's tests + linter scoped to the changed area. On failure the builder is re-invoked with the failure output, up to a cap; if it still fails, the run stops and escalates.
-9. **Hand off** (skill) — leave the verified changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no PR — that's `/check-out`).
+9. **Hand off** (skill) — leave the verified changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no PR — that's `/paf:check-out`).
 10. **Cost + time** (skill) — append the run to the per-feature cost ledger.
 
 ## Orchestration
 
 ```text
-/implement-issue <issue-number>
+/paf:implement-issue <issue-number>
      |
      v
 +----------------------------------------------+
@@ -118,24 +118,24 @@ Agents never call `gh`, change git state, or orchestrate each other — the skil
 
 - **Plan-review gate** — the mandatory in-skill gate; the developer approves the plan (or loops it back) before any code is written.
 - **Validator blocker** — an `error` finding halts the run and returns control to the developer at the issue.
-- **Skill boundary** — after the skill finishes, the developer reviews the branch's uncommitted changes (interception 2 in `architecture.md` §2) and then runs `/check-out`.
+- **Skill boundary** — after the skill finishes, the developer reviews the branch's uncommitted changes (interception 2 in `architecture.md` §2) and then runs `/paf:check-out`.
 
 ## Loop caps and escalation
 
 Per `architecture.md` §5:
 - **Retry cap.** On verification failure, `full-stack-dev` is re-invoked with the failure output, at most **twice** (3 runs total). The builder never validates its own fix — `implementation-verifier` re-runs each time.
 - **STOP conditions** (each halts and escalates to the developer, who fixes the cause and re-runs): a validator blocker; verification still failing after the retry cap; malformed/missing agent output.
-- **Scoped verification.** `implementation-verifier` runs a **targeted subset** of the suite (the changed area), keeping the retry loop fast; the **full** suite runs later at `/check-out`.
+- **Scoped verification.** `implementation-verifier` runs a **targeted subset** of the suite (the changed area), keeping the retry loop fast; the **full** suite runs later at `/paf:check-out`.
 
 ## Git handling
 
 The skill owns git state (`architecture.md` §2). It creates the `feature/<issue>-<short-description>` branch from the base branch (`CLAUDE.md`) and implements on it, but **leaves the changes uncommitted**. This is deliberate: uncommitted working-tree changes are the clearest review surface — the developer sees every added/modified file highlighted in the IDE, with per-file diffs, instead of having to diff `HEAD` against the base. Because the project uses **squash merge**, deferring the commit costs nothing in history.
 
-`/check-out` then commits the implementation plus any approved review fixes, pushes the branch, and opens the PR. The intended flow is tight — implement → review → check-out — so the uncommitted window is short.
+`/paf:check-out` then commits the implementation plus any approved review fixes, pushes the branch, and opens the PR. The intended flow is tight — implement → review → check-out — so the uncommitted window is short.
 
 ## Cost and time reporting
 
-The final step runs [`skills/_shared/paf-report-cost.py`](../../skills/_shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/create-issue` wrote to and `/check-out` will total for the PR. Cost is converted to **EUR**; wall-clock is derived from the transcript. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
+The final step runs [`skills/_shared/paf-report-cost.py`](../../skills/_shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the PR. Cost is converted to **EUR**; wall-clock is derived from the transcript. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
 
 ## Related files
 

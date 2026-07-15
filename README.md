@@ -10,11 +10,17 @@ The factory accelerates and structures the work; it does not replace human judge
 
 ## Getting started
 
-Install PAF on any machine with a single command:
+Install PAF on any machine with a single command — no cloning required:
 
 ```bash
-curl -sSL <install-url> | bash
+curl -sSL https://raw.githubusercontent.com/PeterAugustinak/agentic-factory/develop/scripts/install.sh | bash
 ```
+
+This installs the skills, agents, and hook into your Claude Code config (`~/.claude/`) and wires the hook into `settings.json`. Re-running upgrades in place. Requires `git` and `python3`. After install, start a new Claude Code session and invoke:
+
+- `/paf:create-issue` — turn a discussed idea into a structured GitHub issue
+- `/paf:implement-issue` — validate, plan, implement, and verify against an approved issue
+- `/paf:check-out` — review, fix, and open a PR for completed work
 
 ## Repository layout
 

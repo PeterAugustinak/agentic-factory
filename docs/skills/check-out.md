@@ -4,14 +4,14 @@ Human-facing documentation for the `check-out` skill. The operational definition
 
 ## Purpose
 
-Finish a feature: deep-review the implemented change, apply the fixes the developer approves, run the final spec and full pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost and elapsed time in the PR description. `check-out` is the **third and final** skill, run after the developer has reviewed `/implement-issue`'s output on the branch.
+Finish a feature: deep-review the implemented change, apply the fixes the developer approves, run the final spec and full pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost and elapsed time in the PR description. `check-out` is the **third and final** skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
 
 ## When and how to invoke
 
 On the feature branch, once you've reviewed the implemented change:
 
 ```
-/check-out [optional issue-number]
+/paf:check-out [optional issue-number]
 ```
 
 The issue number is normally derived from the branch name (`feature/<issue>-<…>`); pass it only to override.
@@ -33,7 +33,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 ## Orchestration
 
 ```text
-/check-out
+/paf:check-out
      |
      v
 +----------------------------------------------+
@@ -122,7 +122,7 @@ Per `architecture.md` §5, `check-out` has **no auto-retry** — it is the final
 
 ## Git handling and clean-tree robustness
 
-The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (implementation + approved fixes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from `CLAUDE.md`. With squash merge, the number of commits on the branch does not matter.
+The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (implementation + approved fixes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from `CLAUDE.md`. With squash merge, the number of commits on the branch does not matter.
 
 ## Cost and time in the PR
 

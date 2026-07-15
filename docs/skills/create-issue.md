@@ -4,14 +4,14 @@ Human-facing documentation for the `create-issue` skill. The operational definit
 
 ## Purpose
 
-Turn a feature idea into a well-structured GitHub issue, reviewed by the developer, and post it. `create-issue` is the **first** skill in the factory — its output is the approved issue that `/implement-issue` later builds.
+Turn a feature idea into a well-structured GitHub issue, reviewed by the developer, and post it. `create-issue` is the **first** skill in the factory — its output is the approved issue that `/paf:implement-issue` later builds.
 
 ## When and how to invoke
 
 Discuss the idea first in the conversation (freely, or with `/grill-me` until it is clear), then run:
 
 ```
-/create-issue [optional short idea]
+/paf:create-issue [optional short idea]
 ```
 
 The skill runs **inline in the current conversation**, so the prior discussion is already its input — you do not pass the whole idea as an argument. The optional argument is just a seed.
@@ -32,7 +32,7 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 (idea discussed in the conversation — freely or via /grill-me)
      |
      v
-/create-issue [optional seed]
+/paf:create-issue [optional seed]
      |
      v
 +----------------------------------------------+
@@ -69,13 +69,13 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 
 - **`issue-writer`** (Sonnet, read-only) — the only agent. It synthesises the discussed idea into the structured issue draft and returns it via the [output contract](../../skills/_shared/output-contract.md); the skill parses that, gates it on the developer, and posts it.
 
-No other agents run in this skill: validation, planning, and implementation belong to `/implement-issue`.
+No other agents run in this skill: validation, planning, and implementation belong to `/paf:implement-issue`.
 
 ## Human interception points
 
 - **Clarity gate** (step 1) — an in-skill pause when the idea is underspecified.
 - **Draft review** (step 3) — the mandatory gate before anything is posted; the developer approves or requests changes.
-- **Skill boundary** — after the issue is posted, the developer decides when to run `/implement-issue`. The gap between skills is itself a review point (`architecture.md` §2).
+- **Skill boundary** — after the issue is posted, the developer decides when to run `/paf:implement-issue`. The gap between skills is itself a review point (`architecture.md` §2).
 
 ## Cost and time reporting
 
@@ -83,7 +83,7 @@ The final step runs [`skills/_shared/paf-report-cost.py`](../../skills/_shared/p
 
 - prices the run from the session transcript (main-thread + any agent usage) using [`pricing.json`](../../skills/_shared/pricing.json), converts the total to **EUR**, and derives wall-clock from the transcript's first→last timestamps — so the idea-discussion time and tokens are included;
 - appends an entry to the per-feature ledger at `~/.claude/paf/costs/<project>/<issue>.jsonl` (user scope — no footprint in the target repository);
-- keyed by the **issue number**, so `/implement-issue` and `/check-out` add to the same ledger and `/check-out` reports the **total** feature cost in the PR.
+- keyed by the **issue number**, so `/paf:implement-issue` and `/paf:check-out` add to the same ledger and `/paf:check-out` reports the **total** feature cost in the PR.
 
 This rests on one assumption: the create-issue-phase session is focused on that one feature (discuss it, then create the issue). Working on several unrelated features in a single session before creating an issue would blend their cost into this run.
 

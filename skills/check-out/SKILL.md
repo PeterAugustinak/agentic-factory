@@ -1,6 +1,6 @@
 ---
-name: check-out
-description: Review, fix, validate, and open a PR for developer-validated work on the current feature branch — with the whole feature's cost in the PR. Invoke with /check-out after reviewing /implement-issue's output.
+name: "paf:check-out"
+description: Review, fix, validate, and open a PR for developer-validated work on the current feature branch — with the whole feature's cost in the PR. Invoke with /paf:check-out after reviewing /paf:implement-issue's output.
 disable-model-invocation: true
 argument-hint: "[optional issue-number]"
 allowed-tools: Read, Bash(gh pr create *), Bash(gh issue view *), Bash(git *), Bash(python3 *)
@@ -8,7 +8,7 @@ allowed-tools: Read, Bash(gh pr create *), Bash(gh issue view *), Bash(git *), B
 
 # check-out
 
-Finish a feature: run the deep reviews, apply the fixes the developer approves, do the final spec and pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost and time in the PR description. This is the third and final skill, run after the developer has reviewed `/implement-issue`'s output on the branch.
+Finish a feature: run the deep reviews, apply the fixes the developer approves, do the final spec and pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost and time in the PR description. This is the third and final skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
 
 You are the orchestrator running in the main thread. You chain the review and finalisation agents, own all git/GitHub I/O, run the human fix-selection gate, and apply the STOP-and-escalate policy (this skill has **no auto-retry** — any failure halts and returns control to the developer).
 
@@ -16,7 +16,7 @@ You are the orchestrator running in the main thread. You chain the review and fi
 
 - Operates on the **current feature branch**. Derive the issue number from the branch name (`feature/<issue-number>-<...>`); `$ARGUMENTS` overrides it. Read the issue with `gh` — its acceptance criteria are the spec `quality-assurer` checks against.
 - Project context from `CLAUDE.md`: the repo, the PR base branch (e.g. `develop`), the full pre-merge validation command, and the merge strategy.
-- **Robust to either state.** `/implement-issue` leaves the work uncommitted, but the developer may have committed it during review. Compute the change to review as the branch's full diff against the base (`git diff <base>`), which covers committed **and** uncommitted changes, so this skill works either way.
+- **Robust to either state.** `/paf:implement-issue` leaves the work uncommitted, but the developer may have committed it during review. Compute the change to review as the branch's full diff against the base (`git diff <base>`), which covers committed **and** uncommitted changes, so this skill works either way.
 
 ## Parsing agent output
 
@@ -25,7 +25,7 @@ After **every** agent step, parse the agent's final message with the shared rule
 ## Steps
 
 **1. Confirm and gather (skill).**
-Confirm with the developer that they have reviewed `/implement-issue`'s implementation and are ready to finalise. Determine the issue number (branch name or `$ARGUMENTS`), read the issue for its acceptance criteria, and compute the change to review (`git diff <base>` per above).
+Confirm with the developer that they have reviewed `/paf:implement-issue`'s implementation and are ready to finalise. Determine the issue number (branch name or `$ARGUMENTS`), read the issue for its acceptance criteria, and compute the change to review (`git diff <base>` per above).
 
 **2. Review — in parallel (agents).**
 Invoke **all three** review agents concurrently, each passed the change and the issue's requirement:
@@ -45,7 +45,7 @@ Invoke `full-stack-dev` with only the developer-selected findings. It edits file
 
 **5. Verify the fixes (agent).**
 Invoke `implementation-verifier` (scoped to the affected area, per `CLAUDE.md`).
-- **`status: failure`** → **STOP** and escalate (there is no retry in `check-out`). The developer fixes the cause and re-runs `/check-out`.
+- **`status: failure`** → **STOP** and escalate (there is no retry in `check-out`). The developer fixes the cause and re-runs `/paf:check-out`.
 - **`status: success`** → continue.
 
 **6. Final spec check (agent).**
@@ -81,7 +81,7 @@ Then open the PR with `gh pr create` against the base branch from `CLAUDE.md`, *
 
 ## Escalation
 
-`check-out` is the final, human-controlled finalisation stage, so it has **no auto-retry**. Each of these **stops the run** and returns control to the developer, who fixes the cause and re-runs `/check-out`:
+`check-out` is the final, human-controlled finalisation stage, so it has **no auto-retry**. Each of these **stops the run** and returns control to the developer, who fixes the cause and re-runs `/paf:check-out`:
 - `implementation-verifier` fails after fixes (step 5);
 - `quality-assurer` finds unmet criteria (step 6);
 - pre-merge validation fails (step 7);

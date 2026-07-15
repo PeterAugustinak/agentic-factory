@@ -17,9 +17,9 @@ PAF provides three core slash commands. Full skill documentation lives in the fa
 
 | Command | When to use |
 |---------|-------------|
-| `/create-issue` | Starting a new feature — discuss the idea and produce a structured GitHub issue |
-| `/implement-issue` | Beginning implementation — validate, plan, implement, and verify against an approved issue |
-| `/check-out` | Finishing work — review, fix, and post a PR for completed, developer-validated work |
+| `/paf:create-issue` | Starting a new feature — discuss the idea and produce a structured GitHub issue |
+| `/paf:implement-issue` | Beginning implementation — validate, plan, implement, and verify against an approved issue |
+| `/paf:check-out` | Finishing work — review, fix, and post a PR for completed, developer-validated work |
 
 ## Project conventions
 
@@ -47,7 +47,7 @@ PAF provides three core slash commands. Full skill documentation lives in the fa
 # Apply migrations (if applicable)
 <command>
 
-# Full pre-merge validation (the whole test + lint suite; run once by /check-out before opening the PR)
+# Full pre-merge validation (the whole test + lint suite; run once by /paf:check-out before opening the PR)
 # May be a single script (recommended, e.g. ./scripts/pre-merge.sh) or the full test + lint commands together.
 <command>
 ```

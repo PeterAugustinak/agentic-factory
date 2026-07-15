@@ -4,7 +4,7 @@ Skill files for PAF. Each skill is a directory containing a `SKILL.md` entrypoin
 
 ## What belongs here
 
-One directory per skill. The directory name becomes the slash command (e.g. `skills/create-issue/` → `/create-issue`).
+One directory per skill, plus a shared `_shared/` directory (no `SKILL.md`) for cross-skill helpers. Each skill's command comes from its frontmatter `name`, which PAF sets to a `paf:`-prefixed value (e.g. `name: "paf:create-issue"` → `/paf:create-issue`).
 
 ## File naming and structure
 
@@ -18,12 +18,12 @@ Skill names are lowercase, hyphenated. Examples: `create-issue`, `implement-issu
 
 ## Install target
 
-The installer places skill directories at `~/.claude/skills/paf/<skill-name>/`.
+The installer places each skill **flat** at `~/.claude/skills/<skill-name>/`, and `_shared/` at `~/.claude/skills/_shared/`. Personal skills are discovered only by a top-level directory under `~/.claude/skills/` — a `paf/` subfolder is not discovered — so the `paf:` prefix comes from each skill's frontmatter `name`, not the path.
 
 ## Skills in this factory
 
 | Skill | Command | Purpose |
 |-------|---------|---------|
-| `create-issue` | `/create-issue` | Produce a structured GitHub issue from a feature idea |
-| `implement-issue` | `/implement-issue` | Plan and implement a feature from an approved issue |
-| `check-out` | `/check-out` | Review, fix, and post a PR for completed work |
+| `create-issue` | `/paf:create-issue` | Produce a structured GitHub issue from a feature idea |
+| `implement-issue` | `/paf:implement-issue` | Plan and implement a feature from an approved issue |
+| `check-out` | `/paf:check-out` | Review, fix, and post a PR for completed work |

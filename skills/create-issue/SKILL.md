@@ -1,6 +1,6 @@
 ---
-name: create-issue
-description: Turn a discussed feature idea into a structured GitHub issue and post it after developer approval. Invoke with /create-issue when you are ready to capture a feature as an issue.
+name: "paf:create-issue"
+description: Turn a discussed feature idea into a structured GitHub issue and post it after developer approval. Invoke with /paf:create-issue when you are ready to capture a feature as an issue.
 disable-model-invocation: true
 argument-hint: "[optional short idea]"
 allowed-tools: Read, Bash(gh issue create *), Bash(gh issue view *), Bash(gh label list *), Bash(python3 *)
@@ -8,7 +8,7 @@ allowed-tools: Read, Bash(gh issue create *), Bash(gh issue view *), Bash(gh lab
 
 # create-issue
 
-Turn a feature idea — usually one you have just been discussing — into a structured GitHub issue, reviewed by the developer, and post it. This is the first skill in the factory: its output is an approved issue that `/implement-issue` later builds.
+Turn a feature idea — usually one you have just been discussing — into a structured GitHub issue, reviewed by the developer, and post it. This is the first skill in the factory: its output is an approved issue that `/paf:implement-issue` later builds.
 
 You are the orchestrator running in the main thread. You invoke the `issue-writer` agent for the drafting (cognitive work) and own all GitHub I/O yourself. Follow the steps in order; do not skip the human gate.
 
