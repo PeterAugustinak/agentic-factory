@@ -20,10 +20,10 @@ Invoke after install: `/skill-name`
 
 ## Adding a hook
 
-1. Create `hooks/<EventName>-<purpose>.sh`
-2. Make it executable: `chmod +x hooks/<EventName>-<purpose>.sh`
-3. The script receives tool call context via environment variables — see Claude Code hook documentation
-4. Update `docs/architecture.md` Section 3 if the hook changes a tool access scope
+1. Create `hooks/<EventName>-<purpose>.{sh,py}` with an appropriate shebang
+2. Make it executable: `chmod +x hooks/<EventName>-<purpose>.{sh,py}`
+3. The script receives the hook payload as **JSON on stdin** (`tool_name`, `tool_input`, `agent_type`, `cwd`, ...) and `CLAUDE_PROJECT_DIR` in its environment. To block a `PreToolUse` call, print a `permissionDecision: "deny"` object (`hookSpecificOutput`) on stdout, or exit 2. See the Claude Code hook documentation.
+4. Update `docs/architecture.md` §3 if the hook changes a tool access scope, and document the hook in `hooks/README.md`
 
 ## PR process
 

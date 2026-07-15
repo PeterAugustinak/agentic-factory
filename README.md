@@ -22,7 +22,7 @@ curl -sSL <install-url> | bash
 |-----------|----------|
 | `agents/` | Agent definition files (one per agent) |
 | `skills/` | Skill files (one directory per skill) |
-| `hooks/` | Hook shell scripts for tool restriction enforcement |
+| `hooks/` | Hook scripts for tool-restriction enforcement |
 | `scripts/` | Installer and utility scripts |
 | `docs/` | Architecture, contributing guidelines, and project templates |
 

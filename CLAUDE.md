@@ -17,7 +17,7 @@ If something is genuinely undocumented, say so and verify it empirically before 
 agentic-factory/
 ├── agents/         # Agent definition files (.md), one per agent
 ├── skills/         # Skill directories, one per skill (skills/<name>/SKILL.md)
-├── hooks/          # Hook shell scripts (PreToolUse, PostToolUse, etc.)
+├── hooks/          # Hook scripts (PreToolUse enforcement, etc.)
 ├── scripts/        # Installer and utility scripts (not installed)
 ├── docs/
 │   ├── architecture.md       # Single source of truth for all design decisions
