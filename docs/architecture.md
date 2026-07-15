@@ -14,7 +14,7 @@ Every decision here has been verified against official Claude Code documentation
 
 ## 1. Agents
 
-A PAF agent is a specialist subagent owning one cognitive responsibility, with a tool scope (§3) and a model suited to its task. Agents are caller-agnostic (§2) and all follow the output contract (§4). This section defines *how an agent is shaped*, not which agents exist: the agents are self-describing in `agents/<name>.md`, and how to author one is in [`agent-definition-format.md`](agent-definition-format.md). The architecture keeps no roster — read `agents/` for the current set.
+A PAF agent is a specialist subagent owning one cognitive responsibility, with a tool scope (§3) and a model suited to its task. Agents are caller-agnostic (§2) and all follow the output contract (§4). This section defines *how an agent is shaped*, not which agents exist: the agents are self-describing in `agents/<name>.md`, and how to author one is in [`agent-definition-format.md`](authoring/agent-definition-format.md). The architecture keeps no roster — read `agents/` for the current set.
 
 ### Model selection
 
@@ -42,11 +42,16 @@ There is intentionally **no `github-*` or I/O agent** — GitHub and git interac
 
 ### Orchestration model
 
-The topology is dictated by a hard Claude Code constraint: **subagents cannot spawn other subagents.** Nested delegation must be driven from the main conversation, and skills run in the main conversation context, not in an isolated subagent.(2)
+The orchestrator is always the **main conversation (the skill)**, never a subagent — because two things PAF depends on only work in the main thread:
+
+- **Human interception.** PAF is human-gated, and the human-gate tools — `AskUserQuestion` and plan mode — are **main-thread-only**; they are unavailable to subagents even when listed in `tools`.(2) A subagent orchestrator could not pause for a developer decision.
+- **External I/O and cost accounting.** The skill owns all `gh`/git I/O and computes the run's cost from the transcript — main-thread concerns (see below and [Section 5](#5-loop-cap-escalation-and-cost-reporting)).
+
+Claude Code *does* now allow a subagent to spawn its own subagents, up to a fixed depth of five (as of v2.1.172).(2) PAF deliberately does **not** use nested delegation: orchestration stays **flat and in the main thread**. Nested agent hierarchies hide intermediate work from the developer, from the human gates, and from cost attribution — the opposite of PAF's human-control design. Agents are therefore single-responsibility specialists that do not orchestrate other agents — by choice, not by limitation.
 
 Therefore:
 
-- **The skill runs in the main thread.** The main thread is the orchestrator and is the only context that can spawn agents.
+- **The skill runs in the main thread.** The main thread is the orchestrator; keeping orchestration here is what makes the human gates, external I/O, and cost accounting possible.
 - **Agents are chained from the main thread.** Each agent completes its task and returns results to the main thread, which then passes relevant context into the next agent's delegation prompt.(2)
 - **Each agent is invoked explicitly by name** (via the Agent tool / `@agent-<name>`), never by autonomous natural-language delegation. Explicit invocation guarantees the named subagent runs; natural-language naming only lets Claude *decide whether* to delegate.(3)
 - **Sequencing is prompt-based, not harness-enforced.** Claude Code skills are prompt-based — there is no harness-level deterministic state machine. The fixed sequence is enforced by explicit, imperative skill instructions ("Step N: invoke the `<exact-agent>` agent with this context"), executed by the main-thread model. Skills must therefore be written imperatively, not suggestively.
@@ -87,162 +92,19 @@ How many in-skill interceptions each skill has, and exactly where, is an impleme
 
 Each diagram reads top → bottom; a right-side channel (`<-+`) routes a branch back to an earlier step or forward past skipped steps.
 
+Once a skill is implemented, its detailed, up-to-date flow lives in its own document under `docs/<skill>.md`; the maps below are the design intent for skills not yet built and are relocated to the per-skill doc as each is built.
+
 #### `create-issue`
 
-```text
-/create-issue
-     |
-     v
-+----------------------------------------------+
-| [agent] issue-writer                         | <-+
-|   draft structured GitHub issue              |   |
-+----------------------------------------------+   |
-     |                                             |
-     v                                             |
-+----------------------------------------------+   |
-| [human gate]                                 |   |
-|   developer reviews draft                    |   |
-+----------------------------------------------+   |
-     +--- changes requested -----------------------+
-     |
-     v  (approved)
-+----------------------------------------------+
-| [skill] post issue via gh; print URL         |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [skill] report cost + wall-clock             |
-+----------------------------------------------+
-```
+Implemented — see [`docs/skills/create-issue.md`](skills/create-issue.md) for the current orchestration diagram and explanation.
 
 #### `implement-issue`
 
-```text
-/implement-issue <issue>
-     |
-     v
-+----------------------------------------------+
-| [skill] read linked issue via gh             |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] issue-validator                      |
-|   verify approach vs docs -> findings        |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [skill] post findings comment on issue       |
-+----------------------------------------------+
-     |
-     |--- severity: error (blocker) --> STOP: developer updates issue & re-runs
-     |
-     v  (severity: warning / minor only -> passed to planner)
-+----------------------------------------------+
-| [agent] code-explorer                        |
-|   explore relevant codebase                  |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] implementation-planner               | <-+
-|   produce plan (incl. minor findings)        |   |
-+----------------------------------------------+   |
-     |                                             |
-     v                                             |
-+----------------------------------------------+   |
-| [human gate]                                 |   |
-|   developer reviews + confirms plan          |   |
-+----------------------------------------------+   |
-     +--- changes requested -----------------------+
-     |
-     v  (approved)
-+----------------------------------------------+
-| [agent] full-stack-dev                       | <-+
-|   implement the plan                         |   |
-+----------------------------------------------+   |
-     |                                             |
-     v                                             |
-+----------------------------------------------+   |
-| [agent] implementation-verifier              |   |
-|   run tests + linter                         |   |
-+----------------------------------------------+   |
-     +--- fail, retries < 2 -----------------------+
-     |--- fail, retries exhausted -> STOP: escalate failure report
-     |
-     v  (pass)
-+----------------------------------------------+
-| [skill] report cost + wall-clock             |
-+----------------------------------------------+
-```
+Implemented — see [`docs/skills/implement-issue.md`](skills/implement-issue.md) for the current orchestration diagram and explanation.
 
 #### `check-out`
 
-```text
-/check-out
-     |
-     v
-+----------------------------------------------+
-| [skill] confirm developer validated impl     |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] review  (run in parallel):           |
-|   - senior-engineer-reviewer (functional)    |
-|   - code-simplifier (DRY / complexity)       |
-|   - security-engineer (security)             |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [human gate]                                 |
-|   developer selects findings to fix          |
-|   (AskUserQuestion)                          |
-+----------------------------------------------+
-     +--- no findings to fix ----------------------+
-     |                                             |
-     v  (fixes approved)                           |
-+----------------------------------------------+   |
-| [agent] full-stack-dev                       |   |
-|   apply approved fixes                       |   |
-+----------------------------------------------+   |
-     |                                             |
-     v                                             |
-+----------------------------------------------+   |
-| [agent] implementation-verifier              |   |
-|   run tests + linter                         |   |
-+----------------------------------------------+   |
-     |                                             |
-     |--- fail -> STOP                             |
-     |                                             |
-     v  (pass)                                     |
-+----------------------------------------------+   |
-| [agent] quality-assurer                      | <-+
-|   final spec check                           |
-+----------------------------------------------+
-     |
-     |--- criteria unmet -> STOP
-     |
-     v  (criteria met)
-+----------------------------------------------+
-| [skill] run pre-merge validation (CLAUDE.md) |
-+----------------------------------------------+
-     |
-     |--- fail -> STOP
-     |
-     v  (pass)
-+----------------------------------------------+
-| [skill] post PR via gh; print URL            |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [skill] report cost + wall-clock             |
-+----------------------------------------------+
-```
+Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the current orchestration diagram and explanation.
 
 ---
 
@@ -386,7 +248,20 @@ The skill never proceeds on a partial or guessed parse.
 Every skill run ends with a single report of **total token usage and wall-clock time** for the whole run.
 
 - Cost is **not** self-reported by agents. The skill computes it from the session transcript at `transcript_path`, which records per-message `usage` (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) and `model`, enabling correct per-model pricing.(7) (9)
+- **Wall-clock** is derived from the transcript's first→last message timestamps, so it covers the whole session — including time at human gates and the idea discussion that precedes `create-issue`.
+- **Currency.** Anthropic bills in USD; PAF reports cost in **EUR**, converted with a factory-maintained USD→EUR rate kept alongside the per-model price table. Both are updated together and carry their source and date.
 - The internal mechanism for attributing usage to individual agents is an implementation detail; the architecture requires only that the final total is reported.
+
+#### Cross-skill cost aggregation
+
+A feature spans three separate skill runs — `create-issue`, `implement-issue`, `check-out` — each its own Claude Code session with its own transcript. Claude Code has no native cross-session cost aggregation, so PAF maintains its own **per-feature cost ledger**:
+
+- **Keyed by issue number.** Every skill run appends its own cost + wall-clock to the ledger entry for the feature's issue. `create-issue` knows the issue number after posting; `implement-issue` is given it; `check-out` derives it from the branch name (`feature/<issue-number>-<...>`).
+- **User-scoped, never in the project.** The ledger lives under the user's `~/.claude/` namespace, not in the target repository — no `.paf/` directory, no gitignore entry. This preserves PAF's project-agnostic principle: installing and running PAF leaves no trace in the project.
+- **Totalled at check-out.** `check-out` records its own run, then sums every entry for the feature and writes the **total cost and summed wall-clock — with a per-skill breakdown — into the PR description**, then removes the ledger. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost and elapsed time. Summed wall-clock is the sum of each run's active time, not the calendar span between runs.
+- **Graceful degradation.** If the branch → issue-number mapping is unavailable, `check-out` reports whatever entries it can correlate rather than failing.
+
+The exact ledger location, record format, and pricing table are implementation details of the shared cost helper; the architecture fixes only that per-feature cost is aggregated across the three skills, stored in user scope, reported in EUR, and surfaced in the PR.
 
 ---
 
@@ -408,7 +283,7 @@ This is why skills do not manually inject CLAUDE.md sections into agents — it 
 All architecture decisions are grounded in the official Claude Code documentation. Inline citations above use these numbers:
 
 1. Subagents — Choose a model. https://code.claude.com/docs/en/sub-agents#choose-a-model
-2. Subagents — Chain subagents / Choose between subagents and main conversation / What loads at startup. https://code.claude.com/docs/en/sub-agents#chain-subagents
+2. Subagents — Chain subagents / What loads at startup / Available tools (`AskUserQuestion` is main-thread-only, unavailable to subagents) / Spawn nested subagents (a subagent may spawn subagents up to depth 5, as of v2.1.172). https://code.claude.com/docs/en/sub-agents#chain-subagents
 3. Subagents — Invoke subagents explicitly. https://code.claude.com/docs/en/sub-agents#invoke-subagents-explicitly
 4. Subagents — Control subagent capabilities. https://code.claude.com/docs/en/sub-agents#control-subagent-capabilities
 5. Subagents — Supported frontmatter fields (`name` is received by hooks as `agent_type`). https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields

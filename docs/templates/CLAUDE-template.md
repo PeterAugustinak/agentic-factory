@@ -25,7 +25,7 @@ PAF provides three core slash commands. Full skill documentation lives in the fa
 
 - **GitHub repo:** `<owner>/<repo>`
 - **Default branch:** `master`
-- **Feature branches:** `feature/<short-description>`
+- **Feature branches:** `feature/<issue-number>-<short-description>` (the issue number links the branch to its issue and lets the factory attribute cost to the feature)
 - **PR target:** `develop`
 - **Labels:** <!-- list any standard labels used on issues/PRs -->
 - **Merge strategy:** squash merge
@@ -45,6 +45,10 @@ PAF provides three core slash commands. Full skill documentation lives in the fa
 <command>
 
 # Apply migrations (if applicable)
+<command>
+
+# Full pre-merge validation (the whole test + lint suite; run once by /check-out before opening the PR)
+# May be a single script (recommended, e.g. ./scripts/pre-merge.sh) or the full test + lint commands together.
 <command>
 ```
 

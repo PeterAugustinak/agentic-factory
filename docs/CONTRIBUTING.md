@@ -3,10 +3,10 @@
 ## Adding a skill
 
 1. Create a directory under `skills/`: `skills/<skill-name>/`
-2. Add `skills/<skill-name>/SKILL.md` with YAML frontmatter and orchestration instructions
-3. Required frontmatter fields: `description` (when to invoke), `invocation: explicit` (factory skills are always explicit-invocation only)
+2. Add `skills/<skill-name>/SKILL.md` following `docs/authoring/skill-definition-format.md`
+3. Required frontmatter: `description` (what + when), and `disable-model-invocation: true` — factory skills are explicit-invocation only. Never set `context: fork` (a forked skill runs as a subagent and cannot orchestrate agents).
 4. Skills are orchestrators — they invoke agents, enforce human gates, handle GitHub I/O, and report cost. No cognitive work in skill files.
-5. Document the new skill in `skills/README.md`
+5. Document the new skill in `skills/README.md`, and add its human-facing explanation (diagram, flow) in `docs/skills/<skill-name>.md`
 
 Invoke after install: `/skill-name`
 
@@ -20,13 +20,13 @@ Invoke after install: `/skill-name`
 
 ## Adding a hook
 
-1. Create `hooks/<EventName>-<purpose>.sh`
-2. Make it executable: `chmod +x hooks/<EventName>-<purpose>.sh`
-3. The script receives tool call context via environment variables — see Claude Code hook documentation
-4. Update `docs/architecture.md` Section 3 if the hook changes a tool access scope
+1. Create `hooks/<EventName>-<purpose>.{sh,py}` with an appropriate shebang
+2. Make it executable: `chmod +x hooks/<EventName>-<purpose>.{sh,py}`
+3. The script receives the hook payload as **JSON on stdin** (`tool_name`, `tool_input`, `agent_type`, `cwd`, ...) and `CLAUDE_PROJECT_DIR` in its environment. To block a `PreToolUse` call, print a `permissionDecision: "deny"` object (`hookSpecificOutput`) on stdout, or exit 2. See the Claude Code hook documentation.
+4. Update `docs/architecture.md` §3 if the hook changes a tool access scope, and document the hook in `hooks/README.md`
 
 ## PR process
 
-- Branch from `develop`: `git checkout -b feature/<short-description>`
+- Branch from `develop`: `git checkout -b feature/<issue-number>-<short-description>`
 - PR targets `develop`
 - Merge to `master` via a release PR from `develop`

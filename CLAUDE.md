@@ -17,12 +17,14 @@ If something is genuinely undocumented, say so and verify it empirically before 
 agentic-factory/
 ├── agents/         # Agent definition files (.md), one per agent
 ├── skills/         # Skill directories, one per skill (skills/<name>/SKILL.md)
-├── hooks/          # Hook shell scripts (PreToolUse, PostToolUse, etc.)
+├── hooks/          # Hook scripts (PreToolUse enforcement, etc.)
 ├── scripts/        # Installer and utility scripts (not installed)
 ├── docs/
 │   ├── architecture.md       # Single source of truth for all design decisions
 │   ├── CONTRIBUTING.md       # How to add skills, agents, and hooks
-│   └── CLAUDE-template.md    # CLAUDE.md template for projects adopting PAF
+│   ├── authoring/            # How to author a component (agent/skill definition formats)
+│   ├── skills/               # Per-skill documentation (diagram + how it works)
+│   └── templates/            # CLAUDE-template.md — CLAUDE.md template for adopting projects
 ├── CLAUDE.md       # This file
 └── README.md       # Project overview and install command
 ```
