@@ -22,6 +22,12 @@ This installs the skills, agents, and hook into your Claude Code config (`~/.cla
 - `/paf:implement-issue` — validate, plan, implement, and verify against an approved issue
 - `/paf:check-out` — review, fix, and open a PR for completed work
 
+To remove PAF (skills, agents, hook, and the hook entry in `settings.json` — nothing else):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/PeterAugustinak/agentic-factory/develop/scripts/uninstall.sh | bash
+```
+
 ## Repository layout
 
 | Directory | Contents |
