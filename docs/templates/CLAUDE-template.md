@@ -46,6 +46,10 @@ PAF provides three core slash commands. Full skill documentation lives in the fa
 
 # Apply migrations (if applicable)
 <command>
+
+# Full pre-merge validation (the whole test + lint suite; run once by /check-out before opening the PR)
+# May be a single script (recommended, e.g. ./scripts/pre-merge.sh) or the full test + lint commands together.
+<command>
 ```
 
 ## Out of scope for CLAUDE.md
