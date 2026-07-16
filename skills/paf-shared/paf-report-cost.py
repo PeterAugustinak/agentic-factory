@@ -194,7 +194,7 @@ def cmd_record(args) -> None:
     print(f"Cost:       €{cost_eur:.4f}")
     print(f"Wall-clock: {fmt_duration(wall_clock)}")
     if result["unknown_models"]:
-        print(f"WARNING: no pricing for {result['unknown_models']} — update skills/_shared/pricing.json")
+        print(f"WARNING: no pricing for {result['unknown_models']} — update {PRICING_PATH}")
 
 
 def cmd_aggregate(args) -> None:

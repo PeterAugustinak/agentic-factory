@@ -37,7 +37,15 @@ Present the drafted issue to the developer clearly (title, body, acceptance crit
 Do not post anything until the developer approves.
 
 **5. Post the issue (skill).**
-Create the issue on the repo from `CLAUDE.md` using `gh`, with the approved title, body, and labels (only labels that exist in the repo — check with `gh label list` if unsure). Capture the new **issue number** and **URL**, and print the URL to the developer.
+The step-4 approval **is** the authorization to post — do not ask again or introduce any further confirmation. Post in a single `gh` call, feeding the approved body straight to `gh` on stdin so no local file is written (writing a file would trigger a needless extra permission prompt):
+
+```
+gh issue create --title "<title>" --label "<label>" [--label "<label>" ...] --body-file - <<'EOF'
+<approved body>
+EOF
+```
+
+Use only labels that exist in the repo (check with `gh label list` if unsure). Capture the new **issue number** and **URL** from the command output, and print the URL to the developer.
 
 **6. Report cost and time (skill).**
 Run the shared cost helper:
