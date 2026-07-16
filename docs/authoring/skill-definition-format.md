@@ -10,9 +10,9 @@ Every choice is grounded in the official Claude Code skills documentation, the A
 
 - One directory per skill, with a required `SKILL.md` entrypoint: `skills/<skill-name>/SKILL.md`.(1)
 - `SKILL.md` is **case-sensitive** and must be spelled exactly; `skill.md` will not load.(4)
-- The directory name is **kebab-case**. A skill is invocable **both** by its directory name (`skills/create-issue/` → `/create-issue`) **and** by its frontmatter `name` — verified empirically; the docs understate the `name` field. PAF uses the `name` field to namespace the command (see Frontmatter).
+- The directory name is **kebab-case**. A skill is invocable **both** by its directory name (`skills/paf-create-issue/` → `/create-issue`) **and** by its frontmatter `name` — verified empirically; the docs understate the `name` field. PAF uses the `name` field to namespace the command (see Frontmatter).
 - Do **not** place a `README.md` inside a skill folder. Human-facing documentation lives in `docs/` (see [Progressive disclosure](#progressive-disclosure)).(4)
-- **Personal skills are discovered only by a top-level directory** under `~/.claude/skills/` — a `paf/` *subfolder* is **not** discovered (verified empirically). So the installer places each skill flat at `~/.claude/skills/<name>/`, not under a namespace directory. The `paf:` command prefix comes from the frontmatter `name`, not the path. (`skills/_shared/` installs alongside them so `${CLAUDE_SKILL_DIR}/../_shared/` resolves; it has no `SKILL.md`, so it is not itself a skill.)
+- **Personal skills are discovered only by a top-level directory** under `~/.claude/skills/` — a `paf/` *subfolder* is **not** discovered (verified empirically). So the installer places each skill flat at `~/.claude/skills/<name>/`, not under a namespace directory. The `paf:` command prefix comes from the frontmatter `name`, not the path. (`skills/paf-shared/` installs alongside them so `${CLAUDE_SKILL_DIR}/../paf-shared/` resolves; it has no `SKILL.md`, so it is not itself a skill.)
 
 ---
 
@@ -70,7 +70,7 @@ A skill's material is split by *who reads it and when*:
 
 Shared, side-effectful `gh`/`git` sequences that recur across skills are factored into **`scripts/`** at the repo root and invoked via Bash — not duplicated in each `SKILL.md` and not pushed into agents (`architecture.md` §2).
 
-**`skills/_shared/` — cross-skill runtime material.** Reference docs and helper scripts that *every* skill needs at run time (the output-contract parsing rules, the cost-reporting helper, the pricing table) live once in `skills/_shared/` and are reached from any skill via `${CLAUDE_SKILL_DIR}/../_shared/…`. This keeps them DRY and installed alongside the skills (reachable at run time), which `scripts/` — reserved for the installer and dev utilities — is not. `_shared/` has no `SKILL.md`, so Claude Code does not load it as a skill.
+**`skills/paf-shared/` — cross-skill runtime material.** Reference docs and helper scripts that *every* skill needs at run time (the output-contract parsing rules, the cost-reporting helper, the pricing table) live once in `skills/paf-shared/` and are reached from any skill via `${CLAUDE_SKILL_DIR}/../paf-shared/…`. This keeps them DRY and installed alongside the skills (reachable at run time), which `scripts/` — reserved for the installer and dev utilities — is not. `_shared/` has no `SKILL.md`, so Claude Code does not load it as a skill.
 
 ---
 

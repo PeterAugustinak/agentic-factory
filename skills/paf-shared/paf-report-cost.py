@@ -44,12 +44,21 @@ def load_config() -> dict:
     return {"models": cfg["models"], "usd_to_eur": cfg["usd_to_eur"]}
 
 
-def find_transcript(session_id: str) -> Path:
-    matches = glob.glob(str(Path.home() / ".claude" / "projects" / "*" / f"{session_id}.jsonl"))
-    if not matches:
+def find_transcripts(session_id: str) -> list[Path]:
+    """Return the session's transcripts: the main one PLUS every subagent
+    transcript. Claude Code stores a spawned subagent's messages in a SEPARATE
+    file under <project>/<session-id>/subagents/... — not in the main transcript
+    — so pricing only the main file would miss all subagent (reviewer, builder,
+    verifier, ...) token usage, which typically dominates a skill run."""
+    mains = glob.glob(str(Path.home() / ".claude" / "projects" / "*" / f"{session_id}.jsonl"))
+    if not mains:
         sys.exit(f"ERROR: no transcript found for session {session_id}")
     # If the same session id somehow appears twice, the largest file is the real run.
-    return Path(max(matches, key=lambda p: os.path.getsize(p)))
+    main = max(mains, key=lambda p: os.path.getsize(p))
+    project = os.path.dirname(main)
+    # Subagent transcripts (recursively, in case of nested subagents).
+    subs = glob.glob(os.path.join(project, session_id, "**", "*.jsonl"), recursive=True)
+    return [Path(main)] + [Path(s) for s in subs]
 
 
 def parse_ts(value):
@@ -62,49 +71,63 @@ def parse_ts(value):
         return None
 
 
-def cost_from_transcript(transcript: Path, pricing: dict) -> dict:
-    """Sum tokens per model and price them; also derive wall-clock from the
-    first and last message timestamps. Returns totals + wall-clock + unknowns."""
+def cost_from_transcripts(paths: list[Path], pricing: dict) -> dict:
+    """Sum tokens per model across the main transcript AND every subagent
+    transcript, and price them; also derive wall-clock from the earliest and
+    latest message timestamps across all of them. Returns totals + wall-clock
+    + unknowns."""
     per_model_tokens: dict[str, dict[str, int]] = {}
     first_ts = None
     last_ts = None
-    with open(transcript) as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            ts = parse_ts(rec.get("timestamp"))
-            if ts:
-                if first_ts is None or ts < first_ts:
-                    first_ts = ts
-                if last_ts is None or ts > last_ts:
-                    last_ts = ts
-            msg = rec.get("message") or {}
-            usage = msg.get("usage")
-            model = msg.get("model")
-            if not usage or not model:
-                continue
-            # Skip Claude Code internal placeholders like "<synthetic>" — not billable.
-            if model.startswith("<"):
-                continue
-            t = per_model_tokens.setdefault(
-                model,
-                {"input": 0, "output": 0, "cache_read": 0, "cache_write_5m": 0, "cache_write_1h": 0},
-            )
-            t["input"] += usage.get("input_tokens", 0)
-            t["output"] += usage.get("output_tokens", 0)
-            t["cache_read"] += usage.get("cache_read_input_tokens", 0)
-            cc = usage.get("cache_creation") or {}
-            if cc:
-                t["cache_write_5m"] += cc.get("ephemeral_5m_input_tokens", 0)
-                t["cache_write_1h"] += cc.get("ephemeral_1h_input_tokens", 0)
-            else:
-                # No TTL breakdown available — price all cache writes at the 5m rate.
-                t["cache_write_5m"] += usage.get("cache_creation_input_tokens", 0)
+    # A single assistant turn is written across several transcript lines (one per
+    # content block: thinking, tool_use, ...), and the SAME `usage` is copied onto
+    # each. Count each message's usage exactly once, keyed by message id, or the
+    # totals are multi-counted.
+    seen_ids: set = set()
+    for transcript in paths:
+        with open(transcript) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                ts = parse_ts(rec.get("timestamp"))
+                if ts:
+                    if first_ts is None or ts < first_ts:
+                        first_ts = ts
+                    if last_ts is None or ts > last_ts:
+                        last_ts = ts
+                msg = rec.get("message") or {}
+                usage = msg.get("usage")
+                model = msg.get("model")
+                if not usage or not model:
+                    continue
+                # Skip Claude Code internal placeholders like "<synthetic>" — not billable.
+                if model.startswith("<"):
+                    continue
+                # Count each assistant message's usage once (see seen_ids note above).
+                mid = msg.get("id")
+                if mid is not None:
+                    if mid in seen_ids:
+                        continue
+                    seen_ids.add(mid)
+                t = per_model_tokens.setdefault(
+                    model,
+                    {"input": 0, "output": 0, "cache_read": 0, "cache_write_5m": 0, "cache_write_1h": 0},
+                )
+                t["input"] += usage.get("input_tokens", 0)
+                t["output"] += usage.get("output_tokens", 0)
+                t["cache_read"] += usage.get("cache_read_input_tokens", 0)
+                cc = usage.get("cache_creation") or {}
+                if cc:
+                    t["cache_write_5m"] += cc.get("ephemeral_5m_input_tokens", 0)
+                    t["cache_write_1h"] += cc.get("ephemeral_1h_input_tokens", 0)
+                else:
+                    # No TTL breakdown available — price all cache writes at the 5m rate.
+                    t["cache_write_5m"] += usage.get("cache_creation_input_tokens", 0)
 
     total_cost = 0.0
     unknown_models = []
@@ -149,7 +172,7 @@ def fmt_duration(seconds: float) -> str:
 def cmd_record(args) -> None:
     project = args.project or project_slug()
     config = load_config()
-    result = cost_from_transcript(find_transcript(args.session), config["models"])
+    result = cost_from_transcripts(find_transcripts(args.session), config["models"])
     wall_clock = result["wall_clock_seconds"]
     cost_eur = round(result["total_cost_usd"] * config["usd_to_eur"], 4)
 

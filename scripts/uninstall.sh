@@ -5,7 +5,7 @@
 #   curl -sSL https://raw.githubusercontent.com/PeterAugustinak/agentic-factory/develop/scripts/uninstall.sh | bash
 #
 # Removes exactly what install.sh adds and nothing else:
-#   - PAF skills (identified by a `paf:` frontmatter name) + ~/.claude/skills/_shared/
+#   - PAF skills (identified by a `paf:` frontmatter name) + ~/.claude/skills/paf-shared/
 #   - ~/.claude/agents/paf/ and ~/.claude/hooks/paf/
 #   - the PAF hook entry from ~/.claude/settings.json (other settings untouched)
 #
@@ -29,7 +29,7 @@ if [ -d "$SKILLS_DIR" ]; then
       d="$(dirname "$f")"; rm -rf "$d"; removed+=("skills/$(basename "$d")")
     fi
   done
-  if [ -d "$SKILLS_DIR/_shared" ]; then rm -rf "$SKILLS_DIR/_shared"; removed+=("skills/_shared"); fi
+  if [ -d "$SKILLS_DIR/paf-shared" ]; then rm -rf "$SKILLS_DIR/paf-shared"; removed+=("skills/paf-shared"); fi
 fi
 
 # --- agents + hooks (installed under their own paf/ namespace) ---

@@ -8,7 +8,7 @@
 #
 # It fetches the factory and installs it into your Claude Code config:
 #   - skills  -> ~/.claude/skills/<name>/        (flat; command = frontmatter name, e.g. /paf:create-issue)
-#             -> ~/.claude/skills/_shared/        (shared helpers; not a skill)
+#             -> ~/.claude/skills/paf-shared/        (shared helpers; not a skill)
 #   - agents  -> ~/.claude/agents/paf/
 #   - hooks   -> ~/.claude/hooks/paf/  (+ wired into ~/.claude/settings.json)
 #
@@ -59,7 +59,7 @@ mkdir -p "$SKILLS_DIR"
 installed_skills=()
 for d in "$SRC"/skills/*/; do
   name="$(basename "$d")"
-  [ -f "$d/SKILL.md" ] || continue          # only real skills (skips README, _shared)
+  [ -f "$d/SKILL.md" ] || continue          # only real skills (skips README, paf-shared)
   rm -rf "${SKILLS_DIR:?}/$name"
   cp -R "$d" "$SKILLS_DIR/$name"
   installed_skills+=("$name")
@@ -67,9 +67,9 @@ done
 [ "${#installed_skills[@]}" -gt 0 ] || die "no skills found in source."
 
 # --- shared helpers (sibling of the skills) ---
-rm -rf "${SKILLS_DIR:?}/_shared"
-cp -R "$SRC/skills/_shared" "$SKILLS_DIR/_shared"
-chmod +x "$SKILLS_DIR"/_shared/*.py 2>/dev/null || true
+rm -rf "${SKILLS_DIR:?}/paf-shared"
+cp -R "$SRC/skills/paf-shared" "$SKILLS_DIR/paf-shared"
+chmod +x "$SKILLS_DIR"/paf-shared/*.py 2>/dev/null || true
 
 # --- agents (namespaced; recursive scan makes this fine) ---
 rm -rf "$AGENTS_DIR"; mkdir -p "$AGENTS_DIR"
@@ -114,7 +114,7 @@ skill_command() {  # print the frontmatter `name` (the invoke command) for a ski
 }
 echo
 echo "PAF installed into $CLAUDE_DIR"
-echo "  skills:  $SKILLS_DIR/<name>   (+ _shared)"
+echo "  skills:  $SKILLS_DIR/<name>   (+ paf-shared)"
 echo "  agents:  $AGENTS_DIR"
 echo "  hook:    $HOOKS_DIR/$HOOK_NAME  (wired into settings.json)"
 echo
