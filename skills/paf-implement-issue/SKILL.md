@@ -19,7 +19,7 @@ You are the orchestrator running in the main thread. You chain the specialist ag
 
 ## Parsing agent output
 
-After **every** agent step below, parse the agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../_shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure. Never proceed on a guessed parse.
+After **every** agent step below, parse the agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure. Never proceed on a guessed parse.
 
 ## Steps
 
@@ -64,7 +64,7 @@ Do **not** commit, push, or open a PR. Leave the verified changes **uncommitted*
 Run the shared cost helper:
 
 ```
-python3 "${CLAUDE_SKILL_DIR}/../_shared/paf-report-cost.py" record \
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
   --session "${CLAUDE_SESSION_ID}" --skill implement-issue --issue <issue-number>
 ```
 

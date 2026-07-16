@@ -1,6 +1,6 @@
 # check-out
 
-Human-facing documentation for the `check-out` skill. The operational definition is [`skills/check-out/SKILL.md`](../../skills/check-out/SKILL.md); this file explains how the skill works and is not loaded by Claude at run time.
+Human-facing documentation for the `check-out` skill. The operational definition is [`skills/paf-check-out/SKILL.md`](../../skills/paf-check-out/SKILL.md); this file explains how the skill works and is not loaded by Claude at run time.
 
 ## Purpose
 
@@ -126,13 +126,13 @@ The skill owns git/GitHub state. It computes the change to review as `git diff <
 
 ## Cost and time in the PR
 
-`check-out` records its own run to the per-feature ledger, then runs [`skills/_shared/paf-report-cost.py`](../../skills/_shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three skills** — `create-issue`, `implement-issue`, `check-out` — and embeds that **EUR cost + summed wall-clock** table in the **PR description**. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost and elapsed time. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
+`check-out` records its own run to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three skills** — `create-issue`, `implement-issue`, `check-out` — and embeds that **EUR cost + summed wall-clock** table in the **PR description**. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost and elapsed time. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
 
 ## Related files
 
-- [`skills/check-out/SKILL.md`](../../skills/check-out/SKILL.md) — the operational definition.
-- [`skills/_shared/output-contract.md`](../../skills/_shared/output-contract.md) — agent output parsing rules.
-- [`skills/_shared/paf-report-cost.py`](../../skills/_shared/paf-report-cost.py) / [`pricing.json`](../../skills/_shared/pricing.json) — cost + time reporting.
+- [`skills/paf-check-out/SKILL.md`](../../skills/paf-check-out/SKILL.md) — the operational definition.
+- [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
+- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost + time reporting.
 - [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md), [`agents/code-simplifier.md`](../../agents/code-simplifier.md), [`agents/security-engineer.md`](../../agents/security-engineer.md), [`agents/full-stack-dev.md`](../../agents/full-stack-dev.md), [`agents/implementation-verifier.md`](../../agents/implementation-verifier.md), [`agents/quality-assurer.md`](../../agents/quality-assurer.md) — the agent definitions.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```

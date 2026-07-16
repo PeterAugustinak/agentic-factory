@@ -1,6 +1,6 @@
 # implement-issue
 
-Human-facing documentation for the `implement-issue` skill. The operational definition is [`skills/implement-issue/SKILL.md`](../../skills/implement-issue/SKILL.md); this file explains how the skill works and is not loaded by Claude at run time.
+Human-facing documentation for the `implement-issue` skill. The operational definition is [`skills/paf-implement-issue/SKILL.md`](../../skills/paf-implement-issue/SKILL.md); this file explains how the skill works and is not loaded by Claude at run time.
 
 ## Purpose
 
@@ -135,13 +135,13 @@ The skill owns git state (`architecture.md` §2). It creates the `feature/<issue
 
 ## Cost and time reporting
 
-The final step runs [`skills/_shared/paf-report-cost.py`](../../skills/_shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the PR. Cost is converted to **EUR**; wall-clock is derived from the transcript. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
+The final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the PR. Cost is converted to **EUR**; wall-clock is derived from the transcript. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
 
 ## Related files
 
-- [`skills/implement-issue/SKILL.md`](../../skills/implement-issue/SKILL.md) — the operational definition.
-- [`skills/_shared/output-contract.md`](../../skills/_shared/output-contract.md) — agent output parsing rules.
-- [`skills/_shared/paf-report-cost.py`](../../skills/_shared/paf-report-cost.py) / [`pricing.json`](../../skills/_shared/pricing.json) — cost + time reporting.
+- [`skills/paf-implement-issue/SKILL.md`](../../skills/paf-implement-issue/SKILL.md) — the operational definition.
+- [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
+- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost + time reporting.
 - [`agents/issue-validator.md`](../../agents/issue-validator.md), [`agents/code-explorer.md`](../../agents/code-explorer.md), [`agents/implementation-planner.md`](../../agents/implementation-planner.md), [`agents/full-stack-dev.md`](../../agents/full-stack-dev.md), [`agents/implementation-verifier.md`](../../agents/implementation-verifier.md) — the agent definitions.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```

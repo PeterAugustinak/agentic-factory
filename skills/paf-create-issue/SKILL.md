@@ -27,7 +27,7 @@ Assess whether the idea (from the conversation and/or `$ARGUMENTS`) is specified
 Invoke the `issue-writer` agent explicitly by name. Pass it the clarified idea and the relevant discussion. It has no tools beyond Read and does not post anything — it returns a draft only.
 
 **3. Parse the agent output (skill).**
-Apply the shared parsing rules in `${CLAUDE_SKILL_DIR}/../_shared/output-contract.md` to the agent's final message: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure — never proceed on a guessed parse. The drafted issue (title, body, acceptance criteria, suggested labels) is in `summary`.
+Apply the shared parsing rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md` to the agent's final message: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure — never proceed on a guessed parse. The drafted issue (title, body, acceptance criteria, suggested labels) is in `summary`.
 
 **4. Developer review — human gate (skill).**
 Present the drafted issue to the developer clearly (title, body, acceptance criteria, labels). Then wait for their decision:
@@ -43,7 +43,7 @@ Create the issue on the repo from `CLAUDE.md` using `gh`, with the approved titl
 Run the shared cost helper:
 
 ```
-python3 "${CLAUDE_SKILL_DIR}/../_shared/paf-report-cost.py" record \
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
   --session "${CLAUDE_SESSION_ID}" --skill create-issue --issue <issue-number>
 ```
 

@@ -18,7 +18,7 @@ Skill names are lowercase, hyphenated. Examples: `create-issue`, `implement-issu
 
 ## Install target
 
-The installer places each skill **flat** at `~/.claude/skills/<skill-name>/`, and `_shared/` at `~/.claude/skills/_shared/`. Personal skills are discovered only by a top-level directory under `~/.claude/skills/` — a `paf/` subfolder is not discovered — so the `paf:` prefix comes from each skill's frontmatter `name`, not the path.
+The installer places each skill **flat** at `~/.claude/skills/<skill-name>/`, and `_shared/` at `~/.claude/skills/paf-shared/`. Personal skills are discovered only by a top-level directory under `~/.claude/skills/` — a `paf/` subfolder is not discovered — so the `paf:` prefix comes from each skill's frontmatter `name`, not the path.
 
 ## Skills in this factory
 

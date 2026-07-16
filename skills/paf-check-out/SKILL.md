@@ -20,7 +20,7 @@ You are the orchestrator running in the main thread. You chain the review and fi
 
 ## Parsing agent output
 
-After **every** agent step, parse the agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../_shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block, validate keys and enums, and **STOP + escalate** (quoting the raw output) on any failure.
+After **every** agent step, parse the agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block, validate keys and enums, and **STOP + escalate** (quoting the raw output) on any failure.
 
 ## Steps
 
@@ -65,7 +65,7 @@ Commit any **uncommitted** changes on the branch (the implementation and any app
 Append `check-out`'s own cost to the per-feature ledger so the total below includes it:
 
 ```
-python3 "${CLAUDE_SKILL_DIR}/../_shared/paf-report-cost.py" record \
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
   --session "${CLAUDE_SESSION_ID}" --skill check-out --issue <issue-number>
 ```
 
@@ -73,7 +73,7 @@ python3 "${CLAUDE_SKILL_DIR}/../_shared/paf-report-cost.py" record \
 Aggregate the whole feature's cost across all three skills and clean up the ledger:
 
 ```
-python3 "${CLAUDE_SKILL_DIR}/../_shared/paf-report-cost.py" aggregate \
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" aggregate \
   --issue <issue-number> --cleanup
 ```
 
