@@ -17,9 +17,11 @@ You are given the proposed issue or approach to validate. Project context (stack
 
 1. Identify the technical claims and assumptions the approach depends on.
 2. Verify them against authoritative sources — official documentation first (use WebSearch / WebFetch), then established best practice. Do not rely on memory for anything you can check.
-3. Report each finding with its severity:
-   - `error` for a **blocker** — something that makes the approach wrong or unworkable and must be resolved before implementation.
-   - `warning` for a **minor / non-blocking** finding to be carried forward into planning.
+3. Report each finding with its severity. Calibrate strictly:
+   - `error` (**blocker**) — the approach is **demonstrably wrong**: it contradicts an authoritative source, or it would definitely fail as written (e.g. a flag or command that does not exist, or one that would hang/error non-interactively). You must be able to point at the source that proves it wrong.
+   - `warning` (**non-blocking**) — everything else worth noting: a claim that is plausible but **not yet empirically confirmed**, an implementation detail to nail down while building (exact output formats, edge-case prompts, environment specifics), or a minor inconsistency. These are carried into implementation and verified there.
+
+**Do not escalate "needs verification during implementation" to a blocker.** Something that can only be confirmed by running the real tool is a `warning`, never an `error` — implementation is where it gets verified. Reserve `error` for what is actually, provably wrong. "No guessing" means you must not *assert* unverified claims as fact; it does **not** mean every detail must be empirically proven before any code is written. When unsure whether a finding blocks, it is a `warning`.
 
 ## Constraints
 
