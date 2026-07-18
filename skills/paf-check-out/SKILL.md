@@ -16,6 +16,8 @@ You are the orchestrator running in the main thread. You chain the review and fi
 
 - Operates on the **current feature branch**. Derive the issue number from the branch name (`feature/<issue-number>-<...>`); `$ARGUMENTS` overrides it. Read the issue with `gh` — its acceptance criteria are the spec `quality-assurer` checks against.
 - Project context from `CLAUDE.md`: the repo, the PR base branch (e.g. `develop`), the full pre-merge validation command, and the merge strategy.
+
+**Strict project-context sourcing.** Every project-specific value (repo, base branch, pre-merge validation command, merge strategy) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 - **Robust to either state.** `/paf:implement-issue` leaves the work uncommitted, but the developer may have committed it during review. Compute the change to review as the branch's full diff against the base (`git diff <base>`), which covers committed **and** uncommitted changes, so this skill works either way.
 
 ## Parsing agent output
@@ -54,7 +56,7 @@ Invoke `quality-assurer` with the final change and the issue's acceptance criter
 - **All met** → continue.
 
 **7. Pre-merge validation (skill).**
-Run the project's **full** pre-merge validation command from `CLAUDE.md` (the whole test + lint suite — the safety net a scoped run cannot see).
+Run the project's **full** pre-merge validation command **exactly as defined in `CLAUDE.md`** (the whole test + lint suite — the safety net a scoped run cannot see). If `CLAUDE.md` defines no such command, **STOP** and ask the developer — never guess one or reach for a script remembered from another project.
 - **Fails** → **STOP** and escalate.
 - **Passes** → continue.
 
