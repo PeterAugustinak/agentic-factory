@@ -4,7 +4,7 @@ Human-facing documentation for the `create-issue` skill. The operational definit
 
 ## Purpose
 
-Turn a feature idea into a well-structured GitHub issue, reviewed by the developer, and post it. `create-issue` is the **first** skill in the factory — its output is the approved issue that `/paf:implement-issue` later builds.
+Turn a feature idea into a well-structured issue, reviewed by the developer, and post it. `create-issue` is the **first** skill in the factory — its output is the approved issue that `/paf:implement-issue` later builds.
 
 ## When and how to invoke
 
@@ -18,13 +18,13 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 
 ## How it works
 
-`create-issue` is an orchestrator running in the main thread. It does the GitHub I/O itself and delegates the drafting to the `issue-writer` agent and the pre-post approach validation to the `issue-validator` agent.
+`create-issue` is an orchestrator running in the main thread. It does the VCS I/O itself (via the `paf-vcs` adapter — `gh` on GitHub projects, `glab` on GitLab projects) and delegates the drafting to the `issue-writer` agent and the pre-post approach validation to the `issue-validator` agent.
 
 1. **Clarity gate.** The skill checks whether the idea (from the conversation and/or the seed argument) is specified enough to write a good issue — clear problem, intended outcome, rough acceptance criteria. If it is thin, it asks a few targeted questions and waits. Deep elicitation is expected to happen in the conversation beforehand; this gate is a lightweight safety check, not a full grill.
 2. **Draft.** The `issue-writer` agent (read-only) drafts a structured issue: title, description, acceptance criteria, suggested labels. It returns the draft only — it never posts.
 3. **Validate the approach.** The `issue-validator` agent (web access) checks any concrete technical claims in the draft — CLI flags, API signatures, library behaviour — against authoritative docs, and returns findings. Blockers are folded back into a re-draft and re-validated (capped at two rounds); any residual blocker is surfaced at the review gate. This is **shift-left**: an approach defect is caught before the issue is posted, not left for `/paf:implement-issue` to discover. A draft with no externally-verifiable claims validates for free.
 4. **Review gate.** The developer reviews the **already-validated** draft, plus any carried-forward findings. Changes loop back to a re-draft (and re-validate); approval moves forward. Nothing is posted before approval.
-5. **Post.** The skill creates the issue via `gh` on the repo from `CLAUDE.md`, using labels that exist in the repo, and prints the issue URL.
+5. **Post.** The skill creates the issue via `paf-vcs` (auto-detecting the provider from the repo's `origin` remote), using labels that exist in the repo, and prints the issue URL.
 6. **Cost + time.** The skill runs the shared cost helper, which prices the whole session (including the idea discussion) and appends the run to the per-feature cost ledger.
 
 ## Orchestration
@@ -64,7 +64,7 @@ The skill runs **inline in the current conversation**, so the prior discussion i
      |
      v  (approved)
 +----------------------------------------------+
-| [skill] post issue via gh; print URL         |
+| [skill] post issue via paf-vcs; print URL    |
 +----------------------------------------------+
      |
      v

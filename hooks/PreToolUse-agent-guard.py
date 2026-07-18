@@ -33,10 +33,10 @@ READ_ONLY_COMMANDS = {
 }
 
 # Command families the orchestrating skill (main thread) runs — allowed without a prompt.
-MAIN_THREAD_COMMANDS = {"gh", "git", "python3", "python"} | READ_ONLY_COMMANDS
+MAIN_THREAD_COMMANDS = {"gh", "glab", "paf-vcs", "git", "python3", "python"} | READ_ONLY_COMMANDS
 
 # External I/O — denied for every agent (skill-owned).
-EXTERNAL_IO = re.compile(r"(?:^|[^\w])(gh|curl|wget|nc|ncat|ssh|scp|telnet|ftp)(?:[^\w]|$)")
+EXTERNAL_IO = re.compile(r"(?:^|[^\w])(gh|glab|paf-vcs|curl|wget|nc|ncat|ssh|scp|telnet|ftp)(?:[^\w]|$)")
 
 # Git state changes — denied for every agent (skill owns git state).
 GIT_MUTATE = re.compile(
@@ -77,7 +77,7 @@ def command_name(cmd: str) -> str:
     i = 0
     while i < len(tokens) and re.match(r"^\w+=", tokens[i]):
         i += 1
-    return os.path.basename(tokens[i]) if i < len(tokens) else ""
+    return os.path.basename(tokens[i].strip("\"'")) if i < len(tokens) else ""
 
 
 def within_project(path: str, project: str) -> bool:

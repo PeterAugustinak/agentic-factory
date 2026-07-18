@@ -1,22 +1,22 @@
 ---
 name: "paf:create-issue"
-description: Turn a discussed feature idea into a structured GitHub issue and post it after developer approval. Invoke with /paf:create-issue when you are ready to capture a feature as an issue.
+description: Turn a discussed feature idea into a structured issue and post it after developer approval. Invoke with /paf:create-issue when you are ready to capture a feature as an issue.
 disable-model-invocation: true
 argument-hint: "[optional short idea]"
-allowed-tools: Read, Bash(gh issue create *), Bash(gh issue view *), Bash(gh label list *), Bash(python3 *)
+allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(python3 *)
 ---
 
 # create-issue
 
-Turn a feature idea — usually one you have just been discussing — into a structured GitHub issue, reviewed by the developer, and post it. This is the first skill in the factory: its output is an approved issue that `/paf:implement-issue` later builds.
+Turn a feature idea — usually one you have just been discussing — into a structured issue, reviewed by the developer, and post it. This is the first skill in the factory: its output is an approved issue that `/paf:implement-issue` later builds.
 
-You are the orchestrator running in the main thread. You invoke the `issue-writer` agent for the drafting and the `issue-validator` agent to check the drafted approach against authoritative docs *before* posting (cognitive work), and own all GitHub I/O yourself. Follow the steps in order; do not skip the human gate.
+You are the orchestrator running in the main thread. You invoke the `issue-writer` agent for the drafting and the `issue-validator` agent to check the drafted approach against authoritative docs *before* posting (cognitive work), and own all VCS I/O yourself. Follow the steps in order; do not skip the human gate.
 
 ## Input
 
 This skill runs inline in the current conversation, so **the prior discussion of the idea is already in your context** — use it as the primary input. `$ARGUMENTS` may carry a short seed if the developer invoked the skill with one, but it is optional and does not replace the conversation. Heavy exploration of the idea (e.g. via `/grill-me`) happens in the conversation *before* this skill; this skill concludes that discussion into an issue.
 
-Project context — the GitHub repo (`owner/repo`) and any standard labels — comes from `CLAUDE.md`. Do not hardcode it.
+Project context — the repo and provider are auto-detected from the git `origin` remote (via `paf-vcs`; no CLAUDE.md field needed); any standard labels come from `CLAUDE.md`. Do not hardcode either.
 
 **Strict project-context sourcing.** Every project-specific value (repo, labels) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name things that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 
@@ -48,15 +48,15 @@ Present the **validated** drafted issue to the developer clearly (title, body, a
 Do not post anything until the developer approves.
 
 **7. Post the issue (skill).**
-The step-6 approval **is** the authorization to post — do not ask again or introduce any further confirmation. Post in a single `gh` call, feeding the approved body straight to `gh` on stdin so no local file is written (writing a file would trigger a needless extra permission prompt):
+The step-6 approval **is** the authorization to post — do not ask again or introduce any further confirmation. Post in a single `paf-vcs` call, feeding the approved body straight to it on stdin so no local file is written (writing a file would trigger a needless extra permission prompt):
 
 ```
-gh issue create --title "<title>" --label "<label>" [--label "<label>" ...] --body-file - <<'EOF'
+${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs create-issue --title "<title>" --label "<label>" [--label "<label>" ...] <<'EOF'
 <approved body>
 EOF
 ```
 
-Use only labels that exist in the repo (check with `gh label list` if unsure). Capture the new **issue number** and **URL** from the command output, and print the URL to the developer.
+Use only labels that exist in the repo (check with `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs list-labels` if unsure). Capture the new **issue number** and **URL** from `paf-vcs`'s `NUMBER=`/`URL=` output lines (not by re-parsing raw CLI text), and print the URL to the developer.
 
 **8. Report cost and time (skill).**
 Run the shared cost helper:
@@ -70,4 +70,4 @@ It prices this run from the session transcript — which includes the idea discu
 
 ## Escalation
 
-Any failure — malformed agent output (step 3 or 4), or `gh` failing to post (step 7) — **stops the run** with a clear message to the developer. This skill never retries silently and never posts a partially-formed issue. A validator **blocker** does not stop the run: it is auto-corrected and re-validated (step 5), and any residual blocker is surfaced at the human gate for the developer to resolve — it is `/paf:implement-issue`'s validator that hard-STOPs on a blocker in the *posted* issue.
+Any failure — malformed agent output (step 3 or 4), or `paf-vcs` failing to post (step 7) — **stops the run** with a clear message to the developer. This skill never retries silently and never posts a partially-formed issue. A validator **blocker** does not stop the run: it is auto-corrected and re-validated (step 5), and any residual blocker is surfaced at the human gate for the developer to resolve — it is `/paf:implement-issue`'s validator that hard-STOPs on a blocker in the *posted* issue.

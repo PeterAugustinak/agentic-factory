@@ -59,9 +59,11 @@ Therefore:
 
 #### External I/O and VCS state are skill-owned
 
-All GitHub API calls (`gh`), git state transitions (branch, commit, push), test-execution triggers, and result posting happen in the main thread / skill. Agents never call `gh` or change git state — `full-stack-dev` edits files, but the skill owns branching, committing, pushing, and opening issues/PRs.
+All VCS API calls (`gh`/`glab`), git state transitions (branch, commit, push), test-execution triggers, and result posting happen in the main thread / skill. Agents never call `gh`/`glab` or change git state — `full-stack-dev` edits files, but the skill owns branching, committing, pushing, and opening issues/MRs/PRs.
 
-Where the same `gh`/`git` sequences recur across skills, they are factored into shared helpers in `scripts/` rather than duplicated or pushed into a dedicated agent. This is deliberate: mechanical, side-effectful I/O must stay deterministic and auditable, so it lives in the orchestration layer, not inside non-deterministic LLM agents.
+Where the same `gh`/`glab`/`git` sequences recur across skills, they are factored into shared helpers in `paf-shared/` rather than duplicated or pushed into a dedicated agent. This is deliberate: mechanical, side-effectful I/O must stay deterministic and auditable, so it lives in the orchestration layer, not inside non-deterministic LLM agents.
+
+**VCS provider abstraction.** The three skills call one shared adapter, `skills/paf-shared/paf-vcs`, instead of `gh`/`glab` directly. It auto-detects the provider per project from `git remote get-url origin` (`github.com` → `gh`, `gitlab.com` → `glab`; any other host fails clearly, with no silent fallback) and exposes provider-neutral verbs — create/view/comment an issue, list labels, create a change request (PR on GitHub, MR on GitLab) — that normalise the two CLIs' flag differences. Self-hosted/custom-domain instances and an explicit provider override are out of scope.
 
 ### Human interception model
 
@@ -120,7 +122,7 @@ Tool restriction is enforced in three layers:
 
 **Why the hook is required and not redundant:** frontmatter can allow or deny a tool *as a whole* but cannot restrict it conditionally. `code-explorer` (read-only Bash) and `full-stack-dev` (project-path-only Bash/writes) need command- and path-level rules that only a `PreToolUse` hook inspecting `tool_input.command` can apply.
 
-**How the hook identifies the active agent:** the `PreToolUse` hook payload (delivered as JSON on stdin) includes an `agent_type` field carrying the agent's `name`. This is the documented, native mechanism — no environment variable or prompt-header sentinel is needed. When `agent_type` is **absent**, the hook is firing in the **main thread (the orchestrating skill)**: it is not restricted, and the hook `allow`s its known command families (`gh`, `git`, `python3`) so orchestration runs prompt-free, deferring anything unrecognized to the normal prompt.(7) (5)
+**How the hook identifies the active agent:** the `PreToolUse` hook payload (delivered as JSON on stdin) includes an `agent_type` field carrying the agent's `name`. This is the documented, native mechanism — no environment variable or prompt-header sentinel is needed. When `agent_type` is **absent**, the hook is firing in the **main thread (the orchestrating skill)**: it is not restricted, and the hook `allow`s its known command families (`gh`, `glab`, `paf-vcs`, `git`, `python3`) so orchestration runs prompt-free, deferring anything unrecognized to the normal prompt.(7) (5)
 
 **One centralized hook, not per-agent hooks.** Claude Code supports per-agent scoped hooks via the `hooks` frontmatter field, but PAF uses a single global `PreToolUse` hook keyed on `agent_type`. This centralizes the policy in one file and avoids duplicating enforcement logic across ten agent definitions.
 
@@ -141,7 +143,7 @@ The architecture fixes the *policy patterns*; the exact command patterns are an 
 
 - **Read-only Bash** (any agent granted Bash for exploration only): the hook uses an **allowlist (default-deny)** — only an explicit set of read-only commands (e.g. `grep`, `find`, `git log`, `git diff`, `cat`, `ls`) is allowed; every other Bash command is denied. Default-deny is required because a denylist of mutating commands inevitably leaks.
 - **Project-path containment** (any agent with write access): the hook allows `Edit`/`Write` targeting the project root and denies any whose target resolves **outside** it. The project root is read from the `CLAUDE_PROJECT_DIR` environment variable available to hooks.(7)
-- **No external I/O** (all agents): `gh` and other external I/O is denied at the hook even where `Bash` is allowed; only the skill (main thread) performs it. The one web exception is `issue-validator`, whose `WebSearch`/`WebFetch` documentation lookups are allowed — reading public docs is not state-changing I/O.
+- **No external I/O** (all agents): `gh`, `glab`, the `paf-vcs` adapter, and other external I/O are denied at the hook even where `Bash` is allowed; only the skill (main thread) performs them. The one web exception is `issue-validator`, whose `WebSearch`/`WebFetch` documentation lookups are allowed — reading public docs is not state-changing I/O. **Accepted residual risk:** this deny is a token/regex match over the command string, so it catches direct and embedded invocations but not deliberate indirection (an agent writing a helper script inside the project root and running it via `bash`/`python3`, or an encoded command piped to `eval`). Given the trust model (cooperating Claude sub-agents, not an external adversary), this is an accepted limit of a lightweight hook, not a closed hole.
 - **Build/test Bash** (builder, verifier): Bash that is neither external I/O nor a git-state change is allowed, so tests, linters, and migrations run without prompts.
 - **Matcher coverage:** the hook is wired for `Bash|Edit|Write|MultiEdit|WebSearch|WebFetch|Task` so it sees every call that would otherwise prompt (notably the validator's web lookups and agent spawns), not just Bash/writes.
 
@@ -279,7 +281,7 @@ The exact ledger location, record format, and pricing table are implementation d
 
 - **Auto-loading is native and not optional.** Every custom subagent loads the same CLAUDE.md / memory hierarchy the main conversation loads (user `~/.claude/CLAUDE.md`, project `./CLAUDE.md` or `./.claude/CLAUDE.md`, project rules, `CLAUDE.local.md`, managed policy). Only the built-in `Explore` and `Plan` agents skip it, and there is no frontmatter field or per-agent setting to change which agents skip it.(6) (8)
 - **It depends on launch location, not agent config.** The hierarchy is resolved by walking up from the working directory, so the project-root `CLAUDE.md` reaches every agent as long as Claude Code is launched from within the project (the normal case). PAF keeps project context in the **root** `CLAUDE.md`; subdirectory `CLAUDE.md` files load on demand, not at launch, so PAF does not rely on them.
-- **No duplication.** A value that exists in `CLAUDE.md` is never repeated in an agent prompt or skill file. `CLAUDE.md` holds project-specific context (stack, entry points, conventions, exact test/lint/pre-merge commands, GitHub repo in `owner/repo` format), kept under ~200 lines. Agent prompts hold only factory-level role, tool scope, and output-contract instructions.
+- **No duplication.** A value that exists in `CLAUDE.md` is never repeated in an agent prompt or skill file. `CLAUDE.md` holds project-specific context (stack, entry points, conventions, exact test/lint/pre-merge commands), kept under ~200 lines. Agent prompts hold only factory-level role, tool scope, and output-contract instructions.
 - **Verification.** The `InstructionsLoaded` hook can log exactly which instruction files reached each agent and may be used to confirm the project `CLAUDE.md` is loaded into every agent.(7)
 
 This is why skills do not manually inject CLAUDE.md sections into agents — it is unnecessary given native auto-loading.

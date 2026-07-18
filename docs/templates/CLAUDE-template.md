@@ -17,17 +17,15 @@ PAF provides three core slash commands. Full skill documentation lives in the fa
 
 | Command | When to use |
 |---------|-------------|
-| `/paf:create-issue` | Starting a new feature — discuss the idea and produce a structured GitHub issue |
+| `/paf:create-issue` | Starting a new feature — discuss the idea and produce a structured issue |
 | `/paf:implement-issue` | Beginning implementation — validate, plan, implement, and verify against an approved issue |
-| `/paf:check-out` | Finishing work — review, fix, and post a PR for completed, developer-validated work |
+| `/paf:check-out` | Finishing work — review, fix, and post an MR/PR for completed, developer-validated work |
 
 ## Project conventions
 
-- **GitHub repo:** `<owner>/<repo>`
-- **Default branch:** `master`
 - **Feature branches:** `feature/<issue-number>-<short-description>` (the issue number links the branch to its issue and lets the factory attribute cost to the feature)
-- **PR target:** `develop`
-- **Labels:** <!-- list any standard labels used on issues/PRs -->
+- **MR/PR target:** `develop`
+- **Labels:** <!-- list any standard labels used on issues/MRs/PRs -->
 - **Merge strategy:** squash merge
 
 ## Local development
