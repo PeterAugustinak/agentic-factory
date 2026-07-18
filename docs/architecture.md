@@ -231,7 +231,13 @@ This two-tier split is the reason both points exist: fast scoped feedback during
 
 ### `issue-validator` escalation
 
-When `issue-validator` returns any finding with `severity: error` (blocker), the skill posts the findings as a GitHub issue comment, then stops; the developer must update the issue before re-running `implement-issue`. Findings with only `severity: warning` (minor) are posted as a comment and passed forward to `implementation-planner`. The validator never calls `gh` itself — the skill posts on its behalf.
+`issue-validator` runs at **two points** in the pipeline, by design (shift-left plus a safety net). The validator never calls `gh` itself — the caller acts on its findings.
+
+**In `create-issue` (authoring time, before the issue exists).** The drafted approach is validated *before* it is posted, so a defect in an externally-verifiable claim (a CLI flag, an API signature, library behaviour) is caught at the source rather than surfacing later. Because nothing is posted yet, a `severity: error` blocker does **not** stop the run: the skill folds the validator's prescribed correction back into a re-draft and re-validates (capped at two rounds), and any residual blocker is surfaced at the draft-review human gate for the developer to resolve. `warning` findings are carried to that gate. This closes the gap where `issue-writer` (read-only, no web access) faithfully transcribes an unverified approach.
+
+**In `implement-issue` (implementation time, against the posted issue).** When `issue-validator` returns any `severity: error`, the skill posts the findings as a GitHub issue comment, then **stops**; the developer must update the issue before re-running `implement-issue`. `warning` findings are posted as a comment and passed forward to `implementation-planner`.
+
+Running the validator in both skills is **not** redundant: the issue can be edited between the two skills (including manual edits), so `create-issue` validates what is *posted* while `implement-issue` re-validates what is *actually about to be built*. The authoring-time pass shifts detection as early as possible; the implementation-time pass is the last safety net.
 
 ### Malformed-contract escalation
 

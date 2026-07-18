@@ -10,7 +10,7 @@ allowed-tools: Read, Bash(gh issue create *), Bash(gh issue view *), Bash(gh lab
 
 Turn a feature idea — usually one you have just been discussing — into a structured GitHub issue, reviewed by the developer, and post it. This is the first skill in the factory: its output is an approved issue that `/paf:implement-issue` later builds.
 
-You are the orchestrator running in the main thread. You invoke the `issue-writer` agent for the drafting (cognitive work) and own all GitHub I/O yourself. Follow the steps in order; do not skip the human gate.
+You are the orchestrator running in the main thread. You invoke the `issue-writer` agent for the drafting and the `issue-validator` agent to check the drafted approach against authoritative docs *before* posting (cognitive work), and own all GitHub I/O yourself. Follow the steps in order; do not skip the human gate.
 
 ## Input
 
@@ -29,15 +29,24 @@ Invoke the `issue-writer` agent explicitly by name. Pass it the clarified idea a
 **3. Parse the agent output (skill).**
 Apply the shared parsing rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md` to the agent's final message: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure — never proceed on a guessed parse. The drafted issue (title, body, acceptance criteria, suggested labels) is in `summary`.
 
-**4. Developer review — human gate (skill).**
-Present the drafted issue to the developer clearly (title, body, acceptance criteria, labels). Then wait for their decision:
-- **Changes requested** → re-invoke `issue-writer` (back to step 2) with the developer's feedback added to the input. Repeat until approved.
-- **Approved** → continue to step 5.
+**4. Validate the drafted approach (agent).**
+Invoke the `issue-validator` agent explicitly, passing the drafted issue and any concrete technical approach it contains (CLI commands, API signatures, library behaviour, config). It verifies those claims against authoritative documentation (it has web access; `issue-writer` does not) and returns findings — each `severity: error` = blocker, `severity: warning` = minor. Parse its output with the same shared rules as step 3. This catches approach defects **before** the issue is posted, rather than deferring them to `/paf:implement-issue`. If the drafted issue carries no externally-verifiable claims, the validator simply returns no findings — cheap.
+
+**5. Resolve validator findings (skill).**
+- **Any `severity: error`** → re-invoke `issue-writer` (back to step 2) with the validator's prescribed correction folded into the input, then re-validate (step 4). Do this at most **twice**; if a blocker still stands after two correction rounds, carry it to the review gate flagged **prominently** for the developer to resolve — never silently drop or post it.
+- **Only `warning` findings (or none)** → carry them forward to the review gate.
+
+Never post a draft whose blockers have not been resolved or explicitly surfaced to the developer.
+
+**6. Developer review — human gate (skill).**
+Present the **validated** drafted issue to the developer clearly (title, body, acceptance criteria, labels), together with any carried-forward findings (warnings, plus any unresolved blocker). Then wait for their decision:
+- **Changes requested** → re-invoke `issue-writer` (back to step 2) with the developer's feedback added to the input; re-validate (step 4) before presenting again. Repeat until approved.
+- **Approved** → continue to step 7.
 
 Do not post anything until the developer approves.
 
-**5. Post the issue (skill).**
-The step-4 approval **is** the authorization to post — do not ask again or introduce any further confirmation. Post in a single `gh` call, feeding the approved body straight to `gh` on stdin so no local file is written (writing a file would trigger a needless extra permission prompt):
+**7. Post the issue (skill).**
+The step-6 approval **is** the authorization to post — do not ask again or introduce any further confirmation. Post in a single `gh` call, feeding the approved body straight to `gh` on stdin so no local file is written (writing a file would trigger a needless extra permission prompt):
 
 ```
 gh issue create --title "<title>" --label "<label>" [--label "<label>" ...] --body-file - <<'EOF'
@@ -47,7 +56,7 @@ EOF
 
 Use only labels that exist in the repo (check with `gh label list` if unsure). Capture the new **issue number** and **URL** from the command output, and print the URL to the developer.
 
-**6. Report cost and time (skill).**
+**8. Report cost and time (skill).**
 Run the shared cost helper:
 
 ```
@@ -59,4 +68,4 @@ It prices this run from the session transcript — which includes the idea discu
 
 ## Escalation
 
-Any failure — malformed agent output (step 3), or `gh` failing to post (step 5) — **stops the run** with a clear message to the developer. This skill never retries silently and never posts a partially-formed issue.
+Any failure — malformed agent output (step 3 or 4), or `gh` failing to post (step 7) — **stops the run** with a clear message to the developer. This skill never retries silently and never posts a partially-formed issue. A validator **blocker** does not stop the run: it is auto-corrected and re-validated (step 5), and any residual blocker is surfaced at the human gate for the developer to resolve — it is `/paf:implement-issue`'s validator that hard-STOPs on a blocker in the *posted* issue.
