@@ -18,13 +18,14 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 
 ## How it works
 
-`create-issue` is an orchestrator running in the main thread. It does the GitHub I/O itself and delegates only the drafting to the `issue-writer` agent.
+`create-issue` is an orchestrator running in the main thread. It does the GitHub I/O itself and delegates the drafting to the `issue-writer` agent and the pre-post approach validation to the `issue-validator` agent.
 
 1. **Clarity gate.** The skill checks whether the idea (from the conversation and/or the seed argument) is specified enough to write a good issue — clear problem, intended outcome, rough acceptance criteria. If it is thin, it asks a few targeted questions and waits. Deep elicitation is expected to happen in the conversation beforehand; this gate is a lightweight safety check, not a full grill.
 2. **Draft.** The `issue-writer` agent (read-only) drafts a structured issue: title, description, acceptance criteria, suggested labels. It returns the draft only — it never posts.
-3. **Review gate.** The developer reviews the draft. Changes loop back to a re-draft; approval moves forward. Nothing is posted before approval.
-4. **Post.** The skill creates the issue via `gh` on the repo from `CLAUDE.md`, using labels that exist in the repo, and prints the issue URL.
-5. **Cost + time.** The skill runs the shared cost helper, which prices the whole session (including the idea discussion) and appends the run to the per-feature cost ledger.
+3. **Validate the approach.** The `issue-validator` agent (web access) checks any concrete technical claims in the draft — CLI flags, API signatures, library behaviour — against authoritative docs, and returns findings. Blockers are folded back into a re-draft and re-validated (capped at two rounds); any residual blocker is surfaced at the review gate. This is **shift-left**: an approach defect is caught before the issue is posted, not left for `/paf:implement-issue` to discover. A draft with no externally-verifiable claims validates for free.
+4. **Review gate.** The developer reviews the **already-validated** draft, plus any carried-forward findings. Changes loop back to a re-draft (and re-validate); approval moves forward. Nothing is posted before approval.
+5. **Post.** The skill creates the issue via `gh` on the repo from `CLAUDE.md`, using labels that exist in the repo, and prints the issue URL.
+6. **Cost + time.** The skill runs the shared cost helper, which prices the whole session (including the idea discussion) and appends the run to the per-feature cost ledger.
 
 ## Orchestration
 
@@ -49,7 +50,15 @@ The skill runs **inline in the current conversation**, so the prior discussion i
      |                                             |
      v                                             |
 +----------------------------------------------+   |
-| [human gate] developer reviews the draft     |   |
+| [agent] issue-validator                      |   |
+|   check approach vs authoritative docs       |   |
++----------------------------------------------+   |
+     |--- blocker --> re-draft + re-validate ------+  (cap 2 rounds;
+     |                                             |   residual blocker
+     v  (validated; warnings/blockers carried)    |   surfaced at gate)
++----------------------------------------------+   |
+| [human gate] developer reviews the validated |   |
+|   draft + carried-forward findings           |   |
 +----------------------------------------------+   |
      +--- changes requested -----------------------+
      |
@@ -67,14 +76,15 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 
 ## Agents used
 
-- **`issue-writer`** (Sonnet, read-only) — the only agent. It synthesises the discussed idea into the structured issue draft and returns it via the [output contract](../../skills/paf-shared/output-contract.md); the skill parses that, gates it on the developer, and posts it.
+- **`issue-writer`** (Sonnet, read-only) — synthesises the discussed idea into the structured issue draft and returns it via the [output contract](../../skills/paf-shared/output-contract.md); the skill parses that, gates it on the developer, and posts it.
+- **`issue-validator`** (Sonnet, web access) — independently checks the drafted approach's technical claims against authoritative docs *before* posting, returning findings via the same output contract. The skill folds blockers back into a re-draft (capped) and surfaces the rest at the review gate.
 
-No other agents run in this skill: validation, planning, and implementation belong to `/paf:implement-issue`.
+Planning and implementation belong to `/paf:implement-issue`. Note that `issue-validator` runs **twice** across the pipeline by design — here at authoring time (catch defects before posting) and again inside `/paf:implement-issue` (re-check the *posted* issue, which may have been edited between skills). See [`architecture.md` → issue-validator escalation](../architecture.md#issue-validator-escalation).
 
 ## Human interception points
 
 - **Clarity gate** (step 1) — an in-skill pause when the idea is underspecified.
-- **Draft review** (step 3) — the mandatory gate before anything is posted; the developer approves or requests changes.
+- **Draft review** (step 4) — the mandatory gate before anything is posted; the developer approves or requests changes, reviewing an already doc-validated draft plus any carried-forward findings.
 - **Skill boundary** — after the issue is posted, the developer decides when to run `/paf:implement-issue`. The gap between skills is itself a review point (`architecture.md` §2).
 
 ## Cost and time reporting
@@ -92,6 +102,7 @@ This rests on one assumption: the create-issue-phase session is focused on that 
 - [`skills/paf-create-issue/SKILL.md`](../../skills/paf-create-issue/SKILL.md) — the operational definition (what Claude executes).
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
 - [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost + time reporting.
-- [`agents/issue-writer.md`](../../agents/issue-writer.md) — the agent definition.
+- [`agents/issue-writer.md`](../../agents/issue-writer.md) — the drafting agent definition.
+- [`agents/issue-validator.md`](../../agents/issue-validator.md) — the pre-post approach-validation agent definition.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```

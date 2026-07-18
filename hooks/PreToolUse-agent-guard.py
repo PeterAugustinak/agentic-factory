@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""Centralized PreToolUse hook — the single, global tool-restriction enforcer for
-PAF agents (architecture.md §3, layer 3).
+"""Centralized PreToolUse hook — the single allow+deny authority for PAF
+(architecture.md §3, layer 3).
 
-It enforces the sub-tool restrictions that frontmatter allowlists cannot express,
-keyed on the `agent_type` field of the PreToolUse payload:
+Keyed on the `agent_type` field of the PreToolUse payload, it returns an explicit
+permission decision for every call it recognizes, so vetted factory calls run
+WITHOUT a permission prompt and forbidden ones are blocked:
 
-- **Main thread (no `agent_type`)** — the orchestrating skill is running:
-  unrestricted (exit 0).
-- **All agents** — no external I/O (`gh`, `curl`, `wget`, `ssh`, ...) and no git
-  state changes (`add`/`commit`/`push`/...); both are skill-owned (§2).
-- **`code-explorer`, `implementation-planner`** — read-only Bash only
-  (default-deny allowlist on the command name).
-- **Any agent with Edit/Write** — writes confined to the project root
-  (`CLAUDE_PROJECT_DIR`).
+- ALLOW — the factory's known-safe calls (main-thread gh/git/python3; each agent's
+  legitimate tool set: read-only Bash, build/test Bash, project-scoped writes,
+  the validator's web lookups). These skip the permission prompt.
+- DENY  — agents doing external I/O (gh/curl/wget/ssh/...), agents changing git
+  state (add/commit/push/...), read-only agents running non-read-only Bash, and
+  any write outside the project root. All skill-owned or unsafe (§2).
+- DEFER — anything unrecognized: emit nothing, so Claude Code's normal permission
+  flow (and prompt) applies. Keeps a human safety net for novel calls.
 
-Reads the hook payload as JSON on stdin. To block, prints a PreToolUse `deny`
-decision as JSON on stdout and exits 0; otherwise exits 0 with no output so the
-normal permission flow proceeds.
+Reads the hook payload as JSON on stdin; emits a PreToolUse decision as JSON on
+stdout (allow/deny) or nothing (defer); always exits 0.
 """
 
 import json
@@ -26,34 +26,49 @@ import sys
 
 READ_ONLY_AGENTS = {"code-explorer", "implementation-planner"}
 
-# Default-deny allowlist for the read-only agents (matched on the command name).
+# Read-only Bash allowlist for the read-only agents (matched on the command name).
 READ_ONLY_COMMANDS = {
     "grep", "egrep", "fgrep", "rg", "ag", "find", "cat", "ls", "head", "tail",
     "wc", "tree", "file", "stat", "pwd", "echo", "which", "git",
 }
 
-# External I/O — blocked for every agent (skill-owned).
+# Command families the orchestrating skill (main thread) runs — allowed without a prompt.
+MAIN_THREAD_COMMANDS = {"gh", "git", "python3", "python"} | READ_ONLY_COMMANDS
+
+# External I/O — denied for every agent (skill-owned).
 EXTERNAL_IO = re.compile(r"(?:^|[^\w])(gh|curl|wget|nc|ncat|ssh|scp|telnet|ftp)(?:[^\w]|$)")
 
-# Git state changes / network — blocked for every agent (skill owns git state).
+# Git state changes — denied for every agent (skill owns git state).
 GIT_MUTATE = re.compile(
     r"(?:^|[^\w])git\s+(add|commit|push|pull|fetch|clone|checkout|switch|branch|"
     r"reset|merge|rebase|tag|stash|clean|rm|mv|apply|cherry-pick|restore)(?:[^\w]|$)"
 )
 
 
-def deny(reason: str) -> None:
+def _emit(decision: str, reason: str) -> None:
     json.dump(
         {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
+                "permissionDecision": decision,
                 "permissionDecisionReason": reason,
             }
         },
         sys.stdout,
     )
     sys.exit(0)
+
+
+def allow(reason: str) -> None:
+    _emit("allow", reason)
+
+
+def deny(reason: str) -> None:
+    _emit("deny", reason)
+
+
+def defer() -> None:
+    sys.exit(0)  # emit nothing — Claude Code's normal permission flow (and prompt) applies
 
 
 def command_name(cmd: str) -> str:
@@ -65,22 +80,38 @@ def command_name(cmd: str) -> str:
     return os.path.basename(tokens[i]) if i < len(tokens) else ""
 
 
+def within_project(path: str, project: str) -> bool:
+    if not path:
+        return False
+    resolved = os.path.realpath(path if os.path.isabs(path) else os.path.join(project, path))
+    return resolved == project or resolved.startswith(project + os.sep)
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
-        sys.exit(0)  # malformed payload is not ours to judge — let normal flow run
+        defer()  # malformed payload is not ours to judge
 
     agent = data.get("agent_type") or ""
-    if not agent:
-        sys.exit(0)  # main thread (the skill) — intentionally unrestricted
-
     tool = data.get("tool_name") or ""
     tool_input = data.get("tool_input") or {}
     project = os.path.realpath(
         os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
     )
 
+    # --- Main thread (the orchestrating skill): owns all I/O and git state. ---
+    if not agent:
+        if tool == "Bash":
+            name = command_name(tool_input.get("command") or "")
+            if name in MAIN_THREAD_COMMANDS:
+                allow(f"Skill (main thread) may run '{name}'.")
+            defer()  # unrecognized main-thread command — let the normal prompt decide
+        if tool == "Task":
+            allow("Skill orchestrates specialist agents.")
+        defer()  # WebFetch/WebSearch/Edit/Write/etc. from the main thread — prompt
+
+    # --- Agents: restricted; allow only their legitimate calls. ---
     if tool == "Bash":
         cmd = tool_input.get("command") or ""
         if EXTERNAL_IO.search(cmd):
@@ -94,18 +125,23 @@ def main() -> None:
                     f"{agent} may run read-only commands only "
                     f"(grep, find, git log/diff, cat, ls, ...); got: {name or '(empty)'}"
                 )
-        sys.exit(0)
+            allow(f"{agent} read-only command '{name}'.")
+        allow(f"{agent} may run build/test Bash (non-I/O, non-git-state).")
+
+    if tool in ("WebSearch", "WebFetch"):
+        if agent == "issue-validator":
+            allow("issue-validator verifies claims against authoritative documentation.")
+        defer()  # any other agent doing web lookups is unexpected — prompt
 
     if tool in ("Edit", "Write", "MultiEdit"):
         path = tool_input.get("file_path") or tool_input.get("path") or ""
         if not path:
-            sys.exit(0)
-        resolved = os.path.realpath(path if os.path.isabs(path) else os.path.join(project, path))
-        if resolved == project or resolved.startswith(project + os.sep):
-            sys.exit(0)
-        deny(f"Writes must stay within the project root ({project}); target resolves outside it: {resolved}")
+            defer()
+        if within_project(path, project):
+            allow("Write confined to the project root.")
+        deny(f"Writes must stay within the project root ({project}); target resolves outside it.")
 
-    sys.exit(0)
+    defer()  # anything else — normal permission flow
 
 
 if __name__ == "__main__":

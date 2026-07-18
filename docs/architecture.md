@@ -116,11 +116,11 @@ Tool restriction is enforced in three layers:
 
 1. **Advisory (system prompt).** The agent's prompt describes its role and what it should not do. This is guidance only — the model may ignore it. Not an enforcement layer.
 2. **Native, coarse (frontmatter).** Each agent declares `tools` (allowlist) and/or `disallowedTools` (denylist) in its definition. This is real, harness-level enforcement at the **whole-tool** granularity: a tool the agent does not have is genuinely unavailable. If both fields are set, `disallowedTools` is applied first, then `tools` resolves against the remainder.(4)
-3. **Hook, granular (`PreToolUse`).** A single, centralized `PreToolUse` hook enforces the **sub-tool** restrictions that frontmatter cannot express — e.g. "Bash read-only commands only" or "writes within project paths only" — by inspecting `tool_input` before the call runs and blocking with exit code 2.(7)
+3. **Hook, granular (`PreToolUse`).** A single, centralized `PreToolUse` hook is the factory's **allow+deny authority**. It inspects `tool_input` before each call and returns an explicit `permissionDecision`: **`allow`** for the factory's vetted calls (so they run without a permission prompt), **`deny`** for the sub-tool restrictions frontmatter cannot express (e.g. "Bash read-only commands only", "writes within project paths only", "no external I/O for agents"), and emits **nothing (defer)** for anything unrecognized, so Claude Code's normal permission prompt still applies as a human safety net.(7) Emitting `allow` is what makes a run autonomous *between* the deliberate human gates: without it, every permitted call falls through to a prompt, because frontmatter `allowed-tools` grants are per-turn and do not cover subagents' tool calls.
 
 **Why the hook is required and not redundant:** frontmatter can allow or deny a tool *as a whole* but cannot restrict it conditionally. `code-explorer` (read-only Bash) and `full-stack-dev` (project-path-only Bash/writes) need command- and path-level rules that only a `PreToolUse` hook inspecting `tool_input.command` can apply.
 
-**How the hook identifies the active agent:** the `PreToolUse` hook payload (delivered as JSON on stdin) includes an `agent_type` field carrying the agent's `name`. This is the documented, native mechanism — no environment variable or prompt-header sentinel is needed. When `agent_type` is **absent**, the hook is firing in the **main thread (the orchestrating skill)**, which is intentionally unrestricted.(7) (5)
+**How the hook identifies the active agent:** the `PreToolUse` hook payload (delivered as JSON on stdin) includes an `agent_type` field carrying the agent's `name`. This is the documented, native mechanism — no environment variable or prompt-header sentinel is needed. When `agent_type` is **absent**, the hook is firing in the **main thread (the orchestrating skill)**: it is not restricted, and the hook `allow`s its known command families (`gh`, `git`, `python3`) so orchestration runs prompt-free, deferring anything unrecognized to the normal prompt.(7) (5)
 
 **One centralized hook, not per-agent hooks.** Claude Code supports per-agent scoped hooks via the `hooks` frontmatter field, but PAF uses a single global `PreToolUse` hook keyed on `agent_type`. This centralizes the policy in one file and avoids duplicating enforcement logic across ten agent definitions.
 
@@ -137,11 +137,13 @@ No agent is ever granted `gh` or git-state mutation — external I/O and VCS are
 
 ### Hook enforcement policy (layer 3)
 
-The architecture fixes the *policy patterns*; the exact command patterns are an implementation detail of the hook. Which pattern applies to an agent follows from its scope (above), so adding an agent needs no change here.
+The architecture fixes the *policy patterns*; the exact command patterns are an implementation detail of the hook. Which pattern applies to an agent follows from its scope (above), so adding an agent needs no change here. The hook `allow`s each vetted call (no prompt), `deny`s the forbidden ones below, and defers the rest:
 
-- **Read-only Bash** (any agent granted Bash for exploration only): the hook uses an **allowlist (default-deny)** — only an explicit set of read-only commands (e.g. `grep`, `find`, `git log`, `git diff`, `cat`, `ls`) is permitted; every other Bash command is blocked. Default-deny is required because a denylist of mutating commands inevitably leaks.
-- **Project-path containment** (any agent with write access): the hook blocks any `Edit`, `Write`, or path-targeting Bash command whose target resolves **outside the project root**. The project root is read from the `CLAUDE_PROJECT_DIR` environment variable available to hooks.(7)
-- **No external I/O** (all agents): `gh` and other external I/O is blocked at the hook even where `Bash` is allowed; only the skill (main thread) performs it.
+- **Read-only Bash** (any agent granted Bash for exploration only): the hook uses an **allowlist (default-deny)** — only an explicit set of read-only commands (e.g. `grep`, `find`, `git log`, `git diff`, `cat`, `ls`) is allowed; every other Bash command is denied. Default-deny is required because a denylist of mutating commands inevitably leaks.
+- **Project-path containment** (any agent with write access): the hook allows `Edit`/`Write` targeting the project root and denies any whose target resolves **outside** it. The project root is read from the `CLAUDE_PROJECT_DIR` environment variable available to hooks.(7)
+- **No external I/O** (all agents): `gh` and other external I/O is denied at the hook even where `Bash` is allowed; only the skill (main thread) performs it. The one web exception is `issue-validator`, whose `WebSearch`/`WebFetch` documentation lookups are allowed — reading public docs is not state-changing I/O.
+- **Build/test Bash** (builder, verifier): Bash that is neither external I/O nor a git-state change is allowed, so tests, linters, and migrations run without prompts.
+- **Matcher coverage:** the hook is wired for `Bash|Edit|Write|MultiEdit|WebSearch|WebFetch|Task` so it sees every call that would otherwise prompt (notably the validator's web lookups and agent spawns), not just Bash/writes.
 
 ---
 
@@ -231,7 +233,13 @@ This two-tier split is the reason both points exist: fast scoped feedback during
 
 ### `issue-validator` escalation
 
-When `issue-validator` returns any finding with `severity: error` (blocker), the skill posts the findings as a GitHub issue comment, then stops; the developer must update the issue before re-running `implement-issue`. Findings with only `severity: warning` (minor) are posted as a comment and passed forward to `implementation-planner`. The validator never calls `gh` itself — the skill posts on its behalf.
+`issue-validator` runs at **two points** in the pipeline, by design (shift-left plus a safety net). The validator never calls `gh` itself — the caller acts on its findings.
+
+**In `create-issue` (authoring time, before the issue exists).** The drafted approach is validated *before* it is posted, so a defect in an externally-verifiable claim (a CLI flag, an API signature, library behaviour) is caught at the source rather than surfacing later. Because nothing is posted yet, a `severity: error` blocker does **not** stop the run: the skill folds the validator's prescribed correction back into a re-draft and re-validates (capped at two rounds), and any residual blocker is surfaced at the draft-review human gate for the developer to resolve. `warning` findings are carried to that gate. This closes the gap where `issue-writer` (read-only, no web access) faithfully transcribes an unverified approach.
+
+**In `implement-issue` (implementation time, against the posted issue).** When `issue-validator` returns any `severity: error`, the skill posts the findings as a GitHub issue comment, then **stops**; the developer must update the issue before re-running `implement-issue`. `warning` findings are posted as a comment and passed forward to `implementation-planner`.
+
+Running the validator in both skills is **not** redundant: the issue can be edited between the two skills (including manual edits), so `create-issue` validates what is *posted* while `implement-issue` re-validates what is *actually about to be built*. The authoring-time pass shifts detection as early as possible; the implementation-time pass is the last safety net.
 
 ### Malformed-contract escalation
 
