@@ -1,21 +1,21 @@
 ---
 name: "paf:check-out"
-description: Review, fix, validate, and open a PR for developer-validated work on the current feature branch — with the whole feature's cost in the PR. Invoke with /paf:check-out after reviewing /paf:implement-issue's output.
+description: Review, fix, validate, and open an MR/PR for developer-validated work on the current feature branch — with the whole feature's cost in the MR/PR. Invoke with /paf:check-out after reviewing /paf:implement-issue's output.
 disable-model-invocation: true
 argument-hint: "[optional issue-number]"
-allowed-tools: Read, Bash(gh pr create *), Bash(gh issue view *), Bash(git *), Bash(python3 *)
+allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git *), Bash(python3 *)
 ---
 
 # check-out
 
-Finish a feature: run the deep reviews, apply the fixes the developer approves, do the final spec and pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost and time in the PR description. This is the third and final skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
+Finish a feature: run the deep reviews, apply the fixes the developer approves, do the final spec and pre-merge checks, then commit, push, and open the MR/PR — with the **whole feature's** cost and time in the MR/PR description. This is the third and final skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
 
-You are the orchestrator running in the main thread. You chain the review and finalisation agents, own all git/GitHub I/O, run the human fix-selection gate, and apply the STOP-and-escalate policy (this skill has **no auto-retry** — any failure halts and returns control to the developer).
+You are the orchestrator running in the main thread. You chain the review and finalisation agents, own all git/VCS I/O, run the human fix-selection gate, and apply the STOP-and-escalate policy (this skill has **no auto-retry** — any failure halts and returns control to the developer).
 
 ## Input
 
-- Operates on the **current feature branch**. Derive the issue number from the branch name (`feature/<issue-number>-<...>`); `$ARGUMENTS` overrides it. Read the issue with `gh` — its acceptance criteria are the spec `quality-assurer` checks against.
-- Project context from `CLAUDE.md`: the repo, the PR base branch (e.g. `develop`), the full pre-merge validation command, and the merge strategy.
+- Operates on the **current feature branch**. Derive the issue number from the branch name (`feature/<issue-number>-<...>`); `$ARGUMENTS` overrides it. Read the issue with `paf-vcs` — its acceptance criteria are the spec `quality-assurer` checks against.
+- Project context from `CLAUDE.md`: the MR/PR base branch (e.g. `develop`), the full pre-merge validation command, and the merge strategy. The repo and provider are auto-detected from the git `origin` remote.
 
 **Strict project-context sourcing.** Every project-specific value (repo, base branch, pre-merge validation command, merge strategy) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 - **Robust to either state.** `/paf:implement-issue` leaves the work uncommitted, but the developer may have committed it during review. Compute the change to review as the branch's full diff against the base (`git diff <base>`), which covers committed **and** uncommitted changes, so this skill works either way.
@@ -71,7 +71,7 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
   --session "${CLAUDE_SESSION_ID}" --skill check-out --issue <issue-number>
 ```
 
-**10. Total the feature and open the PR (skill).**
+**10. Total the feature and open the MR/PR (skill).**
 Aggregate the whole feature's cost across all three skills and clean up the ledger:
 
 ```
@@ -79,7 +79,15 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" aggregate \
   --issue <issue-number> --cleanup
 ```
 
-Then open the PR with `gh pr create` against the base branch from `CLAUDE.md`, **embedding the aggregate cost + wall-clock table in the PR description** so the reviewer — who has no access to this CLI session — sees the whole feature's cost and elapsed time. Print the PR URL.
+Then open the MR/PR against the base branch from `CLAUDE.md`, **embedding the aggregate cost + wall-clock table in the description** so the reviewer — who has no access to this CLI session — sees the whole feature's cost and elapsed time (source branch is inferred by the adapter):
+
+```
+${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs create-change-request --base <base-branch> --title "<title>" <<'EOF'
+<aggregate cost + wall-clock table>
+EOF
+```
+
+Capture the MR/PR **URL** from `paf-vcs`'s `URL=` output line and print it.
 
 ## Escalation
 
@@ -89,4 +97,4 @@ Then open the PR with `gh pr create` against the base branch from `CLAUDE.md`, *
 - pre-merge validation fails (step 7);
 - malformed or missing agent output (any agent step).
 
-Nothing is pushed and no PR is opened until every check passes.
+Nothing is pushed and no MR/PR is opened until every check passes.

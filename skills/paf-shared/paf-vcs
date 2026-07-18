@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+#
+# paf-vcs — provider-agnostic VCS adapter for PAF.
+#
+# The three orchestrator skills (create-issue, implement-issue, check-out) call
+# this adapter instead of `gh`/`glab` directly, so PAF works on both GitHub and
+# GitLab projects without any per-skill provider branching.
+#
+# Provider detection is automatic, per project, from the git `origin` remote:
+#   github.com -> gh (GitHub CLI)
+#   gitlab.com -> glab (GitLab CLI)
+# The host is matched exactly (not a loose substring), and any other host is a
+# clear, non-silent failure — self-hosted/custom-domain instances and an
+# explicit provider override are out of scope.
+#
+# Usage:
+#   paf-vcs provider
+#   paf-vcs auth-status
+#   paf-vcs create-issue --title <t> [--label <l> ...]        (body on stdin)
+#   paf-vcs view-issue <id>
+#   paf-vcs comment-issue <id>                                 (message on stdin)
+#   paf-vcs list-labels
+#   paf-vcs create-change-request --base <branch> --title <t>  (body on stdin)
+#
+# `create-issue` and `create-change-request` print machine-parseable
+# `NUMBER=<n>` / `URL=<url>` lines, a `---` separator, then the raw provider
+# output. Every other verb passes the provider CLI's output through as-is.
+
+set -euo pipefail
+
+err() {
+  printf 'Error: %s\n' "$*" >&2
+  exit 1
+}
+
+# Host component of a git remote URL, handling SSH (git@host:path) and
+# HTTPS (scheme://[user[:pass]@]host/path) forms. Provider detection matches
+# the real host exactly (not a spoofable substring), and any credentials
+# embedded in the URL are dropped here so they never reach error output.
+remote_host() {
+  printf '%s' "$1" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##; s#^[^@/]*@##; s#[:/].*$##'
+}
+
+detect_provider() {
+  local url host
+  if ! url="$(git remote get-url origin 2>/dev/null </dev/null)"; then
+    err "could not read the 'origin' remote — are you inside a git repository that has an 'origin' remote? paf-vcs auto-detects the VCS provider from 'git remote get-url origin'."
+  fi
+  host="$(remote_host "$url")"
+  case "$host" in
+    github.com) echo "gh" ;;
+    gitlab.com) echo "glab" ;;
+    *)
+      err "unsupported VCS host '${host}' in the origin remote. paf-vcs supports github.com (gh) and gitlab.com (glab) only; self-hosted/custom-domain GitHub Enterprise or GitLab instances are out of scope — no silent fallback."
+      ;;
+  esac
+}
+
+require_cli() {
+  local cli="$1"
+  command -v "$cli" >/dev/null 2>&1 </dev/null \
+    || err "'$cli' is required but not installed. Install it (see https://cli.github.com for gh, https://gitlab.com/gitlab-org/cli for glab) and re-run."
+  "$cli" auth status </dev/null >/dev/null 2>&1 \
+    || err "'$cli' is not authenticated. Run '$cli auth login' and re-run."
+}
+
+# Detect the provider and confirm its CLI is installed + authenticated, then
+# print the provider name. Every verb that talks to a provider starts here.
+resolve_provider() {
+  local provider
+  provider="$(detect_provider)"
+  require_cli "$provider"
+  printf '%s\n' "$provider"
+}
+
+# Read an stdin-delivered body/message, failing clearly (instead of hanging on
+# a terminal) if the verb was invoked without piped/heredoc input. $1 = verb.
+read_stdin() {
+  if [ -t 0 ]; then
+    err "$1: expected content on stdin (e.g. via a heredoc); got none."
+  fi
+  cat
+}
+
+# Parse the provider CLI's combined stdout+stderr for the last issue/PR/MR URL
+# and print machine-parseable identifier lines followed by the raw output.
+# `tail -1` takes the last matching URL, which for `gh`/`glab` create output is
+# the created resource; a body that itself embeds an issue/PR-shaped URL is a
+# theoretical decoy, but issue/PR bodies are human-approved before posting.
+# The `|| true` guards keep an empty grep match (no URL) from aborting the
+# script under `set -e` before the graceful error below can run.
+extract_identifier() {
+  local output="$1" url number
+  url="$(printf '%s\n' "$output" | grep -Eo 'https?://[^[:space:]]+/(issues|pull|merge_requests)/[0-9]+' | tail -1 || true)"
+  if [ -z "$url" ]; then
+    printf '%s\n' "$output"
+    err "could not find an issue/PR/MR URL in the provider CLI output above; not guessing the identifier."
+  fi
+  number="$(printf '%s\n' "$url" | grep -Eo '[0-9]+$' || true)"
+  printf 'NUMBER=%s\n' "$number"
+  printf 'URL=%s\n' "$url"
+  printf -- '---\n'
+  printf '%s\n' "$output"
+}
+
+# Shared tail for the two create verbs: on CLI failure surface the output and
+# exit with its status; otherwise parse and print the identifier.
+finish_create() {
+  local rc="$1" output="$2"
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$output" >&2
+    exit "$rc"
+  fi
+  extract_identifier "$output"
+}
+
+cmd_auth_status() {
+  local provider
+  provider="$(resolve_provider)"
+  echo "provider: $provider (authenticated)"
+}
+
+cmd_create_issue() {
+  local title="" labels=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --title) [ $# -ge 2 ] || err "create-issue: --title requires a value"; title="$2"; shift 2 ;;
+      --label) [ $# -ge 2 ] || err "create-issue: --label requires a value"; labels+=("$2"); shift 2 ;;
+      *) err "create-issue: unknown flag '$1'" ;;
+    esac
+  done
+  [ -n "$title" ] || err "create-issue: --title is required"
+  local body
+  body="$(read_stdin create-issue)"
+  local provider
+  provider="$(resolve_provider)"
+
+  local output rc=0
+  if [ "$provider" = "gh" ]; then
+    # Body via stdin (--body-file -) keeps it off argv: not visible in `ps`, no ARG_MAX limit.
+    local args=(issue create --title "$title" --body-file -)
+    if [ "${#labels[@]}" -gt 0 ]; then
+      for l in "${labels[@]}"; do args+=(--label "$l"); done
+    fi
+    output="$(printf '%s' "$body" | gh "${args[@]}" 2>&1)" || rc=$?
+  else
+    # glab's stdin/body-file support is unverified here; pass --description on argv per the
+    # validated mapping. Revisit body-on-stdin during the post-merge GitLab validation (issue #14).
+    local args=(issue create --yes --template "" --title "$title" --description "$body")
+    if [ "${#labels[@]}" -gt 0 ]; then
+      for l in "${labels[@]}"; do args+=(--label "$l"); done
+    fi
+    output="$(glab "${args[@]}" </dev/null 2>&1)" || rc=$?
+  fi
+  finish_create "$rc" "$output"
+}
+
+cmd_view_issue() {
+  local id="${1:-}"
+  [ -n "$id" ] || err "view-issue: issue id is required"
+  local provider
+  provider="$(resolve_provider)"
+  if [ "$provider" = "gh" ]; then
+    gh issue view "$id" </dev/null
+  else
+    glab issue view "$id" </dev/null
+  fi
+}
+
+cmd_comment_issue() {
+  local id="${1:-}"
+  [ -n "$id" ] || err "comment-issue: issue id is required"
+  local msg
+  msg="$(read_stdin comment-issue)"
+  local provider
+  provider="$(resolve_provider)"
+  if [ "$provider" = "gh" ]; then
+    printf '%s' "$msg" | gh issue comment "$id" --body-file -
+  else
+    glab issue note "$id" --message "$msg" </dev/null
+  fi
+}
+
+cmd_list_labels() {
+  local provider
+  provider="$(resolve_provider)"
+  if [ "$provider" = "gh" ]; then
+    gh label list </dev/null
+  else
+    glab label list </dev/null
+  fi
+}
+
+cmd_create_change_request() {
+  local base="" title=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base) [ $# -ge 2 ] || err "create-change-request: --base requires a value"; base="$2"; shift 2 ;;
+      --title) [ $# -ge 2 ] || err "create-change-request: --title requires a value"; title="$2"; shift 2 ;;
+      *) err "create-change-request: unknown flag '$1'" ;;
+    esac
+  done
+  [ -n "$base" ] || err "create-change-request: --base is required"
+  [ -n "$title" ] || err "create-change-request: --title is required"
+  local body
+  body="$(read_stdin create-change-request)"
+  local provider
+  provider="$(resolve_provider)"
+  local source
+  source="$(git rev-parse --abbrev-ref HEAD)"
+
+  local output rc=0
+  if [ "$provider" = "gh" ]; then
+    output="$(printf '%s' "$body" | gh pr create --base "$base" --title "$title" --body-file - 2>&1)" || rc=$?
+  else
+    output="$(glab mr create --yes --template "" --target-branch "$base" --source-branch "$source" --title "$title" --description "$body" </dev/null 2>&1)" || rc=$?
+  fi
+  finish_create "$rc" "$output"
+}
+
+usage() {
+  err "usage: paf-vcs <verb> [args...] — verbs: provider, auth-status, create-issue, view-issue, comment-issue, list-labels, create-change-request"
+}
+
+main() {
+  local verb="${1:-}"
+  [ -n "$verb" ] || usage
+  shift
+  case "$verb" in
+    provider) detect_provider ;;
+    auth-status) cmd_auth_status ;;
+    create-issue) cmd_create_issue "$@" ;;
+    view-issue) cmd_view_issue "$@" ;;
+    comment-issue) cmd_comment_issue "$@" ;;
+    list-labels) cmd_list_labels ;;
+    create-change-request) cmd_create_change_request "$@" ;;
+    *) err "unknown verb '$verb' — verbs: provider, auth-status, create-issue, view-issue, comment-issue, list-labels, create-change-request" ;;
+  esac
+}
+
+main "$@"

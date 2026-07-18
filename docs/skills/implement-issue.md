@@ -4,7 +4,7 @@ Human-facing documentation for the `implement-issue` skill. The operational defi
 
 ## Purpose
 
-Take an approved GitHub issue from *validated approach* to *implemented, verified code on a feature branch*. `implement-issue` is the **second** skill — it runs after `/paf:create-issue` and before `/paf:check-out`. Its output is verified, **uncommitted** work on a feature branch that the developer reviews, then finishes with `/paf:check-out`.
+Take an approved issue from *validated approach* to *implemented, verified code on a feature branch*. `implement-issue` is the **second** skill — it runs after `/paf:create-issue` and before `/paf:check-out`. Its output is verified, **uncommitted** work on a feature branch that the developer reviews, then finishes with `/paf:check-out`.
 
 ## When and how to invoke
 
@@ -16,9 +16,9 @@ Once an issue exists and its approach is sound enough to build:
 
 ## How it works
 
-`implement-issue` is an orchestrator running in the main thread. It chains five specialist agents, owns all GitHub and git I/O, enforces the plan-review gate, and applies the loop caps and escalation policy.
+`implement-issue` is an orchestrator running in the main thread. It chains five specialist agents, owns all VCS and git I/O (via the `paf-vcs` adapter — `gh` on GitHub projects, `glab` on GitLab projects), enforces the plan-review gate, and applies the loop caps and escalation policy.
 
-1. **Read the issue** (skill) via `gh`.
+1. **Read the issue** (skill) via `paf-vcs`.
 2. **Validate the approach** — `issue-validator` checks technical validity against authoritative docs. The skill posts the findings as an issue comment; a **blocker** (`severity: error`) stops the run and sends the developer back to the issue. Minor findings (`warning`) are carried into the plan.
 3. **Explore** — `code-explorer` summarises the relevant code.
 4. **Plan** — `implementation-planner` produces a full plan (files, changes, test strategy), folding in any minor findings.
@@ -26,7 +26,7 @@ Once an issue exists and its approach is sound enough to build:
 6. **Branch** (skill) — create `feature/<issue>-<short-description>` from the base branch.
 7. **Implement** — `full-stack-dev` executes the approved plan on the branch.
 8. **Verify** — `implementation-verifier` runs the project's tests + linter scoped to the changed area. On failure the builder is re-invoked with the failure output, up to a cap; if it still fails, the run stops and escalates.
-9. **Hand off** (skill) — leave the verified changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no PR — that's `/paf:check-out`).
+9. **Hand off** (skill) — leave the verified changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`).
 10. **Cost + time** (skill) — append the run to the per-feature cost ledger.
 
 ## Orchestration
@@ -36,7 +36,7 @@ Once an issue exists and its approach is sound enough to build:
      |
      v
 +----------------------------------------------+
-| [skill] read the issue via gh                |
+| [skill] read the issue via paf-vcs            |
 +----------------------------------------------+
      |
      v
@@ -112,7 +112,7 @@ Once an issue exists and its approach is sound enough to build:
 | `full-stack-dev` | Implements the approved plan on the branch; re-invoked on verification failure. |
 | `implementation-verifier` | Runs scoped tests + linter and reports pass/fail. |
 
-Agents never call `gh`, change git state, or orchestrate each other — the skill owns all of that.
+Agents never call `gh`/`glab`, change git state, or orchestrate each other — the skill owns all of that.
 
 ## Human interception points
 
@@ -131,11 +131,11 @@ Per `architecture.md` §5:
 
 The skill owns git state (`architecture.md` §2). It creates the `feature/<issue>-<short-description>` branch from the base branch (`CLAUDE.md`) and implements on it, but **leaves the changes uncommitted**. This is deliberate: uncommitted working-tree changes are the clearest review surface — the developer sees every added/modified file highlighted in the IDE, with per-file diffs, instead of having to diff `HEAD` against the base. Because the project uses **squash merge**, deferring the commit costs nothing in history.
 
-`/paf:check-out` then commits the implementation plus any approved review fixes, pushes the branch, and opens the PR. The intended flow is tight — implement → review → check-out — so the uncommitted window is short.
+`/paf:check-out` then commits the implementation plus any approved review fixes, pushes the branch, and opens the MR/PR. The intended flow is tight — implement → review → check-out — so the uncommitted window is short.
 
 ## Cost and time reporting
 
-The final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the PR. Cost is converted to **EUR**; wall-clock is derived from the transcript. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
+The final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the MR/PR. Cost is converted to **EUR**; wall-clock is derived from the transcript. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
 
 ## Related files
 

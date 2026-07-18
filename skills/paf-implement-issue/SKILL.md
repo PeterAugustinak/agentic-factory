@@ -1,21 +1,21 @@
 ---
 name: "paf:implement-issue"
-description: Validate an approved GitHub issue, plan it, implement it on a feature branch, and verify it — leaving reviewed-ready code for /paf:check-out. Invoke with /paf:implement-issue <issue-number>.
+description: Validate an approved issue, plan it, implement it on a feature branch, and verify it — leaving reviewed-ready code for /paf:check-out. Invoke with /paf:implement-issue <issue-number>.
 disable-model-invocation: true
 argument-hint: "[issue-number]"
-allowed-tools: Read, Bash(gh issue view *), Bash(gh issue comment *), Bash(git *), Bash(python3 *)
+allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git *), Bash(python3 *)
 ---
 
 # implement-issue
 
-Take an approved GitHub issue from validated approach to implemented, tested code on a feature branch. This is the second skill in the factory: it runs after `/paf:create-issue` and before `/paf:check-out`. Its output is verified, **uncommitted** work on a feature branch that the developer reviews and then finishes with `/paf:check-out`.
+Take an approved issue from validated approach to implemented, tested code on a feature branch. This is the second skill in the factory: it runs after `/paf:create-issue` and before `/paf:check-out`. Its output is verified, **uncommitted** work on a feature branch that the developer reviews and then finishes with `/paf:check-out`.
 
-You are the orchestrator running in the main thread. You chain the specialist agents, own all GitHub and git I/O, enforce the human gate, and apply the loop caps and escalation policy. Follow the steps in order.
+You are the orchestrator running in the main thread. You chain the specialist agents, own all VCS and git I/O, enforce the human gate, and apply the loop caps and escalation policy. Follow the steps in order.
 
 ## Input
 
-- The issue number is in `$ARGUMENTS`. Read the issue with `gh` — its description and proposed approach are the starting point.
-- Project context comes from `CLAUDE.md`: the GitHub repo (`owner/repo`), the branch convention (`feature/<issue-number>-<short-description>`), the base branch that feature branches and PRs target (e.g. `develop`), and the exact test/lint commands. Do not hardcode any of it.
+- The issue number is in `$ARGUMENTS`. Read the issue with `paf-vcs` — its description and proposed approach are the starting point.
+- Project context comes from `CLAUDE.md`: the branch convention (`feature/<issue-number>-<short-description>`), the base branch that feature branches and MRs/PRs target (e.g. `develop`), and the exact test/lint commands. The repo and provider are auto-detected from the git `origin` remote. Do not hardcode any of it.
 
 **Strict project-context sourcing.** Every project-specific value (repo, labels, branch convention, test/lint/validation commands) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 
@@ -26,13 +26,21 @@ After **every** agent step below, parse the agent's final message with the share
 ## Steps
 
 **1. Read the issue (skill).**
-Fetch the issue: `gh issue view $ARGUMENTS` on the repo from `CLAUDE.md`. Keep its title, body, and proposed approach — they feed the validator and planner.
+Fetch the issue: `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs view-issue $ARGUMENTS` on the repo auto-detected from the git `origin` remote. Keep its title, body, and proposed approach — they feed the validator and planner.
 
 **2. Validate the approach (agent).**
 Invoke `issue-validator` explicitly, passing the issue and its proposed approach. It verifies technical validity against authoritative docs and returns findings (each `severity: error` = blocker, `warning` = minor). It does not post anything.
 
 **3. Handle validator findings (skill).**
-Post the validator's findings as a comment on the issue (`gh issue comment`). Then branch on severity:
+Post the validator's findings as a comment on the issue, feeding the findings to `paf-vcs` on stdin (the message must come via stdin — a heredoc is the clearest form):
+
+```
+${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs comment-issue $ARGUMENTS <<'EOF'
+<validator findings, formatted as markdown>
+EOF
+```
+
+Then branch on severity:
 - **Any `severity: error`** → **STOP**: tell the developer to update the issue and re-run `/paf:implement-issue`. Do not continue.
 - **Only `warning` findings (or none)** → carry the warnings forward; they must be accounted for in the plan (step 5).
 
@@ -60,7 +68,7 @@ Invoke `implementation-verifier`, telling it the area the change affects. It run
 - **`status: failure`, retries exhausted** → **STOP**: print a structured escalation report (what failed, the last `implementation-verifier` output, a suggested next action). The developer adjusts the plan or issue and re-runs `/paf:implement-issue`.
 
 **10. Hand off for review (skill).**
-Do **not** commit, push, or open a PR. Leave the verified changes **uncommitted** on the feature branch so the developer can review them as working-tree changes in their IDE (the clearest review surface). `/paf:check-out` commits the implementation plus any approved fixes, pushes, and opens the PR.
+Do **not** commit, push, or open an MR/PR. Leave the verified changes **uncommitted** on the feature branch so the developer can review them as working-tree changes in their IDE (the clearest review surface). `/paf:check-out` commits the implementation plus any approved fixes, pushes, and opens the MR/PR.
 
 **11. Report cost and time (skill).**
 Run the shared cost helper:
@@ -79,4 +87,4 @@ Any of these **stops the run** with a clear message to the developer, who fixes 
 - verification still failing after the retry cap (step 9);
 - malformed or missing agent output (any agent step).
 
-This skill never proceeds past a blocker, never retries beyond the cap, and never commits, pushes, or opens a PR.
+This skill never proceeds past a blocker, never retries beyond the cap, and never commits, pushes, or opens an MR/PR.

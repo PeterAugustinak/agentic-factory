@@ -69,7 +69,7 @@ done
 # --- shared helpers (sibling of the skills) ---
 rm -rf "${SKILLS_DIR:?}/paf-shared"
 cp -R "$SRC/skills/paf-shared" "$SKILLS_DIR/paf-shared"
-chmod +x "$SKILLS_DIR"/paf-shared/*.py 2>/dev/null || true
+chmod +x "$SKILLS_DIR"/paf-shared/*.py "$SKILLS_DIR"/paf-shared/paf-vcs 2>/dev/null || true
 
 # --- agents (namespaced; recursive scan makes this fine) ---
 rm -rf "$AGENTS_DIR"; mkdir -p "$AGENTS_DIR"
