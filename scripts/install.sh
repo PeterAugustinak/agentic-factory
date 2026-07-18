@@ -88,7 +88,7 @@ python3 - "$SETTINGS" "$HOOKS_DIR/$HOOK_NAME" <<'PY'
 import json, os, sys
 settings_path, hook_path = sys.argv[1], sys.argv[2]
 command = f"python3 {hook_path}"
-matcher = "Bash|Edit|Write|MultiEdit"
+matcher = "Bash|Edit|Write|MultiEdit|WebSearch|WebFetch|Task"
 try:
     with open(settings_path) as fh:
         data = json.load(fh)
