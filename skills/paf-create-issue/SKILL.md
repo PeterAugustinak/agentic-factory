@@ -18,6 +18,8 @@ This skill runs inline in the current conversation, so **the prior discussion of
 
 Project context — the GitHub repo (`owner/repo`) and any standard labels — comes from `CLAUDE.md`. Do not hardcode it.
 
+**Strict project-context sourcing.** Every project-specific value (repo, labels) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name things that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
+
 ## Steps
 
 **1. Clarity gate (skill + human).**

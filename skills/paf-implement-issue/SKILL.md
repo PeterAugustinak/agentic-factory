@@ -17,6 +17,8 @@ You are the orchestrator running in the main thread. You chain the specialist ag
 - The issue number is in `$ARGUMENTS`. Read the issue with `gh` — its description and proposed approach are the starting point.
 - Project context comes from `CLAUDE.md`: the GitHub repo (`owner/repo`), the branch convention (`feature/<issue-number>-<short-description>`), the base branch that feature branches and PRs target (e.g. `develop`), and the exact test/lint commands. Do not hardcode any of it.
 
+**Strict project-context sourcing.** Every project-specific value (repo, labels, branch convention, test/lint/validation commands) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
+
 ## Parsing agent output
 
 After **every** agent step below, parse the agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure. Never proceed on a guessed parse.
@@ -52,7 +54,7 @@ From the base branch defined in `CLAUDE.md`, create and switch to `feature/<issu
 Invoke `full-stack-dev`, passing the approved plan. It edits files, writes tests, and runs any project commands the plan requires. It returns the files it changed in `artifacts`. It does not commit or push — you own git state.
 
 **9. Verify (agent).**
-Invoke `implementation-verifier`, telling it the area the change affects. It runs the project's test and lint commands (from `CLAUDE.md`), scoped to that area, and returns `status`.
+Invoke `implementation-verifier`, telling it the area the change affects. It runs the project's test and lint commands **exactly as defined in `CLAUDE.md`**, scoped to that area, and returns `status`. If `CLAUDE.md` defines no such commands, **STOP** and ask the developer — never guess a command or reach for one remembered from another project.
 - **`status: success`** → continue to step 10.
 - **`status: failure`, retries remaining (< 2 done)** → re-invoke `full-stack-dev` (step 8) with the original plan **plus the verifier's failure output**, then verify again. `full-stack-dev` runs at most **3 times total** (initial + 2 retries). The builder never verifies its own fix — `implementation-verifier` always re-runs.
 - **`status: failure`, retries exhausted** → **STOP**: print a structured escalation report (what failed, the last `implementation-verifier` output, a suggested next action). The developer adjusts the plan or issue and re-runs `/paf:implement-issue`.

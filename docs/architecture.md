@@ -284,6 +284,8 @@ The exact ledger location, record format, and pricing table are implementation d
 
 This is why skills do not manually inject CLAUDE.md sections into agents — it is unnecessary given native auto-loading.
 
+- **Strict sourcing — no cross-project bleed.** Project-specific values come **only** from *this* project's `CLAUDE.md` and repository. Skills must never substitute a value — especially a filename or command — from the operator's memory, another project, or a prior session. Auto-recalled memories are unrelated background and may name files that do not exist in the current repo. If a value a step needs is not defined here, the skill **STOPs and asks the developer** rather than inventing or borrowing one. Each skill states this guardrail in its own `Input` section, and the verification / pre-merge steps STOP when no command is defined.
+
 ---
 
 ## Sources
