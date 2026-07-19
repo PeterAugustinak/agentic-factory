@@ -57,6 +57,12 @@ Therefore:
 - **Sequencing is prompt-based, not harness-enforced.** Claude Code skills are prompt-based — there is no harness-level deterministic state machine. The fixed sequence is enforced by explicit, imperative skill instructions ("Step N: invoke the `<exact-agent>` agent with this context"), executed by the main-thread model. Skills must therefore be written imperatively, not suggestively.
 - **Agents are caller-agnostic.** An agent definition must never reference a specific skill — not by name and not by behaviour. Agents are reusable specialists: any caller may invoke any agent — a skill, or a developer invoking it directly (e.g. `@code-simplifier review the current branch`). An agent's prompt describes only what it receives and what it returns, never who invokes it or where it sits in a pipeline. The same rule applies between agents — an agent does not name another agent; it operates solely on the input it is handed and the output contract it returns.
 
+#### Plan mode for the plan→build phase (`implement-issue`)
+
+One deliberate exception to "cognitive work is delegated to agents": in `implement-issue` the **plan→build phase runs in the main thread via native plan mode** (`EnterPlanMode` → explore + produce a concrete plan → `ExitPlanMode` approval gate → execute in the same context), **not** as a separate planner agent handing off to a separate builder agent. Two subagents do not share context: the builder starts **cold**, re-reads the repo, and reconstructs file state to re-derive edits the planner already worked out — exploration happens twice and the "plan" carries intent rather than concrete edits. Plan mode keeps exploration, the concrete plan, and execution in **one context**, so an approved plan applies in seconds. `EnterPlanMode`/`ExitPlanMode` are main-thread-only tools, which is why this lives in the skill's main thread. Validation (`issue-validator`) and verification (`implementation-verifier`) remain delegated agents — they do not sit on the plan→build cold-context boundary, so their isolated contexts cost nothing there.
+
+Running the build phase in the main thread means its file writes are **not** subject to the hook's agent-scoped project-path containment (§3) — an accepted trade-off documented as a residual risk in §3, compensated by the native read-only plan phase and the `ExitPlanMode` approval gate that precede any write.
+
 #### External I/O and VCS state are skill-owned
 
 All VCS API calls (`gh`/`glab`), git state transitions (branch, commit, push), test-execution triggers, and result posting happen in the main thread / skill. Agents never call `gh`/`glab` or change git state — `full-stack-dev` edits files, but the skill owns branching, committing, pushing, and opening issues/MRs/PRs.
@@ -120,7 +126,7 @@ Tool restriction is enforced in three layers:
 2. **Native, coarse (frontmatter).** Each agent declares `tools` (allowlist) and/or `disallowedTools` (denylist) in its definition. This is real, harness-level enforcement at the **whole-tool** granularity: a tool the agent does not have is genuinely unavailable. If both fields are set, `disallowedTools` is applied first, then `tools` resolves against the remainder.(4)
 3. **Hook, granular (`PreToolUse`).** A single, centralized `PreToolUse` hook is the factory's **allow+deny authority**. It inspects `tool_input` before each call and returns an explicit `permissionDecision`: **`allow`** for the factory's vetted calls (so they run without a permission prompt), **`deny`** for the sub-tool restrictions frontmatter cannot express (e.g. "Bash read-only commands only", "writes within project paths only", "no external I/O for agents"), and emits **nothing (defer)** for anything unrecognized, so Claude Code's normal permission prompt still applies as a human safety net.(7) Emitting `allow` is what makes a run autonomous *between* the deliberate human gates: without it, every permitted call falls through to a prompt, because frontmatter `allowed-tools` grants are per-turn and do not cover subagents' tool calls.
 
-**Why the hook is required and not redundant:** frontmatter can allow or deny a tool *as a whole* but cannot restrict it conditionally. `code-explorer` (read-only Bash) and `full-stack-dev` (project-path-only Bash/writes) need command- and path-level rules that only a `PreToolUse` hook inspecting `tool_input.command` can apply.
+**Why the hook is required and not redundant:** frontmatter can allow or deny a tool *as a whole* but cannot restrict it conditionally. An agent granted Bash for read-only exploration, and `full-stack-dev` (project-path-only Bash/writes), need command- and path-level rules that only a `PreToolUse` hook inspecting `tool_input.command` can apply.
 
 **How the hook identifies the active agent:** the `PreToolUse` hook payload (delivered as JSON on stdin) includes an `agent_type` field carrying the agent's `name`. This is the documented, native mechanism — no environment variable or prompt-header sentinel is needed. When `agent_type` is **absent**, the hook is firing in the **main thread (the orchestrating skill)**: it is not restricted, and the hook `allow`s its known command families (`gh`, `glab`, `paf-vcs`, `git`, `python3`) so orchestration runs prompt-free, deferring anything unrecognized to the normal prompt.(7) (5)
 
@@ -142,7 +148,7 @@ No agent is ever granted `gh` or git-state mutation — external I/O and VCS are
 The architecture fixes the *policy patterns*; the exact command patterns are an implementation detail of the hook. Which pattern applies to an agent follows from its scope (above), so adding an agent needs no change here. The hook `allow`s each vetted call (no prompt), `deny`s the forbidden ones below, and defers the rest:
 
 - **Read-only Bash** (any agent granted Bash for exploration only): the hook uses an **allowlist (default-deny)** — only an explicit set of read-only commands (e.g. `grep`, `find`, `git log`, `git diff`, `cat`, `ls`) is allowed; every other Bash command is denied. Default-deny is required because a denylist of mutating commands inevitably leaks.
-- **Project-path containment** (any agent with write access): the hook allows `Edit`/`Write` targeting the project root and denies any whose target resolves **outside** it. The project root is read from the `CLAUDE_PROJECT_DIR` environment variable available to hooks.(7)
+- **Project-path containment** (any agent with write access): the hook allows `Edit`/`Write` targeting the project root and denies any whose target resolves **outside** it. The project root is read from the `CLAUDE_PROJECT_DIR` environment variable available to hooks.(7) **Accepted residual risk:** this containment is keyed on `agent_type`, so it applies only to agents — not to the main thread, which the hook treats as unrestricted (above). `implement-issue` deliberately runs its plan→build phase, including the file writes, in the **main thread** (§2), so those writes are **not** path-contained by the hook. The compensating controls are structural: the write phase is reached only through native read-only plan mode and the `ExitPlanMode` developer-approval gate (nothing is written until the developer approves the concrete plan), and the skill performs no commit/push (it hands off uncommitted work, §2). Consistent with the trust model above — cooperating Claude agents, not an external adversary — this is an accepted limit, not a closed hole.
 - **No external I/O** (all agents): `gh`, `glab`, the `paf-vcs` adapter, and other external I/O are denied at the hook even where `Bash` is allowed; only the skill (main thread) performs them. The one web exception is `issue-validator`, whose `WebSearch`/`WebFetch` documentation lookups are allowed — reading public docs is not state-changing I/O. **Accepted residual risk:** this deny is a token/regex match over the command string, so it catches direct and embedded invocations but not deliberate indirection (an agent writing a helper script inside the project root and running it via `bash`/`python3`, or an encoded command piped to `eval`). Given the trust model (cooperating Claude sub-agents, not an external adversary), this is an accepted limit of a lightweight hook, not a closed hole.
 - **Build/test Bash** (builder, verifier): Bash that is neither external I/O nor a git-state change is allowed, so tests, linters, and migrations run without prompts.
 - **Matcher coverage:** the hook is wired for `Bash|Edit|Write|MultiEdit|WebSearch|WebFetch|Task` so it sees every call that would otherwise prompt (notably the validator's web lookups and agent spawns), not just Bash/writes.
@@ -184,7 +190,7 @@ There is **no `cost` block** in the agent contract — an agent cannot reliably 
 ### Severity semantics
 
 - **`severity: error`** denotes a **blocker** — a finding that stops the flow and requires developer action (e.g. `issue-validator` error findings halt `implement-issue`).
-- **`severity: warning`** denotes a **minor / non-blocking** finding that is passed forward (e.g. to `implementation-planner`) or surfaced for the developer to decide on.
+- **`severity: warning`** denotes a **minor / non-blocking** finding that is passed forward (e.g. carried into the implementation plan) or surfaced for the developer to decide on.
 
 The skill uses this field to branch.
 
@@ -204,11 +210,11 @@ The schema is uniform; this documents which fields carry the meaningful payload,
 
 ### `implement-issue` retry loop
 
-- **Max retries:** 2 — `full-stack-dev` is reinvoked at most twice after an initial failure.
+- **Max retries:** 2 — after an initial failure, the **same main-thread context that built the code** (now in edit mode, post-`ExitPlanMode`) re-applies the fix (planning ran in plan mode; building and this fix run in the same main-thread context, §2), at most twice — never a cold builder agent.
 - **Trigger:** `implementation-verifier` returns `status: failure` (test or lint failures).
-- **Passed to the builder on retry:** the original plan + the failed run's output contract (structured failure context, not free-form prose).
+- **Used on retry:** the verifier's failure output (structured failure context, not free-form prose); the approved plan and the code already sit in the main thread's context.
 - **On retry exhaustion:** the skill stops and prints a structured escalation report to the developer containing what failed, the last `implementation-verifier` output, and a suggested next action. The developer reviews, adjusts the plan or issue, and re-invokes `implement-issue` manually.
-- **No self-validation:** the builder never validates its own fix — `implementation-verifier` always runs as a separate agent after every `full-stack-dev` invocation.
+- **No self-validation:** the implementer never validates its own fix — `implementation-verifier` always runs as a separate agent after every fix.
 
 ### `check-out` fix loop
 
@@ -239,7 +245,7 @@ This two-tier split is the reason both points exist: fast scoped feedback during
 
 **In `create-issue` (authoring time, before the issue exists).** The drafted approach is validated *before* it is posted, so a defect in an externally-verifiable claim (a CLI flag, an API signature, library behaviour) is caught at the source rather than surfacing later. Because nothing is posted yet, a `severity: error` blocker does **not** stop the run: the skill folds the validator's prescribed correction back into a re-draft and re-validates (capped at two rounds), and any residual blocker is surfaced at the draft-review human gate for the developer to resolve. `warning` findings are carried to that gate. This closes the gap where `issue-writer` (read-only, no web access) faithfully transcribes an unverified approach.
 
-**In `implement-issue` (implementation time, against the posted issue).** When `issue-validator` returns any `severity: error`, the skill posts the findings as a GitHub issue comment, then **stops**; the developer must update the issue before re-running `implement-issue`. `warning` findings are posted as a comment and passed forward to `implementation-planner`.
+**In `implement-issue` (implementation time, against the posted issue).** When `issue-validator` returns any `severity: error`, the skill posts the findings as a GitHub issue comment, then **stops**; the developer must update the issue before re-running `implement-issue`. `warning` findings are posted as a comment and carried into the implementation plan.
 
 Running the validator in both skills is **not** redundant: the issue can be edited between the two skills (including manual edits), so `create-issue` validates what is *posted* while `implement-issue` re-validates what is *actually about to be built*. The authoring-time pass shifts detection as early as possible; the implementation-time pass is the last safety net.
 
@@ -295,7 +301,7 @@ This is why skills do not manually inject CLAUDE.md sections into agents — it 
 All architecture decisions are grounded in the official Claude Code documentation. Inline citations above use these numbers:
 
 1. Subagents — Choose a model. https://code.claude.com/docs/en/sub-agents#choose-a-model
-2. Subagents — Chain subagents / What loads at startup / Available tools (`AskUserQuestion` is main-thread-only, unavailable to subagents) / Spawn nested subagents (a subagent may spawn subagents up to depth 5, as of v2.1.172). https://code.claude.com/docs/en/sub-agents#chain-subagents
+2. Subagents — Chain subagents / What loads at startup / Available tools (`AskUserQuestion`, `EnterPlanMode`, and `ExitPlanMode` depend on the main conversation's UI/session state and are unavailable to subagents even when listed in `tools` — `ExitPlanMode` unless the subagent's `permissionMode` is `plan`) / Spawn nested subagents (a subagent may spawn subagents up to depth 5, as of v2.1.172). https://code.claude.com/docs/en/sub-agents#chain-subagents
 3. Subagents — Invoke subagents explicitly. https://code.claude.com/docs/en/sub-agents#invoke-subagents-explicitly
 4. Subagents — Control subagent capabilities. https://code.claude.com/docs/en/sub-agents#control-subagent-capabilities
 5. Subagents — Supported frontmatter fields (`name` is received by hooks as `agent_type`). https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields
