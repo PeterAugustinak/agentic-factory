@@ -27,8 +27,11 @@ AGENTS_DIR="$CLAUDE_DIR/agents/paf"
 HOOKS_DIR="$CLAUDE_DIR/hooks/paf"
 SETTINGS="$CLAUDE_DIR/settings.json"
 HOOK_NAME="PreToolUse-agent-guard.py"
+PAF_DIR="$CLAUDE_DIR/paf"          # survives reinstalls (also holds the cost ledger)
+MARKER="$PAF_DIR/VERSION"          # the *installed* version
 
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+read_version() { tr -d '[:space:]' < "$1"; }  # a VERSION file is one line; strip stray whitespace
 
 # --- dependencies ---
 command -v python3 >/dev/null 2>&1 || die "'python3' is required but not found."
@@ -37,6 +40,10 @@ if [ -z "${PAF_LOCAL_SRC:-}" ]; then
 fi
 
 echo "Installing PAF (Personal Agentic Factory)..."
+
+# --- the currently installed version, read before anything is written ---
+OLD=""
+if [ -f "$MARKER" ]; then OLD="$(read_version "$MARKER")"; fi
 
 # --- obtain the source ---
 tmp="$(mktemp -d)"
@@ -52,6 +59,9 @@ else
 fi
 [ -d "$SRC/skills" ] && [ -d "$SRC/agents" ] && [ -d "$SRC/hooks" ] \
   || die "source does not look like the factory repo (missing skills/agents/hooks)."
+[ -f "$SRC/VERSION" ] || die "source has no VERSION file (ref: ${REF})."
+NEW="$(read_version "$SRC/VERSION")"
+[ -n "$NEW" ] || die "source VERSION file is empty."
 
 mkdir -p "$SKILLS_DIR"
 
@@ -108,10 +118,22 @@ with open(settings_path, "w") as fh:
     fh.write("\n")
 PY
 
+# --- record the installed version ---
+mkdir -p "$PAF_DIR"
+printf '%s\n' "$NEW" > "$MARKER"
+
 # --- post-install summary ---
 skill_command() {  # print the frontmatter `name` (the invoke command) for a skill dir
   sed -n 's/^name:[[:space:]]*//p' "$SKILLS_DIR/$1/SKILL.md" | head -1 | tr -d '"'
 }
+echo
+if [ -z "$OLD" ]; then
+  echo "PAF v$NEW installed (new installation)"
+elif [ "$OLD" = "$NEW" ]; then
+  echo "PAF v$NEW reinstalled (already up to date)"
+else
+  echo "PAF upgraded: v$OLD -> v$NEW"
+fi
 echo
 echo "PAF installed into $CLAUDE_DIR"
 echo "  skills:  $SKILLS_DIR/<name>   (+ paf-shared)"
