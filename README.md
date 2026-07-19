@@ -28,6 +28,28 @@ To remove PAF (skills, agents, hook, and the hook entry in `settings.json` — n
 curl -sSL https://raw.githubusercontent.com/PeterAugustinak/agentic-factory/develop/scripts/uninstall.sh | bash
 ```
 
+## Versioning
+
+PAF carries a semantic version in the `VERSION` file at the repo root, and every change is
+recorded in [CHANGELOG.md](CHANGELOG.md).
+
+| Bump | When |
+|------|------|
+| PATCH | Bug fix |
+| MINOR | Backward-compatible feature or enhancement |
+| MAJOR | Breaking change — an install-layout or skill-interface change requiring re-configuration |
+
+PAF is pre-1.0: the interface is not yet stable, and `1.0.0` will mark the first release that
+declares it so. The bump rules above apply from now on regardless, which is a deliberate choice —
+[semver](https://semver.org) leaves `0.y.z` unconstrained.
+
+The installer records the installed version and reports whether a run was a new installation, an
+upgrade, or a reinstall. To check what you have installed at any time:
+
+```bash
+cat ~/.claude/paf/VERSION
+```
+
 ## Repository layout
 
 | Directory | Contents |

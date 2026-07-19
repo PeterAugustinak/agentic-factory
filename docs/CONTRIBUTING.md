@@ -30,3 +30,17 @@ Invoke after install: `/skill-name`
 - Branch from `develop`: `git checkout -b feature/<issue-number>-<short-description>`
 - PR targets `develop`
 - Merge to `master` via a release PR from `develop`
+
+## Versioning and the changelog
+
+Bumping `VERSION` and writing the `CHANGELOG.md` entry is a **manual, per-PR discipline**. It is
+deliberately not automated inside `check-out`: that skill is project-agnostic, whereas this
+versioning scheme is PAF-specific, so building it in would break `check-out` on every other project.
+
+While PAF is pre-1.0, **every PR carries its own version**: bump `VERSION` per the rules in the
+[README](../README.md) and add a dated `## [x.y.z] - YYYY-MM-DD` section to `CHANGELOG.md`
+describing the change.
+
+From `1.0.0` onward this switches to **one version per release**: feature PRs into `develop` add
+their entries under `## [Unreleased]`, and the release PR from `develop` to `master` bumps `VERSION`
+and converts that section into a dated one — so several PRs share a version.

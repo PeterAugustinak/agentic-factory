@@ -17,8 +17,14 @@ CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 SKILLS_DIR="$CLAUDE_DIR/skills"
 SETTINGS="$CLAUDE_DIR/settings.json"
 HOOK_NAME="PreToolUse-agent-guard.py"
+PAF_DIR="$CLAUDE_DIR/paf"
+MARKER="$PAF_DIR/VERSION"
 
-echo "Uninstalling PAF from $CLAUDE_DIR..."
+if [ -f "$MARKER" ]; then
+  echo "Uninstalling PAF v$(tr -d '[:space:]' < "$MARKER") from $CLAUDE_DIR..."
+else
+  echo "Uninstalling PAF from $CLAUDE_DIR..."
+fi
 removed=()
 
 # --- skills: any whose frontmatter `name` is paf:-prefixed, plus the shared helpers ---
@@ -35,6 +41,12 @@ fi
 # --- agents + hooks (installed under their own paf/ namespace) ---
 [ -d "$CLAUDE_DIR/agents/paf" ] && { rm -rf "$CLAUDE_DIR/agents/paf"; removed+=("agents/paf"); }
 [ -d "$CLAUDE_DIR/hooks/paf" ]  && { rm -rf "$CLAUDE_DIR/hooks/paf";  removed+=("hooks/paf"); }
+
+# --- installed-version marker (the cost ledger in the same dir is left alone) ---
+if [ -f "$MARKER" ]; then
+  rm -f "$MARKER"; removed+=("paf/VERSION")
+  rmdir "$PAF_DIR" 2>/dev/null || true   # only if nothing else (e.g. costs/) remains
+fi
 
 # --- settings.json: strip only the PAF hook entry ---
 if [ -f "$SETTINGS" ]; then
