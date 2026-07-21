@@ -5,6 +5,18 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-07-21
+
+### Fixed
+
+- The `PreToolUse` hook now allows the main thread unconditionally instead of gating its `Bash`
+  calls on a command-family allow-list, so compound, piped, and `cd`-prefixed orchestration
+  commands no longer fall through to a permission prompt mid-run (#22). Hardened alongside this:
+  a non-dict JSON payload (`null`, a list, a bare string) now defers like a malformed one instead
+  of raising an uncaught `AttributeError`, and the main thread is now identified by the *absence*
+  of the `agent_type` key rather than by its value being falsy, so a payload that carries the key
+  with an empty or null value is correctly treated as a restricted agent, not the main thread.
+
 ## [0.7.0] - 2026-07-21
 
 Graded MINOR rather than PATCH despite #25 being labelled a bug: the fix grants `issue-validator`

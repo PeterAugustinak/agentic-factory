@@ -6,9 +6,10 @@ Keyed on the `agent_type` field of the PreToolUse payload, it returns an explici
 permission decision for every call it recognizes, so vetted factory calls run
 WITHOUT a permission prompt and forbidden ones are blocked:
 
-- ALLOW — the factory's known-safe calls (main-thread gh/git/python3; each agent's
-  legitimate tool set: read-only Bash, build/test Bash, project-scoped writes,
-  the validator's web lookups). These skip the permission prompt.
+- ALLOW — the main thread unconditionally (the trusted orchestrator owns all I/O
+  and git state, §2), plus each agent's legitimate tool set: read-only Bash,
+  build/test Bash, project-scoped writes, the validator's web lookups. These skip
+  the permission prompt.
 - DENY  — agents doing external I/O (gh/curl/wget/ssh/...), agents changing git
   state (add/commit/push/...), read-only agents running non-read-only Bash, and
   any write outside the project root. All skill-owned or unsafe (§2).
@@ -31,9 +32,6 @@ READ_ONLY_COMMANDS = {
     "grep", "egrep", "fgrep", "rg", "ag", "find", "cat", "ls", "head", "tail",
     "wc", "tree", "file", "stat", "pwd", "echo", "which", "git",
 }
-
-# Command families the orchestrating skill (main thread) runs — allowed without a prompt.
-MAIN_THREAD_COMMANDS = {"gh", "glab", "paf-vcs", "git", "python3", "python"} | READ_ONLY_COMMANDS
 
 # External I/O — denied for every agent (skill-owned).
 EXTERNAL_IO = re.compile(r"(?:^|[^\w])(gh|glab|paf-vcs|curl|wget|nc|ncat|ssh|scp|telnet|ftp)(?:[^\w]|$)")
@@ -93,6 +91,9 @@ def main() -> None:
     except (json.JSONDecodeError, ValueError):
         defer()  # malformed payload is not ours to judge
 
+    if not isinstance(data, dict):
+        defer()  # valid JSON but not an object (null/list/string) is not ours to judge
+
     agent = data.get("agent_type") or ""
     tool = data.get("tool_name") or ""
     tool_input = data.get("tool_input") or {}
@@ -101,15 +102,14 @@ def main() -> None:
     )
 
     # --- Main thread (the orchestrating skill): owns all I/O and git state. ---
-    if not agent:
-        if tool == "Bash":
-            name = command_name(tool_input.get("command") or "")
-            if name in MAIN_THREAD_COMMANDS:
-                allow(f"Skill (main thread) may run '{name}'.")
-            defer()  # unrecognized main-thread command — let the normal prompt decide
-        if tool == "Task":
-            allow("Skill orchestrates specialist agents.")
-        defer()  # WebFetch/WebSearch/Edit/Write/etc. from the main thread — prompt
+    # Allowed unconditionally, not gated on a command family: gating on the first
+    # word made compound/piped/cd-prefixed commands fall through to a prompt (#22).
+    # Per the Claude Code hooks documentation, `agent_type` is OMITTED ENTIRELY for
+    # the main thread and present with a real name only for a subagent/--agent run,
+    # so main-thread identity is the ABSENCE of the key — not a falsy value — and a
+    # key present but empty/null fails safe into the restricted agent branch below.
+    if "agent_type" not in data:
+        allow("Main thread (orchestrating skill) is unrestricted (architecture.md §3).")
 
     # --- Agents: restricted; allow only their legitimate calls. ---
     if tool == "Bash":
