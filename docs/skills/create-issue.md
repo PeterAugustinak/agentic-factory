@@ -22,7 +22,7 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 
 1. **Clarity gate.** The skill checks whether the idea (from the conversation and/or the seed argument) is specified enough to write a good issue — clear problem, intended outcome, rough acceptance criteria. If it is thin, it asks a few targeted questions and waits. Deep elicitation is expected to happen in the conversation beforehand; this gate is a lightweight safety check, not a full grill.
 2. **Draft.** The `issue-writer` agent (read-only) drafts a structured issue: title, description, acceptance criteria, suggested labels. It returns the draft only — it never posts.
-3. **Validate the approach.** The `issue-validator` agent (web access) checks any concrete technical claims in the draft — CLI flags, API signatures, library behaviour — against authoritative docs, and returns findings. Blockers are folded back into a re-draft and re-validated (capped at two rounds); any residual blocker is surfaced at the review gate. This is **shift-left**: an approach defect is caught before the issue is posted, not left for `/paf:implement-issue` to discover. A draft with no externally-verifiable claims validates for free.
+3. **Validate the approach.** The `issue-validator` agent (web access + read-only repo search) receives the **whole** draft and checks its load-bearing claims against **both** authoritative docs — CLI flags, API signatures, library behaviour, including the cited spec's caveats and scope limits — **and** the actual repository: do the named paths exist, does the described current behaviour match the code, is the approach feasible against the existing implementation. It returns findings. Blockers are folded back into a re-draft and re-validated (capped at two rounds); any residual blocker is surfaced at the review gate. This is **shift-left**: an approach defect is caught before the issue is posted, not left for `/paf:implement-issue` to discover. The skill never narrows the validator's scope and never skips this step — a draft with no external claims still makes claims about the repository.
 4. **Review gate.** The developer reviews the **already-validated** draft, plus any carried-forward findings. Changes loop back to a re-draft (and re-validate); approval moves forward. Nothing is posted before approval.
 5. **Post.** The skill creates the issue via `paf-vcs` (auto-detecting the provider from the repo's `origin` remote), using labels that exist in the repo, and prints the issue URL.
 6. **Cost + time.** The skill runs the shared cost helper, which prices the whole session (including the idea discussion) and appends the run to the per-feature cost ledger.
@@ -51,7 +51,7 @@ The skill runs **inline in the current conversation**, so the prior discussion i
      v                                             |
 +----------------------------------------------+   |
 | [agent] issue-validator                      |   |
-|   check approach vs authoritative docs       |   |
+|   check approach vs docs + repository        |   |
 +----------------------------------------------+   |
      |--- blocker --> re-draft + re-validate ------+  (cap 2 rounds;
      |                                             |   residual blocker
@@ -77,14 +77,14 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 ## Agents used
 
 - **`issue-writer`** (Sonnet, read-only) — synthesises the discussed idea into the structured issue draft and returns it via the [output contract](../../skills/paf-shared/output-contract.md); the skill parses that, gates it on the developer, and posts it.
-- **`issue-validator`** (Sonnet, web access) — independently checks the drafted approach's technical claims against authoritative docs *before* posting, returning findings via the same output contract. The skill folds blockers back into a re-draft (capped) and surfaces the rest at the review gate.
+- **`issue-validator`** (Sonnet, web access + read-only repo search) — independently checks the drafted approach's load-bearing claims against authoritative docs **and** the actual repository *before* posting, returning findings via the same output contract. The skill folds blockers back into a re-draft (capped) and surfaces the rest at the review gate.
 
 Planning and implementation belong to `/paf:implement-issue`. Note that `issue-validator` runs **twice** across the pipeline by design — here at authoring time (catch defects before posting) and again inside `/paf:implement-issue` (re-check the *posted* issue, which may have been edited between skills). See [`architecture.md` → issue-validator escalation](../architecture.md#issue-validator-escalation).
 
 ## Human interception points
 
 - **Clarity gate** (step 1) — an in-skill pause when the idea is underspecified.
-- **Draft review** (step 4) — the mandatory gate before anything is posted; the developer approves or requests changes, reviewing an already doc-validated draft plus any carried-forward findings.
+- **Draft review** (step 4) — the mandatory gate before anything is posted; the developer approves or requests changes, reviewing an already validated draft (docs + repository) plus any carried-forward findings.
 - **Skill boundary** — after the issue is posted, the developer decides when to run `/paf:implement-issue`. The gap between skills is itself a review point (`architecture.md` §2).
 
 ## Cost and time reporting

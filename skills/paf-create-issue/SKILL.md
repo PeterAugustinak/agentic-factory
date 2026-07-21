@@ -10,7 +10,7 @@ allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(pyt
 
 Turn a feature idea — usually one you have just been discussing — into a structured issue, reviewed by the developer, and post it. This is the first skill in the factory: its output is an approved issue that `/paf:implement-issue` later builds.
 
-You are the orchestrator running in the main thread. You invoke the `issue-writer` agent for the drafting and the `issue-validator` agent to check the drafted approach against authoritative docs *before* posting (cognitive work), and own all VCS I/O yourself. Follow the steps in order; do not skip the human gate.
+You are the orchestrator running in the main thread. You invoke the `issue-writer` agent for the drafting and the `issue-validator` agent to check the drafted approach against authoritative docs **and this repository** *before* posting (cognitive work), and own all VCS I/O yourself. Follow the steps in order; do not skip the human gate.
 
 ## Input
 
@@ -32,7 +32,9 @@ Invoke the `issue-writer` agent explicitly by name. Pass it the clarified idea a
 Apply the shared parsing rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md` to the agent's final message: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure — never proceed on a guessed parse. The drafted issue (title, body, acceptance criteria, suggested labels) is in `summary`.
 
 **4. Validate the drafted approach (agent).**
-Invoke the `issue-validator` agent explicitly, passing the drafted issue and any concrete technical approach it contains (CLI commands, API signatures, library behaviour, config). It verifies those claims against authoritative documentation (it has web access; `issue-writer` does not) and returns findings — each `severity: error` = blocker, `severity: warning` = minor. Parse its output with the same shared rules as step 3. This catches approach defects **before** the issue is posted, rather than deferring them to `/paf:implement-issue`. If the drafted issue carries no externally-verifiable claims, the validator simply returns no findings — cheap.
+Invoke the `issue-validator` agent explicitly, passing it the **entire drafted issue**. It validates the draft against both authoritative external documentation (it has web access; `issue-writer` does not) and the actual repository, and returns findings — each `severity: error` = blocker, `severity: warning` = minor. Parse its output with the same shared rules as step 3. This catches approach defects **before** the issue is posted, rather than deferring them to `/paf:implement-issue`.
+
+- **Never narrow its scope, and never skip this step.** Pass the whole draft — not just the parts that look externally verifiable — and let the validator decide what is worth checking; do not tell it to take any part "as given." A draft with no external claims is not a reason to skip: its claims about *this repository* are always checkable, and are exactly the class of defect that otherwise reaches `/paf:implement-issue`.
 
 **5. Resolve validator findings (skill).**
 - **Any `severity: error`** → re-invoke `issue-writer` (back to step 2) with the validator's prescribed correction folded into the input, then re-validate (step 4). Do this at most **twice**; if a blocker still stands after two correction rounds, carry it to the review gate flagged **prominently** for the developer to resolve — never silently drop or post it.

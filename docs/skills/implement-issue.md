@@ -19,7 +19,7 @@ Once an issue exists and its approach is sound enough to build:
 `implement-issue` is an orchestrator running in the main thread. It validates the approach with an agent, then **plans and implements in one shared context using native plan mode**, then verifies with an agent. It owns all VCS and git I/O (via the `paf-vcs` adapter — `gh` on GitHub projects, `glab` on GitLab projects), enforces the plan-review gate, and applies the loop cap and escalation policy.
 
 1. **Read the issue** (skill) via `paf-vcs`.
-2. **Validate the approach** — `issue-validator` checks technical validity against authoritative docs. The skill posts the findings as an issue comment; a **blocker** (`severity: error`) stops the run and sends the developer back to the issue. Minor findings (`warning`) are carried into the plan.
+2. **Validate the approach** — `issue-validator` checks technical validity against authoritative docs and the repository. The skill posts the findings as an issue comment; a **blocker** (`severity: error`) stops the run and sends the developer back to the issue. Minor findings (`warning`) are carried into the plan.
 3. **Plan** (skill, main thread) — `EnterPlanMode`: in one read-only context, explore the codebase and produce a **concrete** plan (exact files and edits, test strategy), folding in any minor findings. Nothing is written yet.
 4. **Plan-review gate** (`ExitPlanMode`) — the developer approves the plan or requests changes (revise in plan mode and re-present). Nothing is built before approval.
 5. **Branch** (skill) — after approval, create `feature/<issue>-<short-description>` from the base branch.
@@ -45,7 +45,7 @@ Planning and building run in the main thread via native plan mode rather than as
      v
 +----------------------------------------------+
 | [agent] issue-validator                      |
-|   verify approach vs docs -> findings        |
+|   verify vs docs + repo -> findings          |
 +----------------------------------------------+
      |
      v
@@ -104,7 +104,7 @@ Planning and building run in the main thread via native plan mode rather than as
 
 | Agent | Role in this skill |
 |---|---|
-| `issue-validator` | Verifies the issue's approach against authoritative docs; findings gate the run. |
+| `issue-validator` | Verifies the issue's approach against authoritative docs and the repository; findings gate the run. |
 | `implementation-verifier` | Runs scoped tests + linter and reports pass/fail. |
 
 Planning and implementation are **not** delegated to agents — they run in the main thread via native plan mode (see "Why plan mode" above). The two agents that remain (`issue-validator`, `implementation-verifier`) do not sit on the plan→build boundary, so they keep their own isolated contexts without cost. Agents never call `gh`/`glab`, change git state, or orchestrate each other — the skill owns all of that.
