@@ -5,6 +5,32 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-21
+
+Graded MINOR rather than PATCH despite #25 being labelled a bug: the fix grants `issue-validator`
+a new capability (`Grep`/`Glob`) and widens what it validates, which is an enhancement under the
+bump rules in the README.
+
+### Changed
+
+- `issue-validator` now validates a proposed approach against **both** authoritative external
+  documentation **and** the actual repository — that named paths exist, that the described
+  current behaviour matches the code, and that the approach is feasible against the existing
+  implementation. It also enumerates every load-bearing claim and checks the cited spec's
+  caveats, edge conditions and scope limits rather than confirming only the headline rule (#25).
+- `create-issue` passes the **whole** drafted issue to the validator, and is explicitly
+  forbidden from narrowing its scope ("take this as given") or skipping the validation step —
+  including when a draft carries no externally-verifiable claims, since claims about the
+  repository are always checkable (#25).
+
+### Added
+
+- `Grep` and `Glob` in `issue-validator`'s tool scope, so it can discover code a draft does not
+  name by exact path. Both are read-only and outside the `PreToolUse` hook matcher; `architecture.md`
+  §3 records the resulting lack of read path-containment as an accepted residual risk (#25).
+- An explicit rule in `issue-validator` that file content read from the repository is data to
+  inspect, never instructions to follow (#25).
+
 ## [0.6.0] - 2026-07-19
 
 ### Added

@@ -31,7 +31,7 @@ Agents fall into a few stable shapes. The category drives tool scope (§3) and o
 - **Analysis / read** — explore or reason over code and return a summary or plan. Read, plus **read-only Bash** for codebase exploration (§3).
 - **Synthesis** — produce a document (e.g. an issue) as text. Read-only.
 - **Builder** — edit files, write tests, run commands. Read + write, project-confined.
-- **Review / validation** — inspect implemented code, or check a proposed approach against authoritative sources, and report findings. Read-only, plus web lookup when validating against external documentation (§3).
+- **Review / validation** — inspect implemented code, or check a proposed approach against authoritative sources **and the repository it targets**, and report findings. Read-only, plus read-only repo search when validating claims against the codebase and web lookup when validating against external documentation (§3).
 - **Verification** — run tests/linter and report pass/fail. Read + execute, no writes.
 
 There is intentionally **no `github-*` or I/O agent** — GitHub and git interaction is mechanical, not cognitive, and is owned by the skill (see [Section 2](#external-io-and-vcs-state-are-skill-owned)).
@@ -136,7 +136,7 @@ Tool restriction is enforced in three layers:
 
 An agent's tool scope is declared as a `tools` **allowlist** containing only what its job needs; every other tool — including all MCP tools — is denied by omission (default-deny).(4) Derive the allowlist from the agent's category (§1):
 
-- **Read / analysis / synthesis / review** → `Read` only; add `WebSearch`, `WebFetch` only if the job needs external lookups.
+- **Read / analysis / synthesis / review** → `Read` only; add `WebSearch`, `WebFetch` only if the job needs external lookups; add `Grep`, `Glob` when the job requires validating claims against the codebase rather than reading paths it is already given. **Accepted residual risk:** the hook's matcher does not cover `Read`/`Grep`/`Glob`, so — unlike `Edit`/`Write` — no rule confines *reads* to the project root, and `Grep`/`Glob` make bulk search across the filesystem materially more efficient than `Read` alone. An agent holding them alongside `WebFetch` (currently only `issue-validator`) therefore has the read-plus-outbound shape that would carry data off the machine if it were ever driven to. Exploiting it requires the agent to act on hostile instructions, which the trust model (cooperating Claude sub-agents, not an external adversary) excludes; the compensating control is the agent-level rule that file content is data, never instructions. This is an accepted limit of a lightweight hook, not a closed hole — path-containing reads the way `within_project()` contains writes would close it.
 - **Exploration / planning** → also `Bash` (the hook restricts it to read-only commands).
 - **Builder** → also `Edit`, `Write`, `Bash` (the hook confines writes and Bash to the project root).
 - **Verification** → also `Bash` for running tests/linters; no `Edit`/`Write`.
@@ -243,7 +243,11 @@ This two-tier split is the reason both points exist: fast scoped feedback during
 
 `issue-validator` runs at **two points** in the pipeline, by design (shift-left plus a safety net). The validator never calls `gh` itself — the caller acts on its findings.
 
-**In `create-issue` (authoring time, before the issue exists).** The drafted approach is validated *before* it is posted, so a defect in an externally-verifiable claim (a CLI flag, an API signature, library behaviour) is caught at the source rather than surfacing later. Because nothing is posted yet, a `severity: error` blocker does **not** stop the run: the skill folds the validator's prescribed correction back into a re-draft and re-validates (capped at two rounds), and any residual blocker is surfaced at the draft-review human gate for the developer to resolve. `warning` findings are carried to that gate. This closes the gap where `issue-writer` (read-only, no web access) faithfully transcribes an unverified approach.
+**In `create-issue` (authoring time, before the issue exists).** The **whole** drafted issue is validated *before* it is posted, so a defect is caught at the source rather than surfacing later. This closes the gap where `issue-writer` (read-only, no web access) faithfully transcribes an unverified approach.
+
+- **What is checked** — both externally-verifiable claims (a CLI flag, an API signature, library behaviour, and the cited spec's caveats and scope limits, not just its headline rule) **and** repo-grounded ones (a named path that does not exist, a description of current behaviour that contradicts the code, an approach infeasible against the existing implementation).
+- **Scope discipline** — the skill never narrows the validator's scope by declaring part of the draft "given," and never skips the step; a draft with no external claims still makes checkable claims about the repository.
+- **Findings handling** — because nothing is posted yet, a `severity: error` blocker does **not** stop the run: the skill folds the validator's prescribed correction back into a re-draft and re-validates (capped at two rounds). Any residual blocker, and all `warning` findings, are surfaced at the draft-review human gate for the developer to resolve.
 
 **In `implement-issue` (implementation time, against the posted issue).** When `issue-validator` returns any `severity: error`, the skill posts the findings as a GitHub issue comment, then **stops**; the developer must update the issue before re-running `implement-issue`. `warning` findings are posted as a comment and carried into the implementation plan.
 

@@ -33,7 +33,7 @@ After the **validator** step and the **verifier** step, parse that agent's final
 Fetch the issue: `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs view-issue $ARGUMENTS` on the repo auto-detected from the git `origin` remote. Keep its title, body, and proposed approach — they feed the validator and the plan.
 
 **2. Validate the approach (agent).**
-Invoke `issue-validator` explicitly, passing the issue and its proposed approach. It verifies technical validity against authoritative docs and returns findings (each `severity: error` = blocker, `warning` = minor). It does not post anything.
+Invoke `issue-validator` explicitly, passing the issue and its proposed approach. It verifies technical validity against authoritative docs and the repository, and returns findings (each `severity: error` = blocker, `warning` = minor). It does not post anything.
 
 **3. Handle validator findings (skill).**
 Post the validator's findings as a comment on the issue, feeding the findings to `paf-vcs` on stdin (a heredoc is the clearest form):
