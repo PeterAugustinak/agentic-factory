@@ -1,6 +1,6 @@
 # PAF - personal agentic factory
 
-Personal Agentic Factory (PAF) — a structured, installable development framework for my personal projects. It replaces ad-hoc prompting with a repeatable pipeline of specialized agents and skills that takes a feature idea from an issue to a reviewed, merged MR/PR.
+Personal Agentic Factory (PAF) — a structured, installable, skill-driven AI development framework. It replaces ad-hoc prompting with a repeatable pipeline of specialized agents and skills that takes a feature idea from an issue to a reviewed, merged MR/PR.
 
 ## How it works
 
