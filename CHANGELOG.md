@@ -5,6 +5,35 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-07-23
+
+Graded MINOR rather than PATCH despite #30 being labelled a bug: the fix revises the
+`issue-validator` output contract that both skills consume — the meaning of `summary` and the shape
+of each finding `message` — which is an interface change under the bump rules, not merely an
+internal fix.
+
+### Fixed
+
+- `implement-issue`'s step-3 issue comment now carries **only** the validator's actual findings —
+  one line per finding, and no comment at all when there are none — instead of also echoing the
+  validator's verdict and a narration of every claim it confirmed (#30). `issue-validator`'s Output
+  section is tightened to match: each finding is a single concise line, and `summary` is a brief
+  verdict rather than a confirmed-claims recap.
+
+## [0.7.2] - 2026-07-22
+
+Graded PATCH rather than MINOR: #21 adds no new capability — it standardises `issue-writer`'s
+existing output into a fixed house-style template and title convention, a backward-compatible
+refinement of one agent's formatting.
+
+### Added
+
+- A fixed six-section issue body template (`Problem`, `Goal`, `Approach`, `Scope of changes`,
+  `Acceptance criteria`, `References`, always present and in order) and a type-based title
+  convention (`Bug: …` for defects, an imperative "what will be built" statement otherwise) in the
+  `issue-writer` agent, so every drafted issue shares one house style. The `create-issue` skill docs
+  reflect the template (#21).
+
 ## [0.7.1] - 2026-07-21
 
 ### Fixed

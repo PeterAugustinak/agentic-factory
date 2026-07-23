@@ -36,13 +36,15 @@ Fetch the issue: `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs view-issue $ARGUMENT
 Invoke `issue-validator` explicitly, passing the issue and its proposed approach. It verifies technical validity against authoritative docs and the repository, and returns findings (each `severity: error` = blocker, `warning` = minor). It does not post anything.
 
 **3. Handle validator findings (skill).**
-Post the validator's findings as a comment on the issue, feeding the findings to `paf-vcs` on stdin (a heredoc is the clearest form):
+Post **only** the validator's `error`/`warning` findings, one line each — never the `summary`/verdict or a recap of confirmed claims (remediation belongs in the plan, step 4). Feed the findings to `paf-vcs` on stdin (a heredoc is the clearest form):
 
 ```
 ${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs comment-issue $ARGUMENTS <<'EOF'
-<validator findings, formatted as markdown>
+<one line per error/warning finding>
 EOF
 ```
+
+**When the validator returns zero findings, post no comment at all** — skip the `comment-issue` call entirely.
 
 Then branch on severity:
 - **Any `severity: error`** → **STOP**: tell the developer to update the issue and re-run `/paf:implement-issue`. Do not continue.

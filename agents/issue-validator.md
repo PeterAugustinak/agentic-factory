@@ -35,16 +35,18 @@ You are given the proposed issue or approach to validate. Project context (stack
 
 Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `issues` (your findings, each with a severity); use `summary` for the overall verdict. `status` is `success` when you have completed validation, regardless of what you found. `artifacts` is `[]`.
 
+Keep every finding's `message` to a **single concise line** — the defect, and for an `error` the source that proves it — not a multi-sentence paragraph. `summary` is a **brief verdict only**: do **not** enumerate or narrate the claims you confirmed. Confirmed claims are not findings — they add no signal to whoever reads your output.
+
 ```yaml
 agent: "issue-validator"         # required — all agents
 status: "success"               # required — one of: success | failure | needs_retry
 summary: |                       # required — all agents (block scalar)
-  one paragraph: what was done or what failed
+  brief verdict — sound / has blockers / etc.; no narration of confirmed claims
 artifacts:                       # always present; [] when none
   - path: "<relative file path>"
     action: "created"           # one of: created | modified | deleted
 issues:                          # always present; [] when none
   - severity: "error"           # one of: error | warning
-    message: "<description>"
+    message: "<the finding on a single line>"
     location: "<file:line, or omitted if not applicable>"
 ```
