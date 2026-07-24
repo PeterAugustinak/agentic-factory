@@ -8,8 +8,8 @@ WITHOUT a permission prompt and forbidden ones are blocked:
 
 - ALLOW — the main thread unconditionally (the trusted orchestrator owns all I/O
   and git state, §2), plus each agent's legitimate tool set: read-only Bash,
-  build/test Bash, project-scoped writes, the validator's web lookups. These skip
-  the permission prompt.
+  build/test Bash, project-scoped writes, and web lookups (gated by each agent's
+  `tools:` allowlist). These skip the permission prompt.
 - DENY  — agents doing external I/O (gh/curl/wget/ssh/...), agents changing git
   state (add/commit/push/...), read-only agents running non-read-only Bash, and
   any write outside the project root. All skill-owned or unsafe (§2).
@@ -25,6 +25,10 @@ import os
 import re
 import sys
 
+# The sole home of the read-only-vs-build/test Bash distinction: code-explorer,
+# implementation-planner, and implementation-verifier all declare identical
+# `tools: Read, Bash`, so frontmatter cannot express which need read-only Bash and
+# which need build/test Bash. Adding a new read-only Bash agent means one line here.
 READ_ONLY_AGENTS = {"code-explorer", "implementation-planner"}
 
 # Read-only Bash allowlist for the read-only agents (matched on the command name).
@@ -129,9 +133,11 @@ def main() -> None:
         allow(f"{agent} may run build/test Bash (non-I/O, non-git-state).")
 
     if tool in ("WebSearch", "WebFetch"):
-        if agent == "issue-validator":
-            allow("issue-validator verifies claims against authoritative documentation.")
-        defer()  # any other agent doing web lookups is unexpected — prompt
+        # Web access is gated upstream by the agent's `tools:` allowlist (architecture.md
+        # §3 layer 2, harness-level): an agent without WebSearch/WebFetch cannot invoke them,
+        # so any call reaching the hook is already web-authorized. Allowing it here just skips
+        # the permission prompt.
+        allow("Web lookup allowed; web access is gated by the agent's tools: allowlist.")
 
     if tool in ("Edit", "Write", "MultiEdit"):
         path = tool_input.get("file_path") or tool_input.get("path") or ""
