@@ -30,7 +30,13 @@ After the **validator** step and the **verifier** step, parse that agent's final
 ## Steps
 
 **1. Read the issue (skill).**
-Fetch the issue: `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs view-issue $ARGUMENTS` on the repo auto-detected from the git `origin` remote. Keep its title, body, and proposed approach — they feed the validator and the plan.
+First, mark this invocation's start so the cost step (step 10) prices only this run, not the whole session:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "${CLAUDE_SESSION_ID}" --skill implement-issue
+```
+
+Then fetch the issue: `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs view-issue $ARGUMENTS` on the repo auto-detected from the git `origin` remote. Keep its title, body, and proposed approach — they feed the validator and the plan.
 
 **2. Validate the approach (agent).**
 Invoke `issue-validator` explicitly, passing the issue and its proposed approach. It verifies technical validity against authoritative docs and the repository, and returns findings (each `severity: error` = blocker, `warning` = minor). It does not post anything.
@@ -73,15 +79,15 @@ Invoke `implementation-verifier`, telling it the area the change affects. It run
 **9. Hand off for review (skill).**
 Do **not** commit, push, or open an MR/PR. Leave the verified changes **uncommitted** on the feature branch so the developer can review them as working-tree changes in their IDE (the clearest review surface). `/paf:check-out` commits the implementation plus any approved fixes, pushes, and opens the MR/PR.
 
-**10. Report cost and time (skill).**
+**10. Report cost (skill).**
 Run the shared cost helper:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
-  --session "${CLAUDE_SESSION_ID}" --skill implement-issue --issue <issue-number>
+  --session "${CLAUDE_SESSION_ID}" --skill implement-issue --issue "<issue-number>"
 ```
 
-It prices this run from the session transcript, derives wall-clock, and appends an entry to the per-feature cost ledger keyed by the issue number (the same ledger `/paf:create-issue` wrote to and `/paf:check-out` will total). Print a short summary and remind the developer to review the branch, then run `/paf:check-out`.
+It prices only this invocation's slice of the session transcript (from the step-1 mark onward), and appends an entry to the per-feature cost ledger keyed by the issue number (the same ledger `/paf:create-issue` wrote to and `/paf:check-out` will total). Print a short summary and remind the developer to review the branch, then run `/paf:check-out`.
 
 ## Escalation
 

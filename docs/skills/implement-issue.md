@@ -26,7 +26,7 @@ Once an issue exists and its approach is sound enough to build:
 6. **Implement** (skill, same context) — apply the approved plan's exact edits on the branch. Because planning and building share the context, this is applying what's already decided — no re-exploration.
 7. **Verify** — `implementation-verifier` runs the project's tests + linter scoped to the changed area. On failure the **same main-thread context that built the code** (now in edit mode) applies the fix (it still holds the plan and the edits — no re-exploration, and no cold builder agent) and re-verifies, up to a cap; if it still fails, the run stops and escalates.
 8. **Hand off** (skill) — leave the verified changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`).
-9. **Cost + time** (skill) — append the run to the per-feature cost ledger.
+9. **Cost** (skill) — append this invocation's cost to the per-feature cost ledger.
 
 ### Why plan mode
 
@@ -95,7 +95,7 @@ Planning and building run in the main thread via native plan mode rather than as
      |
      v
 +----------------------------------------------+
-| [skill] report cost + wall-clock (EUR);      |
+| [skill] report per-invocation cost (EUR);    |
 |         append to per-feature cost ledger    |
 +----------------------------------------------+
 ```
@@ -128,15 +128,15 @@ The skill owns git state (`architecture.md` §2). After the plan is approved it 
 
 `/paf:check-out` then commits the implementation plus any approved review fixes, pushes the branch, and opens the MR/PR. The intended flow is tight — implement → review → check-out — so the uncommitted window is short.
 
-## Cost and time reporting
+## Cost reporting
 
-The final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the MR/PR. Cost is converted to **EUR**; wall-clock is derived from the transcript. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
+The skill marks its invocation start at step 1, and the final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the MR/PR. Only this invocation's slice of the transcript (from the step-1 mark onward) is priced, so running `implement-issue` and `check-out` in one CLI session does not double-count. Cost is converted to **EUR**. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
 
 ## Related files
 
 - [`skills/paf-implement-issue/SKILL.md`](../../skills/paf-implement-issue/SKILL.md) — the operational definition.
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
-- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost + time reporting.
+- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost reporting.
 - [`agents/issue-validator.md`](../../agents/issue-validator.md), [`agents/implementation-verifier.md`](../../agents/implementation-verifier.md) — the agent definitions this skill uses.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```

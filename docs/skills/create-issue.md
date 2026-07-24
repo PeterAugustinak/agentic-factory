@@ -25,7 +25,7 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 3. **Validate the approach.** The `issue-validator` agent (web access + read-only repo search) receives the **whole** draft and checks its load-bearing claims against **both** authoritative docs — CLI flags, API signatures, library behaviour, including the cited spec's caveats and scope limits — **and** the actual repository: do the named paths exist, does the described current behaviour match the code, is the approach feasible against the existing implementation. It returns findings. Blockers are folded back into a re-draft and re-validated (capped at two rounds); any residual blocker is surfaced at the review gate. This is **shift-left**: an approach defect is caught before the issue is posted, not left for `/paf:implement-issue` to discover. The skill never narrows the validator's scope and never skips this step — a draft with no external claims still makes claims about the repository.
 4. **Review gate.** The developer reviews the **already-validated** draft, plus any carried-forward findings. Changes loop back to a re-draft (and re-validate); approval moves forward. Nothing is posted before approval.
 5. **Post.** The skill creates the issue via `paf-vcs` (auto-detecting the provider from the repo's `origin` remote), using labels that exist in the repo, and prints the issue URL.
-6. **Cost + time.** The skill runs the shared cost helper, which prices the whole session (including the idea discussion) and appends the run to the per-feature cost ledger.
+6. **Cost.** The skill runs the shared cost helper, which prices only this invocation's slice of the session (from the step-1 mark onward) and appends the run to the per-feature cost ledger.
 
 ## Orchestration
 
@@ -69,7 +69,7 @@ The skill runs **inline in the current conversation**, so the prior discussion i
      |
      v
 +----------------------------------------------+
-| [skill] report cost + wall-clock (EUR);      |
+| [skill] report per-invocation cost (EUR);    |
 |         append to per-feature cost ledger    |
 +----------------------------------------------+
 ```
@@ -87,21 +87,21 @@ Planning and implementation belong to `/paf:implement-issue`. Note that `issue-v
 - **Draft review** (step 4) — the mandatory gate before anything is posted; the developer approves or requests changes, reviewing an already validated draft (docs + repository) plus any carried-forward findings.
 - **Skill boundary** — after the issue is posted, the developer decides when to run `/paf:implement-issue`. The gap between skills is itself a review point (`architecture.md` §2).
 
-## Cost and time reporting
+## Cost reporting
 
-The final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode. It:
+The skill marks its invocation start at step 1, and the final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode. It:
 
-- prices the run from the session transcript (main-thread + any agent usage) using [`pricing.json`](../../skills/paf-shared/pricing.json), converts the total to **EUR**, and derives wall-clock from the transcript's first→last timestamps — so the idea-discussion time and tokens are included;
+- prices only this invocation's slice of the session transcript — from the step-1 mark onward, main-thread + any agent usage — using [`pricing.json`](../../skills/paf-shared/pricing.json) and converts the total to **EUR** (a model missing from the price table is priced at the latest known same-family rate, with a note to update it, rather than dropped);
 - appends an entry to the per-feature ledger at `~/.claude/paf/costs/<project>/<issue>.jsonl` (user scope — no footprint in the target repository);
 - keyed by the **issue number**, so `/paf:implement-issue` and `/paf:check-out` add to the same ledger and `/paf:check-out` reports the **total** feature cost in the PR.
 
-This rests on one assumption: the create-issue-phase session is focused on that one feature (discuss it, then create the issue). Working on several unrelated features in a single session before creating an issue would blend their cost into this run.
+Because the run is sliced from the mark, discussion that happened *before* `/paf:create-issue` was invoked is not counted — the cost reflects the issue-drafting work itself, not the preceding idea conversation.
 
 ## Related files
 
 - [`skills/paf-create-issue/SKILL.md`](../../skills/paf-create-issue/SKILL.md) — the operational definition (what Claude executes).
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
-- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost + time reporting.
+- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost reporting.
 - [`agents/issue-writer.md`](../../agents/issue-writer.md) — the drafting agent definition.
 - [`agents/issue-validator.md`](../../agents/issue-validator.md) — the pre-post approach-validation agent definition.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
