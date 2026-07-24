@@ -23,7 +23,13 @@ Project context — the repo and provider are auto-detected from the git `origin
 ## Steps
 
 **1. Clarity gate (skill + human).**
-Assess whether the idea (from the conversation and/or `$ARGUMENTS`) is specified enough to write a good issue: a clear problem, an intended outcome, and at least rough acceptance criteria. If it is thin or ambiguous, ask the developer a few **targeted** clarifying questions and wait for answers — do **not** draft yet. This is a lightweight gate, not a full elicitation; deep discussion belongs in the conversation beforehand. Proceed only once the idea is clear.
+First, mark this invocation's start so the cost step (step 8) prices only this run, not the whole session:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "${CLAUDE_SESSION_ID}" --skill create-issue
+```
+
+Then assess whether the idea (from the conversation and/or `$ARGUMENTS`) is specified enough to write a good issue: a clear problem, an intended outcome, and at least rough acceptance criteria. If it is thin or ambiguous, ask the developer a few **targeted** clarifying questions and wait for answers — do **not** draft yet. This is a lightweight gate, not a full elicitation; deep discussion belongs in the conversation beforehand. Proceed only once the idea is clear.
 
 **2. Draft the issue (agent).**
 Invoke the `issue-writer` agent explicitly by name. Pass it the clarified idea and the relevant discussion. It has no tools beyond Read and does not post anything — it returns a draft only.
@@ -60,15 +66,15 @@ EOF
 
 Use only labels that exist in the repo (check with `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs list-labels` if unsure). Capture the new **issue number** and **URL** from `paf-vcs`'s `NUMBER=`/`URL=` output lines (not by re-parsing raw CLI text), and print the URL to the developer.
 
-**8. Report cost and time (skill).**
+**8. Report cost (skill).**
 Run the shared cost helper:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
-  --session "${CLAUDE_SESSION_ID}" --skill create-issue --issue <issue-number>
+  --session "${CLAUDE_SESSION_ID}" --skill create-issue --issue "<issue-number>"
 ```
 
-It prices this run from the session transcript — which includes the idea discussion that preceded the issue — derives wall-clock from the transcript, appends an entry to the per-feature cost ledger keyed by the issue number (under `~/.claude/paf/costs/`, never in the project), and prints the cost + wall-clock report. Finally, reprint the issue URL for the developer.
+It prices only this invocation's slice of the session transcript (from the step-1 mark onward), appends an entry to the per-feature cost ledger keyed by the issue number (under `~/.claude/paf/costs/`, never in the project), and prints the cost. Finally, reprint the issue URL for the developer.
 
 ## Escalation
 

@@ -4,7 +4,7 @@ Human-facing documentation for the `check-out` skill. The operational definition
 
 ## Purpose
 
-Finish a feature: deep-review the implemented change, apply the fixes the developer approves, run the final spec and full pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost and elapsed time in the PR description. `check-out` is the **third and final** skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
+Finish a feature: deep-review the implemented change, apply the fixes the developer approves, run the final spec and full pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost in the PR description. `check-out` is the **third and final** skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
 
 ## When and how to invoke
 
@@ -28,7 +28,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 6. **Final spec check** — `quality-assurer` confirms every acceptance criterion; unmet **STOPs**.
 7. **Pre-merge validation** (skill) — the project's **full** test + lint suite; failure **STOPs**.
 8. **Commit & push** (skill) — commit whatever is still uncommitted (implementation + fixes); push.
-9. **Total & PR** (skill) — record this run's cost, total the whole feature across all three skills, and open the PR with that cost + time table in its description.
+9. **Total & PR** (skill) — record this run's cost, total the whole feature across all three skills, and open the PR with that cost table in its description.
 
 ## Orchestration
 
@@ -88,7 +88,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 +----------------------------------------------+
 | [skill] record check-out cost; aggregate the |
 |   whole feature (EUR); open PR with the cost  |
-|   + wall-clock table in the description       |
+|   table in the description                    |
 +----------------------------------------------+
 ```
 
@@ -124,15 +124,15 @@ Per `architecture.md` §5, `check-out` has **no auto-retry** — it is the final
 
 The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (implementation + approved fixes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from `CLAUDE.md`. With squash merge, the number of commits on the branch does not matter.
 
-## Cost and time in the PR
+## Cost in the PR
 
-`check-out` records its own run to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three skills** — `create-issue`, `implement-issue`, `check-out` — and embeds that **EUR cost + summed wall-clock** table in the **PR description**. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost and elapsed time. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
+`check-out` marks its invocation start at step 1 and records its own run (that invocation's slice only) to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three skills** — `create-issue`, `implement-issue`, `check-out` — and embeds that **EUR cost** table in the **PR description**. Because `check-out` prices only its own slice, running it in the same CLI session as `implement-issue` does not re-count `implement-issue`'s tokens. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
 
 ## Related files
 
 - [`skills/paf-check-out/SKILL.md`](../../skills/paf-check-out/SKILL.md) — the operational definition.
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
-- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost + time reporting.
+- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost reporting.
 - [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md), [`agents/code-simplifier.md`](../../agents/code-simplifier.md), [`agents/security-engineer.md`](../../agents/security-engineer.md), [`agents/full-stack-dev.md`](../../agents/full-stack-dev.md), [`agents/implementation-verifier.md`](../../agents/implementation-verifier.md), [`agents/quality-assurer.md`](../../agents/quality-assurer.md) — the agent definitions.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```

@@ -8,7 +8,7 @@ allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git
 
 # check-out
 
-Finish a feature: run the deep reviews, apply the fixes the developer approves, do the final spec and pre-merge checks, then commit, push, and open the MR/PR — with the **whole feature's** cost and time in the MR/PR description. This is the third and final skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
+Finish a feature: run the deep reviews, apply the fixes the developer approves, do the final spec and pre-merge checks, then commit, push, and open the MR/PR — with the **whole feature's** cost in the MR/PR description. This is the third and final skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
 
 You are the orchestrator running in the main thread. You chain the review and finalisation agents, own all git/VCS I/O, run the human fix-selection gate, and apply the STOP-and-escalate policy (this skill has **no auto-retry** — any failure halts and returns control to the developer).
 
@@ -27,7 +27,13 @@ After **every** agent step, parse the agent's final message with the shared rule
 ## Steps
 
 **1. Confirm and gather (skill).**
-Confirm with the developer that they have reviewed `/paf:implement-issue`'s implementation and are ready to finalise. Determine the issue number (branch name or `$ARGUMENTS`), read the issue for its acceptance criteria, and compute the change to review (`git diff <base>` per above).
+First, mark this invocation's start so the cost step (step 9) prices only this run, not the whole session:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "${CLAUDE_SESSION_ID}" --skill check-out
+```
+
+Then confirm with the developer that they have reviewed `/paf:implement-issue`'s implementation and are ready to finalise. Determine the issue number (branch name or `$ARGUMENTS`), read the issue for its acceptance criteria, and compute the change to review (`git diff <base>` per above).
 
 **2. Review — in parallel (agents).**
 Invoke **all three** review agents concurrently, each passed the change and the issue's requirement:
@@ -68,7 +74,7 @@ Append `check-out`'s own cost to the per-feature ledger so the total below inclu
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
-  --session "${CLAUDE_SESSION_ID}" --skill check-out --issue <issue-number>
+  --session "${CLAUDE_SESSION_ID}" --skill check-out --issue "<issue-number>"
 ```
 
 **10. Total the feature and open the MR/PR (skill).**
@@ -76,14 +82,14 @@ Aggregate the whole feature's cost across all three skills and clean up the ledg
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" aggregate \
-  --issue <issue-number> --cleanup
+  --issue "<issue-number>" --cleanup
 ```
 
-Then open the MR/PR against the base branch from `CLAUDE.md`, **embedding the aggregate cost + wall-clock table in the description** so the reviewer — who has no access to this CLI session — sees the whole feature's cost and elapsed time (source branch is inferred by the adapter):
+Then open the MR/PR against the base branch from `CLAUDE.md`, **embedding the aggregate cost table in the description** so the reviewer — who has no access to this CLI session — sees the whole feature's cost (source branch is inferred by the adapter):
 
 ```
 ${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs create-change-request --base <base-branch> --title "<title>" <<'EOF'
-<aggregate cost + wall-clock table>
+<aggregate cost table>
 EOF
 ```
 

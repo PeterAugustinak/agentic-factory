@@ -54,7 +54,7 @@ PAF skill bodies are **imperative and step-numbered** — the architecture requi
    - **human gate** — a pause for developer input (plan-approval, or `AskUserQuestion`).
 4. **Output-contract handling** — after every agent step, extract the **last** ` ```yaml ` block, validate it against the schema and enums (`architecture.md` §4), and **STOP and escalate** on any malformed/missing output.
 5. **Loop & escalation** — retry caps and STOP behaviour exactly as `architecture.md` §5 fixes them.
-6. **Cost & time** — append this run's cost + wall-clock to the per-feature ledger, and (at end of run) report the total (`architecture.md` §5).
+6. **Cost** — mark the invocation's start at step 1, then append this run's per-invocation cost to the per-feature ledger, and (at end of run) report the total (`architecture.md` §5).
 
 Keep `SKILL.md` **under 500 lines**; move anything longer into supporting files.(7)
 

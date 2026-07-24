@@ -264,22 +264,23 @@ Contract parsing must be defensive — the whole pipeline depends on it. The ski
 
 The skill never proceeds on a partial or guessed parse.
 
-### Cost and time reporting
+### Cost reporting
 
-Every skill run ends with a single report of **total token usage and wall-clock time** for the whole run.
+Every skill run ends with a single report of the **token cost of that invocation**.
 
 - Cost is **not** self-reported by agents. The skill computes it from the session transcript at `transcript_path`, which records per-message `usage` (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) and `model`, enabling correct per-model pricing.(7) (9)
-- **Wall-clock** is derived from the transcript's first→last message timestamps, so it covers the whole session — including time at human gates and the idea discussion that precedes `create-issue`.
+- **Per-invocation slice, not the whole session.** A skill marks its start at its first step and prices only the transcript slice from that mark onward (main-thread and subagent messages alike). This is required because multiple skills can run in **one** CLI session (see the aggregation note below): pricing the whole transcript would re-price an earlier skill's tokens and inflate the feature total, and a `create-issue` run inside a large multi-day session would price the entire session. Each run is therefore costed as a disjoint slice.
+- **Unpriced models are never dropped.** If the session used a model absent from the price table, its tokens are priced at the latest known rate of the same family (opus/sonnet/haiku) and the report flags that the price table must be updated — an undercount is never silently produced.
 - **Currency.** Anthropic bills in USD; PAF reports cost in **EUR**, converted with a factory-maintained USD→EUR rate kept alongside the per-model price table. Both are updated together and carry their source and date.
 - The internal mechanism for attributing usage to individual agents is an implementation detail; the architecture requires only that the final total is reported.
 
 #### Cross-skill cost aggregation
 
-A feature spans three separate skill runs — `create-issue`, `implement-issue`, `check-out` — each its own Claude Code session with its own transcript. Claude Code has no native cross-session cost aggregation, so PAF maintains its own **per-feature cost ledger**:
+A feature spans three skill runs — `create-issue`, `implement-issue`, `check-out`. These are usually separate Claude Code sessions, but they need not be: `implement-issue` and `check-out` in particular are often run back-to-back in a **single** CLI session (which is exactly why each run prices only its own invocation slice, above). Claude Code has no native cross-session cost aggregation, so PAF maintains its own **per-feature cost ledger**:
 
-- **Keyed by issue number.** Every skill run appends its own cost + wall-clock to the ledger entry for the feature's issue. `create-issue` knows the issue number after posting; `implement-issue` is given it; `check-out` derives it from the branch name (`feature/<issue-number>-<...>`).
+- **Keyed by issue number.** Every skill run appends its own per-invocation cost to the ledger entry for the feature's issue. `create-issue` knows the issue number after posting; `implement-issue` is given it; `check-out` derives it from the branch name (`feature/<issue-number>-<...>`).
 - **User-scoped, never in the project.** The ledger lives under the user's `~/.claude/` namespace, not in the target repository — no `.paf/` directory, no gitignore entry. This preserves PAF's project-agnostic principle: installing and running PAF leaves no trace in the project.
-- **Totalled at check-out.** `check-out` records its own run, then sums every entry for the feature and writes the **total cost and summed wall-clock — with a per-skill breakdown — into the PR description**, then removes the ledger. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost and elapsed time. Summed wall-clock is the sum of each run's active time, not the calendar span between runs.
+- **Totalled at check-out.** `check-out` records its own run, then sums every entry for the feature and writes the **total cost — with a per-skill breakdown — into the PR description**, then removes the ledger. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost.
 - **Graceful degradation.** If the branch → issue-number mapping is unavailable, `check-out` reports whatever entries it can correlate rather than failing.
 
 The exact ledger location, record format, and pricing table are implementation details of the shared cost helper; the architecture fixes only that per-feature cost is aggregated across the three skills, stored in user scope, reported in EUR, and surfaced in the PR.
