@@ -5,6 +5,36 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-07-24
+
+Graded MINOR rather than PATCH despite #33 being labelled a bug: the fix changes the
+interface between the skills and `paf-report-cost.py` — a new `mark` subcommand that all three
+`SKILL.md` files now invoke at the start of a run, and a `record` output that no longer carries
+wall-clock — which is an interface change under the bump rules, not merely an internal fix.
+
+### Added
+
+- A `mark` subcommand in `paf-report-cost.py` that records an invocation's start, keyed by
+  session and skill, so `record` prices only the transcript from that mark onward. This scopes
+  cost to a single `/paf:` invocation, eliminating the same-session double-count (an
+  `implement-issue` run followed by `check-out`) and the whole-session figure a `create-issue`
+  run produced inside a large session (#33).
+
+### Changed
+
+- `record` prices only from the invocation's mark (or `--since`) onward; with neither present it
+  prices the whole transcript and warns. Unpriced models are now priced at the latest known
+  same-family rate — never silently dropped — with a note to update `pricing.json`. Wall-clock is
+  removed from `record` output, the ledger entry, and the aggregate table, and displayed cost is
+  rounded to two decimal places. The three `SKILL.md` files, `architecture.md` §5,
+  `docs/skills/*`, and `skill-definition-format.md` are updated to describe the new behaviour (#33).
+
+### Fixed
+
+- Argument validation in `paf-report-cost.py`: the issue number must be digits-only and the
+  session, skill, and project identifiers are restricted to a safe character set. The
+  `<issue-number>` placeholder is quoted in the `SKILL.md` templates (#33).
+
 ## [0.8.0] - 2026-07-23
 
 Graded MINOR rather than PATCH despite #30 being labelled a bug: the fix revises the
