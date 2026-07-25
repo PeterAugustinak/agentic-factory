@@ -17,8 +17,8 @@ Supported hook events: `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, `Not
 **`PreToolUse-agent-guard.py`** — the single, centralized `PreToolUse` hook, keyed on the payload's `agent_type` field (`docs/architecture.md` §3). It enforces the sub-tool restrictions that frontmatter allowlists cannot express:
 
 - **Main thread** (no `agent_type`) → unrestricted (the orchestrating skill).
-- **All agents** → no external I/O (`gh`/network) and no git state changes — both skill-owned.
-- **`code-explorer`, `implementation-planner`** → read-only Bash only (default-deny allowlist).
+- **All agents** → no external I/O (`gh`/network) and no git state changes — both skill-owned, and the git pattern skips git's global options so `git -C <dir> commit` is caught too.
+- **`code-explorer`, `implementation-planner`** → read-only Bash only (default-deny allowlist, applied to every segment of a compound command, plus denials for output redirection and commands' own write flags such as `find -delete` and `tree -o`).
 - **Any agent with Edit/Write** → writes confined to the project root (`CLAUDE_PROJECT_DIR`).
 
 It reads the hook payload as JSON on stdin and, to block, prints a `permissionDecision: "deny"` object (`hookSpecificOutput`) on stdout; otherwise it exits 0 with no output so the normal permission flow proceeds.
