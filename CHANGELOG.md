@@ -5,6 +5,45 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-07-25
+
+Graded MINOR rather than PATCH despite #38 being labelled partly documentation: it adds two
+capabilities the project did not have — a pre-merge validation gate and a test suite — which is an
+enhancement under the bump rules, not a bug fix. Nothing the installer ships changes: the installed
+skills, agents, and hook are byte-identical to 0.9.1.
+
+### Added
+
+- `scripts/pre-merge.sh` — the full pre-merge validation gate that `/paf:check-out` step 7 runs
+  against PAF itself. Standard library only: `py_compile` over the repository's `.py` files,
+  `bash -n` over its shell scripts, then `python3 -m unittest`. All three stages always run, so one
+  invocation reports every problem, and it exits non-zero if any failed. Shell scripts are matched by
+  extension **and** by shebang (the shebang read restricted to executable files, so the stage never
+  opens arbitrary binaries), which is what covers the extensionless `skills/paf-shared/paf-vcs`
+  (#38).
+- `tests/` — a standard-library `unittest` suite, factory-development only and excluded from
+  installation by `install.sh`'s allowlist copying. It covers `PreToolUse-agent-guard.py`'s pure
+  helpers and deny regexes directly, and its allow/deny/defer decisions by driving the hook as a
+  subprocess with crafted stdin payloads — the hook always exits 0, so the decision is read from
+  stdout, never from the exit code. It also covers `paf-report-cost.py`'s pure functions, including
+  its cost arithmetic, transcript de-duplication, and invocation slicing. The hook itself is
+  unchanged (#38).
+
+### Changed
+
+- `docs/templates/CLAUDE-template.md` is now a format-agnostic checklist of the content areas PAF's
+  skills read — branch strategy, base branch, labels and merge strategy, environment setup, the test
+  command, the code-standards command, and the pre-merge command — rather than a fixed form to fill
+  in. The "Factory skills" table is removed: it described how PAF works, not what an adopting
+  project's `CLAUDE.md` should contain. A short example remains, labelled as one possible format
+  (#38).
+- PAF's own `CLAUDE.md` now carries the project context its skills read at runtime (branch
+  convention, base branch `develop`, stdlib-only environment, `python3 -m unittest`,
+  `py_compile`/`bash -n`, `./scripts/pre-merge.sh`), so the factory satisfies the checklist it
+  advises for everyone else. Before this, running `/paf:check-out` against PAF itself always halted
+  at step 7 for an undefined pre-merge command. The file's stated line cap is tightened from 300 to
+  200 to match `architecture.md` §6 (#38).
+
 ## [0.9.1] - 2026-07-25
 
 Graded PATCH rather than MINOR: #36 adds no capability and changes no skill interface. It removes a
