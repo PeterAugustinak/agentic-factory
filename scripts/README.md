@@ -5,6 +5,8 @@ Installer and utility scripts. These are development and distribution tools — 
 ## What belongs here
 
 - `install.sh` — the PAF installer
+- `uninstall.sh` — removes an installed PAF
+- `pre-merge.sh` — full pre-merge validation gate (syntax + tests); the command `CLAUDE.md` names for `/paf:check-out`
 - Any future utility scripts for maintenance or CI
 
 ## File naming
