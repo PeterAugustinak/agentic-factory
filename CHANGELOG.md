@@ -5,6 +5,25 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-07-25
+
+Graded PATCH rather than MINOR: #36 adds no capability and changes no skill interface. It removes a
+redundant hook branch (with no observable product behaviour change, since web access is already
+gated upstream by each agent's `tools:` allowlist) and corrects an inaccurate architecture claim — a
+backward-compatible cleanup.
+
+### Changed
+
+- The `PreToolUse` hook no longer special-cases `agent == "issue-validator"` for `WebSearch`/
+  `WebFetch`; it now allows any web call that reaches it. Web access is already enforced upstream by
+  each agent's `tools:` allowlist (`architecture.md` §3 layer 2, harness-level), so only
+  web-authorized agents can ever reach the hook — the branch was a redundant second source of truth
+  that could drift. `READ_ONLY_AGENTS` is kept as-is (the sole home of the read-only-vs-build/test
+  Bash distinction, which `tools:` cannot express) with a clarifying comment (#36).
+- `architecture.md` §3 replaces the inaccurate "adding an agent needs no change here" claim with an
+  honest account of the small explicit `READ_ONLY_AGENTS` set and why it must exist, and adds a
+  web-ingress accepted-residual-risk note paralleling the main-thread one (#36).
+
 ## [0.9.0] - 2026-07-24
 
 Graded MINOR rather than PATCH despite #33 being labelled a bug: the fix changes the
