@@ -5,6 +5,15 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-07-25
+
+### Fixed
+
+- Bypasses of the `PreToolUse` hook's agent restrictions: read-only Bash is now checked per shell
+  segment rather than on the command's first word (and rejects output redirection and commands' own
+  write flags such as `find -delete` and `tree -o`), and the git-state pattern tolerates git's global
+  options, which previously defeated it for every agent (#41).
+
 ## [0.10.0] - 2026-07-25
 
 Graded MINOR rather than PATCH despite #38 being labelled partly documentation: it adds two
