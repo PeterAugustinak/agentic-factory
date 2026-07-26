@@ -1,6 +1,6 @@
 ---
 name: "paf:implement-issue"
-description: Validate an approved issue, then plan and implement it on a feature branch via plan mode, and verify it — leaving reviewed-ready code for /paf:check-out. Invoke with /paf:implement-issue <issue-number>.
+description: Validate an approved issue, then plan and implement it on a feature branch via plan mode, verify it, then deep-review and fix it — leaving reviewed code for /paf:check-out. Invoke with /paf:implement-issue <issue-number>.
 disable-model-invocation: true
 argument-hint: "[issue-number]"
 allowed-tools: Read, Edit, Write, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git *), Bash(python3 *)
@@ -8,13 +8,17 @@ allowed-tools: Read, Edit, Write, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs
 
 # implement-issue
 
-Take an approved issue from validated approach to implemented, tested code on a feature branch. This is the second skill in the factory: it runs after `/paf:create-issue` and before `/paf:check-out`. Its output is verified, **uncommitted** work on a feature branch that the developer reviews and then finishes with `/paf:check-out`.
+Take an approved issue from validated approach to implemented, tested, **reviewed** code on a feature branch. This is the second skill in the factory: it runs after `/paf:create-issue` and before `/paf:check-out`. Its output is verified, deep-reviewed, **uncommitted** work on a feature branch that the developer reviews and then finishes with `/paf:check-out`.
 
-You are the orchestrator running in the main thread. You validate the approach with an agent, then **plan and implement in one shared context using native plan mode** (`EnterPlanMode` → approval gate via `ExitPlanMode` → execute in the same context), then verify with an agent. You own all VCS and git I/O, enforce the human gate, and apply the loop cap and escalation policy. Follow the steps in order.
+You are the orchestrator running in the main thread. You validate the approach with an agent, then **plan and implement in one shared context using native plan mode** (`EnterPlanMode` → approval gate via `ExitPlanMode` → execute in the same context), then verify with an agent, then **deep-review the change with three agents and have the findings triaged and applied** before handing off. You own all VCS and git I/O, enforce the human gate, and apply the loop cap and escalation policy. Follow the steps in order.
+
+The deep review lands **here**, before the hand-off, and not in `/paf:check-out`: the developer's manual review must land on already-reviewed-and-fixed code rather than trigger a round of fixes that forces them to re-review work they had already signed off.
 
 ## Why plan mode (not a planner agent + a builder agent)
 
 Planning and building run **in the main thread via native plan mode**, not as two separate subagents. This is a deliberate exception to "cognitive work is delegated to agents" (`docs/architecture.md` §2): a separate planner agent and a separate builder agent do not share context, so the builder starts **cold** and re-derives everything the planner already worked out — exploration happens twice and the "plan" carries intent rather than concrete edits. Plan mode keeps exploration, the concrete plan, and execution in **one context**, so applying an approved plan is fast: the edits are already decided at approval time. `EnterPlanMode` and `ExitPlanMode` are main-thread-only tools — which is why this must run in the skill's main thread, not a subagent.
+
+This skill's **verify-fix loop** (step 8) is fixed in the main thread, and its **review-fix loop** (steps 10–11) is delegated to `full-stack-dev` — deliberately, not a contradiction. See `docs/architecture.md` §2 for why.
 
 ## Input
 
@@ -25,12 +29,12 @@ Planning and building run **in the main thread via native plan mode**, not as tw
 
 ## Parsing agent output
 
-After the **validator** step and the **verifier** step, parse that agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure. Never proceed on a guessed parse.
+After **every** agent step, parse that agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure. Never proceed on a guessed parse.
 
 ## Steps
 
 **1. Read the issue (skill).**
-First, mark this invocation's start so the cost step (step 10) prices only this run, not the whole session:
+First, mark this invocation's start so the cost step (step 13) prices only this run, not the whole session:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "${CLAUDE_SESSION_ID}" --skill implement-issue
@@ -72,14 +76,40 @@ Apply the approved plan's exact edits (`Edit`/`Write`) and run any project comma
 
 **8. Verify (agent).**
 Invoke `implementation-verifier`, telling it the area the change affects. It runs the project's test and lint commands **exactly as defined in `CLAUDE.md`**, scoped to that area, and returns `status`. If `CLAUDE.md` defines no such commands, **STOP** and ask the developer — never guess a command or reach for one remembered from another project.
-- **`status: success`** → continue to step 9.
+- **`status: success`** → continue to step 9 (review).
 - **`status: failure`, retries remaining (< 2 done)** → apply the fix yourself **in the same main-thread context that built the code** (still in edit mode) — you already hold the plan and the edits, so there is no re-exploration — informed by the verifier's failure output; then re-invoke `implementation-verifier`. Do **not** delegate the fix to a separate builder agent (see "Why plan mode" above). Do this at most **twice** (initial run + 2 fix-and-reverify cycles). The implementer never verifies its own fix — `implementation-verifier` always re-runs as a separate agent.
 - **`status: failure`, retries exhausted** → **STOP**: print a structured escalation report (what failed, the last `implementation-verifier` output, a suggested next action). The developer adjusts the plan or issue and re-runs `/paf:implement-issue`.
 
-**9. Hand off for review (skill).**
-Do **not** commit, push, or open an MR/PR. Leave the verified changes **uncommitted** on the feature branch so the developer can review them as working-tree changes in their IDE (the clearest review surface). `/paf:check-out` commits the implementation plus any approved fixes, pushes, and opens the MR/PR.
+**9. Deep review — in parallel (agents).**
+Invoke **all three** review agents concurrently — a single message carrying three explicit agent invocations — each passed the issue's requirement and the implemented change:
+- `senior-engineer-reviewer` (functional correctness),
+- `code-simplifier` (unnecessary complexity),
+- `security-engineer` (security).
 
-**10. Report cost (skill).**
+**How to supply the change.** Pass both the branch's diff against the base branch (`git diff <base>`) **and** the explicit list of files you created and modified in step 7. Both are needed: the work is uncommitted, so files you *created* are still untracked and do not appear in `git diff` at all. You hold that file list from step 7, and the reviewers have `Read` — so name the files and they can read what the diff omits.
+
+Wait for all three, parse each output, and aggregate their `issues` into one findings list, each finding tagged with the reviewer that raised it and its severity.
+
+- **Zero findings across all three** → skip steps 10–11 and go to step 12.
+- **One or more findings** → continue to step 10.
+
+**10. Triage and apply the findings (agent).**
+Invoke `full-stack-dev` **once** with **all** aggregated findings, instructing it to decide which are worth applying and to apply them — this is a triage-and-apply step, not the application of a pre-approved list. Restate the guardrail in the invocation: `severity: error` findings (bugs, security) default to **applied** — skipping one requires saying so loudly, with justification, in its `summary`; `severity: warning` findings are where it exercises discretion.
+
+The developer does **not** pre-select fixes here; their manual review after this skill is the curation and revert point. So **surface `full-stack-dev`'s applied-vs-skipped report verbatim** to the developer — it tells them what changed beyond the plan they approved, and is what they curate against.
+
+**11. Re-verify (agent).**
+Re-invoke `implementation-verifier` (same scoping rules as step 8): step 10 may have changed the code, and tests are the gate.
+- **`status: success`** → continue to step 12.
+- **`status: failure`, retries remaining (< 2 done)** → re-invoke `full-stack-dev` with the verifier's failure output to fix it, then re-invoke `implementation-verifier`. At most **twice** (initial run + 2 fix-and-reverify cycles) — the same policy as step 8.
+- **`status: failure`, retries exhausted** → **STOP**: print a structured escalation report (what failed, the last `implementation-verifier` output, a suggested next action).
+
+Do **not** re-run the three review agents in this loop, or anywhere else in this invocation: the deep review runs **exactly once** per `/paf:implement-issue` run. The second look at the code is the developer's manual review, backed by `/paf:check-out`'s safety-net review.
+
+**12. Hand off for review (skill).**
+Do **not** commit, push, or open an MR/PR. Leave the verified, reviewed changes **uncommitted** on the feature branch so the developer can review them as working-tree changes in their IDE (the clearest review surface). `/paf:check-out` commits the implementation plus the review fixes, pushes, and opens the MR/PR.
+
+**13. Report cost (skill).**
 Run the shared cost helper:
 
 ```
@@ -94,6 +124,7 @@ It prices only this invocation's slice of the session transcript (from the step-
 Any of these **stops the run** with a clear message to the developer, who fixes the cause and re-runs `/paf:implement-issue`:
 - a validator blocker (`severity: error`, step 3);
 - verification still failing after the retry cap (step 8);
-- malformed or missing agent output (validator or verifier step).
+- re-verification after the review fixes still failing after the retry cap (step 11);
+- malformed or missing agent output (any agent step).
 
 This skill never proceeds past a blocker, never retries beyond the cap, and never commits, pushes, or opens an MR/PR.
