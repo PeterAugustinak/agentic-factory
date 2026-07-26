@@ -4,7 +4,9 @@ Human-facing documentation for the `check-out` skill. The operational definition
 
 ## Purpose
 
-Finish a feature: deep-review the implemented change, apply the fixes the developer approves, run the final spec and full pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost in the PR description. `check-out` is the **third and final** skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
+Finish a feature: run one high-level safety-net review, run the final spec and full pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost in the PR description. `check-out` is the **third and final** skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
+
+This is a **confirmation-and-ship gate, not a deep-review-and-fix stage.** The deep review runs in `/paf:implement-issue`, *before* the developer's manual review — so `check-out` never re-opens the code. See [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
 
 ## When and how to invoke
 
@@ -18,17 +20,15 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 
 ## How it works
 
-`check-out` is an orchestrator in the main thread. It runs three reviewers in parallel, gates fix-selection through the developer, applies fixes, does the two final checks, and finalises git/GitHub — with **no auto-retry**: any failure halts and hands control back to the developer.
+`check-out` is an orchestrator in the main thread. It runs one safety-net review, does the two final checks, and finalises git/GitHub — with **no auto-retry and no fix loop**: any blocker halts and hands control back to the developer.
 
 1. **Confirm & gather** (skill) — confirm the developer validated the implementation; read the issue's acceptance criteria; compute the change as the branch's diff vs base (committed **or** uncommitted).
-2. **Review in parallel** — `senior-engineer-reviewer`, `code-simplifier`, `security-engineer` run concurrently; the skill aggregates their findings.
-3. **Fix-selection gate** (skill, `AskUserQuestion`) — the developer picks which findings to fix. Nothing selected (or no findings) takes the **skip path** straight to the final check.
-4. **Apply fixes** — `full-stack-dev` applies only the selected findings.
-5. **Verify fixes** — `implementation-verifier` (scoped); failure **STOPs** (no retry).
-6. **Final spec check** — `quality-assurer` confirms every acceptance criterion; unmet **STOPs**.
-7. **Pre-merge validation** (skill) — the project's **full** test + lint suite; failure **STOPs**.
-8. **Commit & push** (skill) — commit whatever is still uncommitted (implementation + fixes); push.
-9. **Total & PR** (skill) — record this run's cost, total the whole feature across all three skills, and open the PR with that cost table in its description.
+2. **Safety-net review** — `senior-engineer-reviewer`, invoked as a **high-level confirmation pass** (framed at the call site: already deep-reviewed in `implement-issue`; the hand-edits can't be isolated from that reviewed implementation, so it's handed the whole branch diff — look for critical regressions, especially the developer's hand-edits, and don't re-litigate the already-reviewed implementation). The skill computes the gate itself from the findings' severity: `error` **STOPs**, `warning` is surfaced but does not block.
+3. **Final spec check** — `quality-assurer` confirms every acceptance criterion; unmet **STOPs**.
+4. **Pre-merge validation** (skill) — the project's **full** test + lint suite; failure **STOPs**.
+5. **Commit & push** (skill) — commit whatever is still uncommitted; push.
+6. **Record cost** (skill) — append this run's cost to the per-feature ledger.
+7. **Total & PR** (skill) — total the whole feature across all three skills and open the PR with that cost table in its description.
 
 ## Orchestration
 
@@ -43,33 +43,17 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
      |
      v
 +----------------------------------------------+
-| [agent] review — run in parallel:            |
-|   - senior-engineer-reviewer (functional)    |
-|   - code-simplifier (complexity)             |
-|   - security-engineer (security)             |
+| [agent] senior-engineer-reviewer — SAFETY    |
+|   NET: high-level confirmation pass (framed  |
+|   at invocation) over the whole branch diff; |
+|   focus on the developer's hand-edits, don't |
+|   re-litigate the reviewed implementation    |
 +----------------------------------------------+
+     |--- error finding -> STOP (no fix loop): developer fixes
      |
-     v
+     v  (warning surfaced, non-blocking / none)
 +----------------------------------------------+
-| [human gate] developer selects findings to   |
-|   fix (AskUserQuestion)                       |
-+----------------------------------------------+
-     +--- no findings / none selected -------------+
-     |                                             |
-     v  (fixes selected)                           |
-+----------------------------------------------+   |
-| [agent] full-stack-dev — apply approved fixes|   |
-+----------------------------------------------+   |
-     |                                             |
-     v                                             |
-+----------------------------------------------+   |
-| [agent] implementation-verifier (scoped)     |   |
-+----------------------------------------------+   |
-     |--- fail -> STOP (no retry)                  |
-     |                                             |
-     v  (pass)                                     |
-+----------------------------------------------+   |
-| [agent] quality-assurer — final spec check   | <-+
+| [agent] quality-assurer — final spec check   |
 +----------------------------------------------+
      |--- criteria unmet -> STOP
      |
@@ -96,33 +80,30 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 
 | Agent | Role in this skill |
 |---|---|
-| `senior-engineer-reviewer` | Functional-correctness review (parallel). |
-| `code-simplifier` | Complexity / DRY / readability review (parallel). |
-| `security-engineer` | Security review (parallel). |
-| `full-stack-dev` | Applies the developer-approved fixes (skipped if none). |
-| `implementation-verifier` | Confirms tests + lint still pass after fixes (skipped if no fixes). |
+| `senior-engineer-reviewer` | Safety-net review — a high-level confirmation pass over the diff, framed at invocation; `error` findings STOP the run. |
 | `quality-assurer` | Final gate — confirms every acceptance criterion is met. |
 
-The three reviewers run **concurrently**; the rest run in sequence. Agents never touch git/`gh` — the skill owns all of it.
+Two agents, run in sequence. The deep review (`code-simplifier`, `security-engineer`, and this same `senior-engineer-reviewer` at full depth) runs in `/paf:implement-issue`, not here. `senior-engineer-reviewer`'s **definition is unchanged** — the shallower framing comes from how `check-out` invokes it, since agents are caller-agnostic and a permanent "be shallow" instruction would damage its deep use in the deep review. **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses, and the reviewer may re-see the already-reviewed implementation rather than only the hand-edits, since the hand-edits cannot be isolated from the rest of the diff. Agents never touch git/`gh` — the skill owns all of it.
 
 ## Human interception points
 
-- **Fix-selection gate** — the developer chooses which review findings to fix (`AskUserQuestion`); a genuine decision point, including the option to fix none.
+- **Readiness confirmation** — at step 1 the skill confirms the developer has reviewed `/paf:implement-issue`'s output and is ready to finalise; nothing runs before they say so.
+- **Blocker hand-back** — an `error` finding from the safety-net review (or any other STOP) returns control to the developer rather than being fixed automatically. `check-out` has no fix loop, so every blocker is a decision point.
 - **Skill boundary** — after the PR is opened, the developer reviews and merges it (the final interception in `architecture.md` §2).
 
 ## Loop caps and escalation
 
-Per `architecture.md` §5, `check-out` has **no auto-retry** — it is the final human-controlled stage, so the developer (not the factory) decides how to resolve a failure. Each of these **STOPs and escalates**:
-- verification fails after fixes;
+Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** — it is the final human-controlled stage, so the developer (not the factory) decides how to resolve a failure. Each of these **STOPs and escalates**:
+- the safety-net review returns an `error` finding;
 - `quality-assurer` finds unmet criteria;
 - pre-merge validation fails;
 - malformed/missing agent output.
 
-**Two-tier verification.** The scoped `implementation-verifier` runs in-loop; the **full** suite runs here as pre-merge validation — the safety net that catches cross-module regressions a scoped run cannot see.
+**Two-tier verification.** The scoped `implementation-verifier` runs in `/paf:implement-issue`'s fix loops; the **full** suite runs here as pre-merge validation — the safety net that catches cross-module regressions a scoped run cannot see. `check-out` runs no scoped verification of its own, because it applies no fixes.
 
 ## Git handling and clean-tree robustness
 
-The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (implementation + approved fixes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from `CLAUDE.md`. With squash merge, the number of commits on the branch does not matter.
+The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (the implementation and its review fixes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from `CLAUDE.md`. With squash merge, the number of commits on the branch does not matter.
 
 ## Cost in the PR
 
@@ -133,6 +114,6 @@ The skill owns git/GitHub state. It computes the change to review as `git diff <
 - [`skills/paf-check-out/SKILL.md`](../../skills/paf-check-out/SKILL.md) — the operational definition.
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
 - [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost reporting.
-- [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md), [`agents/code-simplifier.md`](../../agents/code-simplifier.md), [`agents/security-engineer.md`](../../agents/security-engineer.md), [`agents/full-stack-dev.md`](../../agents/full-stack-dev.md), [`agents/implementation-verifier.md`](../../agents/implementation-verifier.md), [`agents/quality-assurer.md`](../../agents/quality-assurer.md) — the agent definitions.
+- [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md), [`agents/quality-assurer.md`](../../agents/quality-assurer.md) — the agent definitions this skill uses.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```

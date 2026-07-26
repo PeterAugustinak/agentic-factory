@@ -5,6 +5,15 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-07-26
+
+### Changed
+
+- The deep 3-agent review moved from `/paf:check-out` into `/paf:implement-issue`, so the developer's
+  manual review lands on already-reviewed-and-fixed code instead of triggering fixes to work they had
+  already signed off. `full-stack-dev` now triages the findings and applies the worthwhile ones, and
+  `/paf:check-out` becomes a confirmation-and-ship gate with one high-level safety-net review (#39).
+
 ## [0.10.1] - 2026-07-25
 
 ### Fixed

@@ -1,6 +1,6 @@
 ---
 name: "paf:check-out"
-description: Review, fix, validate, and open an MR/PR for developer-validated work on the current feature branch — with the whole feature's cost in the MR/PR. Invoke with /paf:check-out after reviewing /paf:implement-issue's output.
+description: Confirm, validate, and open an MR/PR for developer-validated work on the current feature branch — with the whole feature's cost in the MR/PR. Invoke with /paf:check-out after reviewing /paf:implement-issue's output.
 disable-model-invocation: true
 argument-hint: "[optional issue-number]"
 allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git *), Bash(python3 *)
@@ -8,9 +8,11 @@ allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git
 
 # check-out
 
-Finish a feature: run the deep reviews, apply the fixes the developer approves, do the final spec and pre-merge checks, then commit, push, and open the MR/PR — with the **whole feature's** cost in the MR/PR description. This is the third and final skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
+Finish a feature: run one high-level safety-net review, do the final spec and pre-merge checks, then commit, push, and open the MR/PR — with the **whole feature's** cost in the MR/PR description. This is the third and final skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
 
-You are the orchestrator running in the main thread. You chain the review and finalisation agents, own all git/VCS I/O, run the human fix-selection gate, and apply the STOP-and-escalate policy (this skill has **no auto-retry** — any failure halts and returns control to the developer).
+This is a **confirmation-and-ship gate, not a deep-review-and-fix stage**. The deep review already ran in `/paf:implement-issue`, before the developer's manual review, so nothing here re-opens the code: `check-out` confirms and ships it.
+
+You are the orchestrator running in the main thread. You chain the safety-net and finalisation agents, own all git/VCS I/O, and apply the STOP-and-escalate policy (this skill has **no auto-retry** and **no fix loop** — any failure or blocker halts and returns control to the developer).
 
 ## Input
 
@@ -27,7 +29,7 @@ After **every** agent step, parse the agent's final message with the shared rule
 ## Steps
 
 **1. Confirm and gather (skill).**
-First, mark this invocation's start so the cost step (step 9) prices only this run, not the whole session:
+First, mark this invocation's start so the cost step (step 6) prices only this run, not the whole session:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "${CLAUDE_SESSION_ID}" --skill check-out
@@ -35,41 +37,29 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "$
 
 Then confirm with the developer that they have reviewed `/paf:implement-issue`'s implementation and are ready to finalise. Determine the issue number (branch name or `$ARGUMENTS`), read the issue for its acceptance criteria, and compute the change to review (`git diff <base>` per above).
 
-**2. Review — in parallel (agents).**
-Invoke **all three** review agents concurrently, each passed the change and the issue's requirement:
-- `senior-engineer-reviewer` (functional correctness),
-- `code-simplifier` (unnecessary complexity),
-- `security-engineer` (security).
+**2. Safety-net review (agent).**
+Invoke `senior-engineer-reviewer` — and **only** it — passing the change and the issue's requirement, framed **in the invocation** as a high-level confirmation pass: *this diff was already deep-reviewed in `/paf:implement-issue`; the developer's hand-edits since then cannot be isolated from that reviewed implementation, so you are being handed the whole branch diff — look for critical regressions, especially in the hand-edits, and do not re-litigate the already-reviewed implementation.* The depth and focus come from **your framing**, not from the agent's definition — do not modify `senior-engineer-reviewer`, whose deep review is exactly what `/paf:implement-issue` needs from it.
 
-Wait for all three, parse each output, and aggregate their `issues` into one findings list (tagged by reviewer and severity).
+Parse its output and compute the gate **yourself, from the parsed `issues[].severity`** — not from the agent's `status`, which is `success` on completion regardless of what it found (`docs/architecture.md` §4):
+- **Any `severity: error`** → **STOP**: print the findings and hand back to the developer, who fixes them on the branch or re-runs `/paf:implement-issue`. Never fix-and-continue — `check-out` has no fix loop.
+- **Only `warning` findings (or none)** → print them for the developer's information and continue. They do not block.
 
-**3. Select fixes — human gate (skill, `AskUserQuestion`).**
-Present the aggregated findings to the developer and use `AskUserQuestion` to let them choose **which findings to fix** (multi-select), including a "fix none" option.
-- **No findings, or none selected** → **skip** steps 4–5 and go straight to step 6. (Skip path.)
-- **One or more selected** → continue to step 4 with only the selected findings.
+This is the safety net for the one slice of code no agent has seen: the developer's manual hand-edits since `/paf:implement-issue` finished. **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses, and the reviewer may re-see the already-reviewed implementation rather than only the hand-edits.
 
-**4. Apply approved fixes (agent).**
-Invoke `full-stack-dev` with only the developer-selected findings. It edits files on the branch and returns its `artifacts`. It does not commit.
-
-**5. Verify the fixes (agent).**
-Invoke `implementation-verifier` (scoped to the affected area, per `CLAUDE.md`).
-- **`status: failure`** → **STOP** and escalate (there is no retry in `check-out`). The developer fixes the cause and re-runs `/paf:check-out`.
-- **`status: success`** → continue.
-
-**6. Final spec check (agent).**
+**3. Final spec check (agent).**
 Invoke `quality-assurer` with the final change and the issue's acceptance criteria. It confirms every criterion is met.
 - **Any criterion unmet (`status: failure` / `error` findings)** → **STOP** and escalate.
 - **All met** → continue.
 
-**7. Pre-merge validation (skill).**
+**4. Pre-merge validation (skill).**
 Run the project's **full** pre-merge validation command **exactly as defined in `CLAUDE.md`** (the whole test + lint suite — the safety net a scoped run cannot see). If `CLAUDE.md` defines no such command, **STOP** and ask the developer — never guess one or reach for a script remembered from another project.
 - **Fails** → **STOP** and escalate.
 - **Passes** → continue.
 
-**8. Commit and push (skill).**
-Commit any **uncommitted** changes on the branch (the implementation and any approved fixes) with a message referencing the issue (e.g. `#<issue-number>`). If the working tree is already clean — the developer committed during review and no fixes were applied — there is nothing to commit; proceed. Push the branch.
+**5. Commit and push (skill).**
+Commit any **uncommitted** changes on the branch (the implementation and its review fixes) with a message referencing the issue (e.g. `#<issue-number>`). If the working tree is already clean — the developer committed during review — there is nothing to commit; proceed. Push the branch.
 
-**9. Record this run's cost (skill).**
+**6. Record this run's cost (skill).**
 Append `check-out`'s own cost to the per-feature ledger so the total below includes it:
 
 ```
@@ -77,7 +67,7 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
   --session "${CLAUDE_SESSION_ID}" --skill check-out --issue "<issue-number>"
 ```
 
-**10. Total the feature and open the MR/PR (skill).**
+**7. Total the feature and open the MR/PR (skill).**
 Aggregate the whole feature's cost across all three skills and clean up the ledger:
 
 ```
@@ -97,10 +87,10 @@ Capture the MR/PR **URL** from `paf-vcs`'s `URL=` output line and print it.
 
 ## Escalation
 
-`check-out` is the final, human-controlled finalisation stage, so it has **no auto-retry**. Each of these **stops the run** and returns control to the developer, who fixes the cause and re-runs `/paf:check-out`:
-- `implementation-verifier` fails after fixes (step 5);
-- `quality-assurer` finds unmet criteria (step 6);
-- pre-merge validation fails (step 7);
+`check-out` is the final, human-controlled finalisation stage, so it has **no auto-retry and no fix loop** — it never fixes-and-continues. Each of these **stops the run** and returns control to the developer, who fixes the cause and re-runs `/paf:check-out`:
+- the safety-net review returns an `error` finding (step 2);
+- `quality-assurer` finds unmet criteria (step 3);
+- pre-merge validation fails (step 4);
 - malformed or missing agent output (any agent step).
 
 Nothing is pushed and no MR/PR is opened until every check passes.
