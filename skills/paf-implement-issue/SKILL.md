@@ -10,7 +10,7 @@ allowed-tools: Read, Edit, Write, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs
 
 Take an approved issue from validated approach to implemented, tested, **reviewed** code on a feature branch. This is the second skill in the factory: it runs after `/paf:create-issue` and before `/paf:check-out`. Its output is verified, deep-reviewed, **uncommitted** work on a feature branch that the developer reviews and then finishes with `/paf:check-out`.
 
-You are the orchestrator running in the main thread. You validate the approach with an agent, then **plan and implement in one shared context using native plan mode** (`EnterPlanMode` → approval gate via `ExitPlanMode` → execute in the same context), then verify with an agent, then **deep-review the change with three agents and have the findings triaged and applied** before handing off. You own all VCS and git I/O, enforce the human gate, and apply the loop cap and escalation policy. Follow the steps in order.
+You are the orchestrator running in the main thread. You validate the approach with an agent, then **plan and implement in one shared context using native plan mode** (`EnterPlanMode` → approval gate via `ExitPlanMode` → execute in the same context), then verify with an agent, then **deep-review the change with the review agents and have the findings triaged and applied** before handing off. You own all VCS and git I/O, enforce the human gate, and apply the loop cap and escalation policy. Follow the steps in order.
 
 The deep review lands **here**, before the hand-off, and not in `/paf:check-out`: the developer's manual review must land on already-reviewed-and-fixed code rather than trigger a round of fixes that forces them to re-review work they had already signed off.
 
@@ -81,16 +81,17 @@ Invoke `implementation-verifier`, telling it the area the change affects. It run
 - **`status: failure`, retries exhausted** → **STOP**: print a structured escalation report (what failed, the last `implementation-verifier` output, a suggested next action). The developer adjusts the plan or issue and re-runs `/paf:implement-issue`.
 
 **9. Deep review — in parallel (agents).**
-Invoke **all three** review agents concurrently — a single message carrying three explicit agent invocations — each passed the issue's requirement and the implemented change:
+Invoke **all** review agents concurrently — a single message carrying one explicit agent invocation each — each passed the issue's requirement and the implemented change:
 - `senior-engineer-reviewer` (functional correctness),
 - `code-simplifier` (unnecessary complexity),
-- `security-engineer` (security).
+- `security-engineer` (security),
+- `test-coverage-reviewer` (meaningful test coverage).
 
 **How to supply the change.** Pass both the branch's diff against the base branch (`git diff <base>`) **and** the explicit list of files you created and modified in step 7. Both are needed: the work is uncommitted, so files you *created* are still untracked and do not appear in `git diff` at all. You hold that file list from step 7, and the reviewers have `Read` — so name the files and they can read what the diff omits.
 
-Wait for all three, parse each output, and aggregate their `issues` into one findings list, each finding tagged with the reviewer that raised it and its severity.
+Wait for all of them, parse each output, and aggregate their `issues` into one findings list, each finding tagged with the reviewer that raised it and its severity.
 
-- **Zero findings across all three** → skip steps 10–11 and go to step 12.
+- **Zero findings across all of them** → skip steps 10–11 and go to step 12.
 - **One or more findings** → continue to step 10.
 
 **10. Triage and apply the findings (agent).**
@@ -104,7 +105,7 @@ Re-invoke `implementation-verifier` (same scoping rules as step 8): step 10 may 
 - **`status: failure`, retries remaining (< 2 done)** → re-invoke `full-stack-dev` with the verifier's failure output to fix it, then re-invoke `implementation-verifier`. At most **twice** (initial run + 2 fix-and-reverify cycles) — the same policy as step 8.
 - **`status: failure`, retries exhausted** → **STOP**: print a structured escalation report (what failed, the last `implementation-verifier` output, a suggested next action).
 
-Do **not** re-run the three review agents in this loop, or anywhere else in this invocation: the deep review runs **exactly once** per `/paf:implement-issue` run. The second look at the code is the developer's manual review, backed by `/paf:check-out`'s safety-net review.
+Do **not** re-run the review agents in this loop, or anywhere else in this invocation: the deep review runs **exactly once** per `/paf:implement-issue` run. The second look at the code is the developer's manual review, backed by `/paf:check-out`'s safety-net review.
 
 **12. Hand off for review (skill).**
 Do **not** commit, push, or open an MR/PR. Leave the verified, reviewed changes **uncommitted** on the feature branch so the developer can review them as working-tree changes in their IDE (the clearest review surface). `/paf:check-out` commits the implementation plus the review fixes, pushes, and opens the MR/PR.
