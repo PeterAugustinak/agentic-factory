@@ -2,7 +2,7 @@
 
 Two layers:
 
-- The pure helpers (`command_name`, `within_project`) and the two deny regexes
+- The pure helpers (`command_name`, `within_project`) and the deny regexes
   (`EXTERNAL_IO`, `GIT_MUTATE`) are imported and called directly.
 - The allow/deny/defer decision is driven end to end by running the hook as a
   SUBPROCESS with a crafted payload on stdin. The hook is deliberately structured

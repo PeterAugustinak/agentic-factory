@@ -1,6 +1,6 @@
 """Shared test helpers.
 
-PAF's two deterministic scripts live at paths that are not importable names —
+PAF's deterministic scripts live at paths that are not importable names —
 `hooks/PreToolUse-agent-guard.py` and `skills/paf-shared/paf-report-cost.py` both
 contain hyphens, and neither directory is a package. They are loaded by file path
 instead, which is also the honest thing to test: the tests exercise the exact file

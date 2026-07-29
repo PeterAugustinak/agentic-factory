@@ -5,6 +5,26 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-07-29
+
+Graded PATCH: wording only. No skill, agent, or hook changes behaviour, and the installed files
+differ in prose alone.
+
+### Changed
+
+- Documentation no longer hardcodes how many components the factory has. Counts that tracked the
+  size of a growing set — the agent roster, the reviewers in the deep review, the safety-net agents
+  and final checks in `/paf:check-out`, the `READ_ONLY_AGENTS` set, the pre-merge stages, the
+  deterministic scripts and deny regexes under test — are stated as sets rather than numbers, so
+  adding the next agent, reviewer, or stage needs no documentation sweep.
+- The count of skills is kept but scoped: `architecture.md` §2 now names `create-issue` →
+  `implement-issue` → `check-out` the factory's **main skills** and states that the trip is fixed
+  while further skills may be added alongside it. Every other reference reads "the three main
+  skills", so the number describes the fixed pipeline rather than the contents of `skills/`.
+- `agents/README.md` no longer points at `docs/architecture.md` for an agent roster that file
+  deliberately does not keep; it points at the directory itself, and at §1 for how an agent is
+  shaped.
+
 ## [0.12.0] - 2026-07-27
 
 ### Added

@@ -12,7 +12,7 @@
 #   2. bash -n                 over every shell script   (shell syntax)
 #   3. python3 -m unittest     from the repository root  (the test suite)
 #
-# All three stages always run — one invocation reports every problem rather than
+# Every stage always runs — one invocation reports every problem rather than
 # stopping at the first. Exits non-zero if any stage failed.
 #
 # Trust boundary: stages 1 and 2 are diagnostic only (they read source, they don't

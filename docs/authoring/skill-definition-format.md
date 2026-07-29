@@ -1,6 +1,6 @@
 # PAF Skill Definition Format
 
-This document defines the authoring format every PAF skill follows. It operationalizes [`architecture.md`](../architecture.md): the architecture decides *what* the skills do (orchestration, human gates, I/O ownership, loop/escalation, cost reporting); this document fixes *how* a skill is written as a `SKILL.md` so all three read consistently. It is the skill-side counterpart to [`agent-definition-format.md`](agent-definition-format.md).
+This document defines the authoring format every PAF skill follows. It operationalizes [`architecture.md`](../architecture.md): the architecture decides *what* the skills do (orchestration, human gates, I/O ownership, loop/escalation, cost reporting); this document fixes *how* a skill is written as a `SKILL.md` so they all read consistently. It is the skill-side counterpart to [`agent-definition-format.md`](agent-definition-format.md).
 
 Every choice is grounded in the official Claude Code skills documentation, the Agent Skills open standard, and Anthropic's own skill examples; sources are listed at the end. Nothing is guessed.
 
@@ -30,7 +30,7 @@ A PAF skill's frontmatter uses these fields, in this order:
 
 ### Why `disable-model-invocation: true` on every PAF skill
 
-PAF skills are **explicit-invocation only** — the three-skill split *is* the human-control architecture (`architecture.md` §2), and each skill has real side effects (posts issues, writes code, opens PRs). Claude must never decide to run one on its own. `disable-model-invocation: true` enforces exactly this natively: the developer can invoke with `/name`, Claude cannot auto-load it, and the description is kept out of automatic context.(3) This replaces the non-existent `invocation: explicit` field that earlier drafts guessed at.
+PAF skills are **explicit-invocation only** — the main-skill split *is* the human-control architecture (`architecture.md` §2), and each skill has real side effects (posts issues, writes code, opens PRs). Claude must never decide to run one on its own. `disable-model-invocation: true` enforces exactly this natively: the developer can invoke with `/name`, Claude cannot auto-load it, and the description is kept out of automatic context.(3) This replaces the non-existent `invocation: explicit` field that earlier drafts guessed at.
 
 ### Fields deliberately not used
 

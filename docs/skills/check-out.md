@@ -20,7 +20,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 
 ## How it works
 
-`check-out` is an orchestrator in the main thread. It runs one safety-net review, does the two final checks, and finalises git/GitHub — with **no auto-retry and no fix loop**: any blocker halts and hands control back to the developer.
+`check-out` is an orchestrator in the main thread. It runs one safety-net review, does the final checks, and finalises git/GitHub — with **no auto-retry and no fix loop**: any blocker halts and hands control back to the developer.
 
 1. **Confirm & gather** (skill) — confirm the developer validated the implementation; read the issue's acceptance criteria; compute the change as the branch's diff vs base (committed **or** uncommitted).
 2. **Safety-net review** — `senior-engineer-reviewer`, invoked as a **high-level confirmation pass** (framed at the call site: already deep-reviewed in `implement-issue`; the hand-edits can't be isolated from that reviewed implementation, so it's handed the whole branch diff — look for critical regressions, especially the developer's hand-edits, and don't re-litigate the already-reviewed implementation). The skill computes the gate itself from the findings' severity: `error` **STOPs**, `warning` is surfaced but does not block.
@@ -28,7 +28,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 4. **Pre-merge validation** (skill) — the project's **full** test + lint suite; failure **STOPs**.
 5. **Commit & push** (skill) — commit whatever is still uncommitted; push.
 6. **Record cost** (skill) — append this run's cost to the per-feature ledger.
-7. **Total & PR** (skill) — total the whole feature across all three skills and open the PR with that cost table in its description.
+7. **Total & PR** (skill) — total the whole feature across all three main skills and open the PR with that cost table in its description.
 
 ## Orchestration
 
@@ -83,7 +83,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 | `senior-engineer-reviewer` | Safety-net review — a high-level confirmation pass over the diff, framed at invocation; `error` findings STOP the run. |
 | `quality-assurer` | Final gate — confirms every acceptance criterion is met. |
 
-Two agents, run in sequence. The deep review (`code-simplifier`, `security-engineer`, `test-coverage-reviewer`, and this same `senior-engineer-reviewer` at full depth) runs in `/paf:implement-issue`, not here. `senior-engineer-reviewer`'s **definition is unchanged** — the shallower framing comes from how `check-out` invokes it, since agents are caller-agnostic and a permanent "be shallow" instruction would damage its deep use in the deep review. **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses, and the reviewer may re-see the already-reviewed implementation rather than only the hand-edits, since the hand-edits cannot be isolated from the rest of the diff. Agents never touch git/`gh` — the skill owns all of it.
+The agents above run in sequence. The deep review (`code-simplifier`, `security-engineer`, `test-coverage-reviewer`, and this same `senior-engineer-reviewer` at full depth) runs in `/paf:implement-issue`, not here. `senior-engineer-reviewer`'s **definition is unchanged** — the shallower framing comes from how `check-out` invokes it, since agents are caller-agnostic and a permanent "be shallow" instruction would damage its deep use in the deep review. **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses, and the reviewer may re-see the already-reviewed implementation rather than only the hand-edits, since the hand-edits cannot be isolated from the rest of the diff. Agents never touch git/`gh` — the skill owns all of it.
 
 ## Human interception points
 
@@ -107,7 +107,7 @@ The skill owns git/GitHub state. It computes the change to review as `git diff <
 
 ## Cost in the PR
 
-`check-out` marks its invocation start at step 1 and records its own run (that invocation's slice only) to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three skills** — `create-issue`, `implement-issue`, `check-out` — and embeds that **EUR cost** table in the **PR description**. Because `check-out` prices only its own slice, running it in the same CLI session as `implement-issue` does not re-count `implement-issue`'s tokens. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
+`check-out` marks its invocation start at step 1 and records its own run (that invocation's slice only) to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three main skills** — `create-issue`, `implement-issue`, `check-out` — and embeds that **EUR cost** table in the **PR description**. Because `check-out` prices only its own slice, running it in the same CLI session as `implement-issue` does not re-count `implement-issue`'s tokens. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
 
 ## Related files
 

@@ -6,9 +6,9 @@ Guidance for agents (and humans) working **on** the factory itself. This file mu
 
 PAF (Personal Agentic Factory) is a set of Claude Code skills, agents, and hooks that take a feature
 from idea to merge request. It is not an application — it is installed into a user's `~/.claude`
-config by `scripts/install.sh`. Entry points: the three skills in `skills/` (`/paf:create-issue`,
-`/paf:implement-issue`, `/paf:check-out`), the specialist agents in `agents/`, and the single
-`PreToolUse` hook in `hooks/`.
+config by `scripts/install.sh`. Entry points: the three main skills in `skills/` (`/paf:create-issue`,
+`/paf:implement-issue`, `/paf:check-out`), the specialist agents in `agents/`, and the
+`PreToolUse` enforcement hook in `hooks/`.
 
 ## No guessing — verify everything
 
