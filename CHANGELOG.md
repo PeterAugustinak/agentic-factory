@@ -5,6 +5,20 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-07-29
+
+Graded MINOR: `implement-issue`'s validation becomes source-aware, fixing the recurring failure
+where an already-validated issue was "blocked" again by the same validator.
+
+### Changed
+
+- `create-issue` marks every posted issue with a visible footer (a final line reading `PAF`);
+  `implement-issue` skips re-validation when the issue's last line is that marker, and for unmarked
+  issues a blocker now prompts an `AskUserQuestion` gate (fold into plan / stop) instead of a hard
+  stop.
+- `issue-validator` no longer blocks on an incomplete scope list — the files an issue names are a
+  hint, not a contract (#50).
+
 ## [0.13.0] - 2026-07-29
 
 Graded MINOR: a behavioural/cost rebalancing, backward-compatible — no interface change.
