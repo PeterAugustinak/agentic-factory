@@ -1,7 +1,7 @@
 ---
 name: implementation-verifier
 description: Runs the project's tests and linter against a change and reports pass/fail with the failures found.
-model: sonnet
+model: haiku
 tools: Read, Bash
 ---
 

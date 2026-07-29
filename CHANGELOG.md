@@ -5,6 +5,24 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-07-29
+
+Graded MINOR: a behavioural/cost rebalancing, backward-compatible — no interface change.
+
+### Changed
+
+- `implementation-verifier` moved from `sonnet` to `haiku`: it is mechanical, I/O-bound work (run
+  tests/lint, report pass/fail) that runs repeatedly inside both `implement-issue` fix loops, so the
+  cheapest capable model matters most there.
+- `issue-validator` moved from `sonnet` to `opus`: it validates a proposed approach against
+  authoritative documentation and the repository *before* the work exists to build, so a defect
+  missed there propagates into everything subsequently built, and its `error` findings are what
+  halt `implement-issue`.
+- `docs/architecture.md` §1 "Model selection" refined so the stated policy — choose by reasoning
+  demand and cost of a missed mistake, not a coarse verb list — is consistent with both
+  reassignments, and `docs/authoring/agent-definition-format.md` and `docs/skills/create-issue.md`
+  updated to match (#45).
+
 ## [0.12.1] - 2026-07-29
 
 Graded PATCH: wording only. No skill, agent, or hook changes behaviour, and the installed files

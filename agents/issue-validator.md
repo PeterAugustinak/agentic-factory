@@ -1,7 +1,7 @@
 ---
 name: issue-validator
 description: Independently verifies the technical validity of a proposed approach against authoritative documentation and the actual repository, and reports findings.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, WebSearch, WebFetch
 ---
 
