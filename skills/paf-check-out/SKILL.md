@@ -68,7 +68,7 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
 ```
 
 **7. Total the feature and open the MR/PR (skill).**
-Aggregate the whole feature's cost across all three skills and clean up the ledger:
+Aggregate the whole feature's cost across all three main skills and clean up the ledger:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" aggregate \

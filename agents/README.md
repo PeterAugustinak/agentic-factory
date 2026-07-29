@@ -18,4 +18,6 @@ The installer places agent files at `~/.claude/agents/paf/`.
 
 ## Agents in this factory
 
-See `docs/architecture.md` for the full agent roster, model assignments, and tool scopes.
+The `.md` files in this directory are the current set — each one is self-describing (model, tool
+scope, role). `docs/architecture.md` §1 defines how an agent is *shaped* (model selection, tool
+scoping, output contract); it deliberately keeps no roster.
