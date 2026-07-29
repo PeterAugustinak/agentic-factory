@@ -77,7 +77,7 @@ The skill runs **inline in the current conversation**, so the prior discussion i
 ## Agents used
 
 - **`issue-writer`** (Sonnet, read-only) — synthesises the discussed idea into the structured issue draft and returns it via the [output contract](../../skills/paf-shared/output-contract.md); the skill parses that, gates it on the developer, and posts it.
-- **`issue-validator`** (Sonnet, web access + read-only repo search) — independently checks the drafted approach's load-bearing claims against authoritative docs **and** the actual repository *before* posting, returning findings via the same output contract. The skill folds blockers back into a re-draft (capped) and surfaces the rest at the review gate.
+- **`issue-validator`** (Opus, web access + read-only repo search) — independently checks the drafted approach's load-bearing claims against authoritative docs **and** the actual repository *before* posting, returning findings via the same output contract. The skill folds blockers back into a re-draft (capped) and surfaces the rest at the review gate.
 
 Planning and implementation belong to `/paf:implement-issue`. Note that `issue-validator` runs **twice** across the pipeline by design — here at authoring time (catch defects before posting) and again inside `/paf:implement-issue` (re-check the *posted* issue, which may have been edited between skills). See [`architecture.md` → issue-validator escalation](../architecture.md#issue-validator-escalation).
 

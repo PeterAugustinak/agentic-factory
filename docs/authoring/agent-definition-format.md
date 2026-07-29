@@ -23,7 +23,7 @@ A PAF agent file begins with YAML frontmatter using exactly these fields, in thi
 |---|---|---|
 | `name` | Yes | The agent name, matching `architecture.md` §1 (e.g. `code-explorer`). Received by hooks as `agent_type`.(2) |
 | `description` | Yes | One sentence stating what the agent does. PAF agents are invoked **explicitly by name** from skills, so this is documentation, not an auto-delegation trigger. |
-| `model` | No (defaults to `inherit`) | The alias from `architecture.md` §1: `haiku` or `sonnet`. Aliases are used, not full model IDs, so the factory tracks model upgrades automatically.(3) |
+| `model` | No (defaults to `inherit`) | The alias from `architecture.md` §1: `haiku`, `sonnet`, or `opus`. Aliases are used, not full model IDs, so the factory tracks model upgrades automatically.(3) |
 | `tools` | No (inherits all if omitted) | The **allowlist** from `architecture.md` §3, comma-separated. Only listed tools are available; every other tool — including all MCP tools — is denied.(4) |
 
 ### Why the allowlist (`tools`) form, not the denylist
