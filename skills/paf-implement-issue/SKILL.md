@@ -42,7 +42,11 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "$
 
 Then fetch the issue: `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs view-issue $ARGUMENTS` on the repo auto-detected from the git `origin` remote. Keep its title, body, and proposed approach — they feed the validator and the plan.
 
-**2. Validate the approach (agent).**
+**Source-aware validation.** Check whether the fetched issue's **final line is exactly `PAF`** — the marker `create-issue` appends to every issue it posts. Anchor on the last line only, never on the word appearing elsewhere (issue prose is full of "PAF"). Its presence means this issue was already validated by PAF and approved by the developer.
+- **Marker present** → **skip steps 2–3 entirely** and go straight to plan mode (step 4). Re-validating a PAF-authored issue is redundant and — because same-definition agents are non-deterministic — risks "blocking" an issue `create-issue` already approved.
+- **Marker absent** (a hand-written issue, or one created outside PAF) → run steps 2–3 as below; the validator is the only validation such an issue gets.
+
+**2. Validate the approach (agent).** *(Only when the issue is unmarked — a marked issue skipped to step 4.)*
 Invoke `issue-validator` explicitly, passing the issue and its proposed approach. It verifies technical validity against authoritative docs and the repository, and returns findings (each `severity: error` = blocker, `warning` = minor). It does not post anything.
 
 **3. Handle validator findings (skill).**
@@ -57,11 +61,14 @@ EOF
 **When the validator returns zero findings, post no comment at all** — skip the `comment-issue` call entirely.
 
 Then branch on severity:
-- **Any `severity: error`** → **STOP**: tell the developer to update the issue and re-run `/paf:implement-issue`. Do not continue.
 - **Only `warning` findings (or none)** → carry the warnings forward; they must be accounted for in the plan (step 4).
+- **Any `severity: error`** → do **not** stop unconditionally. The scope an issue names is only a hint — the real files are decided in plan mode (step 4) — so a blocker here is the developer's call, not an automatic halt. Inform the developer that a validator blocker was raised and ask via `AskUserQuestion` whether to fold it into the plan and continue, or stop. Use a **single** `AskUserQuestion` covering **all** blocker findings at once — quote each finding in the question text (summarise a very long message to its essence) — not one prompt per finding. Approve folds **all** of them into the plan; decline stops.
+  - **Approve** → carry the blocker finding(s) forward alongside any warnings; they must be accounted for in the plan (step 4). Continue.
+  - **Decline** → **STOP**: tell the developer to update the issue and re-run `/paf:implement-issue`. Do not continue.
+  - **No answer** (the developer dismisses the prompt, it times out, or the tool returns without a selection) → treat as **Decline** and STOP. Never auto-approve on a missing answer.
 
 **4. Plan in plan mode (skill, main thread).**
-Enter plan mode with `EnterPlanMode`. In plan mode — one continuous, **read-only** context — explore the codebase and produce a **concrete** implementation plan for the issue: the exact files to change, the exact edits to make, and the test strategy, folding in any `warning` findings from step 3. Nothing is written to the codebase during this step. Do the exploration **here**, in the same context that will implement — do not delegate it to a separate agent (see "Why plan mode" above).
+Enter plan mode with `EnterPlanMode`. In plan mode — one continuous, **read-only** context — explore the codebase and produce a **concrete** implementation plan for the issue: the exact files to change, the exact edits to make, and the test strategy, folding in any `warning` findings from step 3 **and any `error` findings the developer approved** at the step-3 gate. Nothing is written to the codebase during this step. Do the exploration **here**, in the same context that will implement — do not delegate it to a separate agent (see "Why plan mode" above).
 
 **5. Plan approval — human gate (`ExitPlanMode`).**
 Call `ExitPlanMode` to present the completed plan for the developer's approval. This is the mandatory plan-review gate — nothing is written to the codebase before it.
@@ -123,7 +130,7 @@ It prices only this invocation's slice of the session transcript (from the step-
 ## Escalation
 
 Any of these **stops the run** with a clear message to the developer, who fixes the cause and re-runs `/paf:implement-issue`:
-- a validator blocker (`severity: error`, step 3);
+- a validator blocker the developer **declines** to carry forward at the step-3 gate (a PAF-validated issue skips validation entirely; an approved blocker is folded into the plan instead of stopping);
 - verification still failing after the retry cap (step 8);
 - re-verification after the review fixes still failing after the retry cap (step 11);
 - malformed or missing agent output (any agent step).

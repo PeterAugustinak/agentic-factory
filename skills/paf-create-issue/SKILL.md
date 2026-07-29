@@ -56,11 +56,21 @@ Present the **validated** drafted issue to the developer clearly (title, body, a
 Do not post anything until the developer approves.
 
 **7. Post the issue (skill).**
-The step-6 approval **is** the authorization to post — do not ask again or introduce any further confirmation. Post in a single `paf-vcs` call, feeding the approved body straight to it on stdin so no local file is written (writing a file would trigger a needless extra permission prompt):
+The step-6 approval **is** the authorization to post — do not ask again or introduce any further confirmation.
+
+**Append the PAF-validated marker.** Every issue posted here has passed `issue-validator` (step 4) *and* the developer's review gate (step 6), so append a marker as the **final line** of the approved body — a lone line reading exactly:
+
+```
+PAF
+```
+
+It is a **visible** footer (deliberately not a hidden HTML comment — that would force reading the raw body to survive rendering; a plain line survives any rendering, so `paf-vcs view-issue` stays simple). It is `/paf:implement-issue`'s signal that this issue was already validated by PAF and approved by the developer, so it can skip its own validation pass. Detection anchors on the issue's **final line being exactly `PAF`** — never on the word appearing elsewhere — because "PAF" occurs throughout ordinary issue prose. Append it on **every** post — including one where the developer approved despite a residual blocker at the gate (step 5): that blocker was surfaced and adjudicated by the developer here, so re-validating it at implementation time would only re-raise a decision already made.
+
+Post in a single `paf-vcs` call, feeding the approved body (with the `PAF` marker as its last line) straight to it on stdin so no local file is written (writing a file would trigger a needless extra permission prompt):
 
 ```
 ${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs create-issue --title "<title>" --label "<label>" [--label "<label>" ...] <<'EOF'
-<approved body>
+<approved body, ending with a lone `PAF` line>
 EOF
 ```
 
@@ -78,4 +88,4 @@ It prices only this invocation's slice of the session transcript (from the step-
 
 ## Escalation
 
-Any failure — malformed agent output (step 3 or 4), or `paf-vcs` failing to post (step 7) — **stops the run** with a clear message to the developer. This skill never retries silently and never posts a partially-formed issue. A validator **blocker** does not stop the run: it is auto-corrected and re-validated (step 5), and any residual blocker is surfaced at the human gate for the developer to resolve — it is `/paf:implement-issue`'s validator that hard-STOPs on a blocker in the *posted* issue.
+Any failure — malformed agent output (step 3 or 4), or `paf-vcs` failing to post (step 7) — **stops the run** with a clear message to the developer. This skill never retries silently and never posts a partially-formed issue. A validator **blocker** does not stop the run: it is auto-corrected and re-validated (step 5), and any residual blocker is surfaced at the human gate for the developer to resolve. Because every posted issue carries the trailing `PAF` marker (step 7), `/paf:implement-issue` skips its own validation of it; it re-validates only issues **without** the marker (hand-written, or created outside PAF), and there a blocker prompts an informed developer-approval gate rather than an unconditional stop.

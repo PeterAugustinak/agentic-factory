@@ -21,7 +21,7 @@ Once an issue exists and its approach is sound enough to build:
 `implement-issue` is an orchestrator running in the main thread. It validates the approach with an agent, then **plans and implements in one shared context using native plan mode**, verifies with an agent, and finally deep-reviews the change with the review agents and has the findings triaged and applied. It owns all VCS and git I/O (via the `paf-vcs` adapter — `gh` on GitHub projects, `glab` on GitLab projects), enforces the plan-review gate, and applies the loop caps and escalation policy.
 
 1. **Read the issue** (skill) via `paf-vcs`.
-2. **Validate the approach** — `issue-validator` checks technical validity against authoritative docs and the repository. The skill posts **only the actual findings** — one line each, and no comment when there are none. A **blocker** (`severity: error`) stops the run and sends the developer back to the issue. Minor findings (`warning`) are carried into the plan.
+2. **Validate the approach — only when the issue is not already PAF-validated.** The skill checks whether the issue's **final line is exactly `PAF`** — the visible marker `create-issue` adds to every issue it posts (anchored on the last line, since "PAF" is everywhere in issue prose): **present** → skip validation and go straight to the plan (re-validating a PAF issue is redundant and risks a non-deterministic false blocker); **absent** (hand-written, or created outside PAF) → `issue-validator` checks technical validity against authoritative docs and the repository. The skill posts **only the actual findings** — one line each, none when there are none. A **blocker** (`severity: error`) is no longer an automatic stop: the skill tells the developer and asks (`AskUserQuestion`) whether to fold it into the plan and continue, or stop (no answer ⇒ stop). Minor findings (`warning`) are carried into the plan. The validator never blocks on an incomplete scope list — the real files are decided when planning.
 3. **Plan** (skill, main thread) — `EnterPlanMode`: in one read-only context, explore the codebase and produce a **concrete** plan (exact files and edits, test strategy), folding in any minor findings. Nothing is written yet.
 4. **Plan-review gate** (`ExitPlanMode`) — the developer approves the plan or requests changes (revise in plan mode and re-present). Nothing is built before approval.
 5. **Branch** (skill) — after approval, create `feature/<issue>-<short-description>` from the base branch.
@@ -49,21 +49,30 @@ Planning and building run in the main thread via native plan mode rather than as
 | [skill] read the issue via paf-vcs            |
 +----------------------------------------------+
      |
-     v
-+----------------------------------------------+
-| [agent] issue-validator                      |
-|   verify vs docs + repo -> findings          |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [skill] post findings comment on the issue   |
-+----------------------------------------------+
-     |
-     |--- severity: error (blocker) --> STOP: developer updates issue & re-runs
-     |
-     v  (warning / none -> carried into the plan)
-+----------------------------------------------+
+     |--- final line == "PAF" (marker present) -----------------------+
+     |     (already validated + approved in create-issue -> skip)      |
+     v  (marker absent: hand-written / created outside PAF)            |
++----------------------------------------------+                       |
+| [agent] issue-validator                      |                       |
+|   verify vs docs + repo -> findings          |                       |
++----------------------------------------------+                       |
+     |                                                                 |
+     v                                                                 |
++----------------------------------------------+                       |
+| [skill] post findings comment on the issue   |                       |
++----------------------------------------------+                       |
+     |                                                                 |
+     |--- severity: error (blocker) -->                                |
+     |    +----------------------------------------------+             |
+     |    | [human gate] AskUserQuestion: fold blocker   |             |
+     |    |   into the plan and continue?                |             |
+     |    +----------------------------------------------+             |
+     |         |--- decline / no answer --> STOP: developer updates    |
+     |         |                            issue & re-runs            |
+     |         +--- approve (blocker folded into the plan) ---+        |
+     |                                                        |        |
+     v  (warning / none -> carried into the plan)            |        |
++----------------------------------------------+  <----------+  <-----+
 | [skill] EnterPlanMode: explore + write a     | <-+
 |   CONCRETE plan (one read-only context)      |   |
 +----------------------------------------------+   |
@@ -151,7 +160,7 @@ The reviewers run **concurrently**; the rest run in sequence. Planning and imple
 ## Human interception points
 
 - **Plan-review gate** (`ExitPlanMode`) — the mandatory in-skill gate; the developer approves the concrete plan (or loops it back for revision in plan mode) before any code is written.
-- **Validator blocker** — an `error` finding halts the run and returns control to the developer at the issue.
+- **Validator blocker gate** (`AskUserQuestion`) — for an unmarked (non-PAF-validated) issue, an `error` finding prompts the developer to fold it into the plan and continue, or stop. A PAF-validated issue skips validation, so this cannot fire.
 - **Skill boundary** — after the skill finishes, the developer reviews the branch's uncommitted changes (interception 2 in `architecture.md` §2) and then runs `/paf:check-out`.
 
 ## Loop cap and escalation
@@ -160,7 +169,7 @@ Per `architecture.md` §5 there are **two** fix loops, each capped the same way:
 - **Verify-fix loop (main thread).** On verification failure, the **same main-thread context that built the code** (now in edit mode) applies the fix (informed by the failure output) and re-verifies, at most **twice** — never a cold builder agent, which would re-derive the change.
 - **Review-fix loop (`full-stack-dev`).** After the review fixes are applied, `implementation-verifier` re-runs; on failure `full-stack-dev` fixes from its output and it re-verifies, at most **twice**. The reviewers run **exactly once** per invocation and are never re-run — the second look at the code is the developer's manual review plus `/paf:check-out`'s safety-net review.
 - **No self-validation.** Whoever applied a fix never validates it — `implementation-verifier` re-runs as a separate agent each time.
-- **STOP conditions** (each halts and escalates to the developer, who fixes the cause and re-runs): a validator blocker; verification still failing after either retry cap; malformed/missing agent output from any agent.
+- **STOP conditions** (each halts and escalates to the developer, who fixes the cause and re-runs): a validator blocker the developer **declines** at the gate (a PAF-validated issue skips validation; an approved blocker is folded into the plan instead); verification still failing after either retry cap; malformed/missing agent output from any agent.
 - **Scoped verification.** `implementation-verifier` runs a **targeted subset** of the suite (the changed area), keeping both loops fast; the **full** suite runs later at `/paf:check-out`.
 
 ## Git handling
