@@ -28,7 +28,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 4. **Pre-merge validation** (skill) — the project's **full** test + lint suite; failure **STOPs**.
 5. **Commit & push** (skill) — commit whatever is still uncommitted; push.
 6. **Record cost** (skill) — append this run's cost to the per-feature ledger.
-7. **Total & PR** (skill) — total the whole feature across all three main skills and open the PR with that cost table in its description.
+7. **Total & PR** (skill) — total the whole feature across all three main skills and open the PR using the **fixed description template** (Closes line, What this implements, Validation, Deviations, cost table) under a title pinned to the issue title with a conventional-commit type prefix.
 
 ## Orchestration
 
@@ -71,8 +71,8 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
      v
 +----------------------------------------------+
 | [skill] record check-out cost; aggregate the |
-|   whole feature (EUR); open PR with the cost  |
-|   table in the description                    |
+|   whole feature (EUR); open PR — fixed body  |
+|   template, "<type>: <issue title>" title    |
 +----------------------------------------------+
 ```
 
@@ -97,6 +97,7 @@ Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** —
 - the safety-net review returns an `error` finding;
 - `quality-assurer` finds unmet criteria;
 - pre-merge validation fails;
+- the MR/PR title's `<type>` cannot be resolved by any rule;
 - malformed/missing agent output.
 
 **Two-tier verification.** The scoped `implementation-verifier` runs in `/paf:implement-issue`'s fix loops; the **full** suite runs here as pre-merge validation — the safety net that catches cross-module regressions a scoped run cannot see. `check-out` runs no scoped verification of its own, because it applies no fixes.
@@ -105,9 +106,51 @@ Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** —
 
 The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (the implementation and its review fixes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from `CLAUDE.md`. With squash merge, the number of commits on the branch does not matter.
 
+## MR/PR description and title
+
+The MR/PR body is **not** freeform — it is a fixed skeleton the skill fills in, and nothing else:
+
+```
+Closes #<issue-number>.
+
+## What this implements
+
+<2-4 sentences, or up to 5 bullets — what was built, not why>
+
+## Validation
+
+`<pre-merge command>` — passed (<result summary from its actual output>).
+
+## Deviations from the issue
+
+<one line per deviation>
+
+## Factory run cost — feature #<issue-number>
+
+| Skill | Cost (EUR) |
+|---|---|
+| ... | ... |
+```
+
+- The **cost section** is appended **verbatim** from `paf-report-cost.py aggregate` — heading and table as printed, never authored or reformatted by the model.
+- **Validation** carries the pre-merge command exactly as `CLAUDE.md` defines it (the same command step 4 ran, never hardcoded) plus the result summary from its actual output. It says nothing about the factory's internal agent gates.
+- **Deviations** is anchored strictly: only what the issue *explicitly states* — in its Approach, Scope of changes, or acceptance criteria — and the implementation does differently, phrased "what the issue said → what was built", with no hedging or speculation. When nothing anchors, the section is **omitted entirely** — there is no "None." placeholder.
+- The body must **not** contain rationale or a "why" section, a changed-files list or per-file narration, trade-off discussion, agent-review findings or statistics, or version-bump notes — a reviewer who wants that intent detail finds it in the linked issue, which is what the `Closes` line points at. There is no `🤖 Generated with [Claude Code]` trailer.
+- `Closes #<issue-number>` is **always** written, regardless of the base branch. (On both GitHub and GitLab, auto-closing the issue on merge only fires when the MR/PR targets the repository's default branch — but that is a platform behaviour, not something to conditionally implement: the line itself is unconditional.)
+- The issue title is attacker-influenceable text, so the skill never splices it raw into a double-quoted shell argument when calling `paf-vcs` — it binds the resolved title to a shell variable via a safely-quoted assignment first. See `skills/paf-check-out/SKILL.md` step 7 for the exact construction.
+
+The **title** is `<type>: <issue title>`, with `<type>` resolved in a fixed order:
+
+1. the issue title already begins with one of the **exact, lowercase** prefixes `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `test:`, `perf:`, `build:`, `ci:` → the type is already present: the issue title is used as the whole title, exactly as written, never with `<type>:` re-prepended. The vocabulary is closed and case-sensitive on purpose: a generic `<word>:` match would also catch `Bug: ` and preempt rule 2.
+2. the title begins with `Bug: ` → that prefix is stripped and `fix:` used.
+3. otherwise derived from the issue's labels — `bug`→`fix`, `enhancement`→`feat`, `documentation`→`docs` — with precedence `bug` > `enhancement` > `documentation` when an issue carries more than one.
+4. nothing resolves → the skill **STOPs and asks the developer**, per its strict-sourcing rule; it never invents a type.
+
+This makes every PAF-opened MR/PR self-describing and consistent.
+
 ## Cost in the PR
 
-`check-out` marks its invocation start at step 1 and records its own run (that invocation's slice only) to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three main skills** — `create-issue`, `implement-issue`, `check-out` — and embeds that **EUR cost** table in the **PR description**. Because `check-out` prices only its own slice, running it in the same CLI session as `implement-issue` does not re-count `implement-issue`'s tokens. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
+`check-out` marks its invocation start at step 1 and records its own run (that invocation's slice only) to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three main skills** — `create-issue`, `implement-issue`, `check-out` — and appends that **EUR cost** table **verbatim** as the **last section of the PR description** (see [MR/PR description and title](#mrpr-description-and-title) above). Because `check-out` prices only its own slice, running it in the same CLI session as `implement-issue` does not re-count `implement-issue`'s tokens. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
 
 ## Related files
 
