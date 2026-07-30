@@ -8,7 +8,9 @@ inventing one.
 
 This is a checklist of the **content areas** your `CLAUDE.md` must cover — not a format. Keep your
 project's existing structure, headings, and voice; PAF reads meaning, not layout. Keep the file under
-200 lines: project-specific context only, no skill logic, agent prompts, or hook scripts.
+200 lines: project-specific context only, no skill logic, agent prompts, or hook scripts. The
+required areas come first; a short list of **optional** areas follows, each enabling a behaviour PAF
+skips entirely when the area is absent.
 
 ---
 
@@ -46,12 +48,15 @@ whatever environment this describes, so if tests only pass inside docker, say so
 
 ### How to run tests
 
-The **exact command**, not a description. Agents run it verbatim.
+The **exact command**, not a description. Agents run it verbatim. This is the command
+`implementation-verifier` scopes to the changed area for fast in-loop verification inside
+`/paf:implement-issue`'s fix loops — it runs **tests only** there, never the lint command below.
 
 ### Code standards / lint command
 
 The **exact command** that checks code standards — linter, formatter check, type checker, syntax
-gate. Run by `implementation-verifier` alongside the tests.
+gate. It belongs to the pre-merge tier: it runs as part of `/paf:check-out`'s full pre-merge
+validation, **not** in `/paf:implement-issue`'s in-loop verification, which is scoped tests only.
 
 ### Full pre-merge validation command
 
@@ -61,6 +66,26 @@ not defined**, so this area is not optional.
 
 A single script (e.g. `./scripts/pre-merge.sh`) is recommended over a chain of commands: it is one
 value to keep current, and it stays correct as the suite grows.
+
+---
+
+## Optional content areas
+
+### Auto-fix command
+
+The **exact command** that lets your project's own tooling fix mechanically-resolvable issues —
+formatting, import order, whatever your toolchain can correct without a human deciding anything.
+Describe it in whatever terms your toolchain uses; PAF names no tool and no flag.
+
+If you define one, `/paf:check-out` uses it **only** on a pre-merge validation failure: it runs your
+command exactly as written, **once**, then re-runs the full pre-merge validation. If that now passes,
+the failures were mechanical and the run continues (the skill reports what changed); anything still
+failing needs judgement and **STOPs and escalates** to you, as always. PAF never authors the fix
+itself and never makes a second attempt.
+
+Omit this area and nothing changes: a pre-merge failure STOPs the run, which is the default
+behaviour. Only define a command that is **behaviour-preserving** — a command that could change what
+the code *does* does not belong here.
 
 ---
 
@@ -95,4 +120,7 @@ docker compose exec web ruff check .
 
 # Full pre-merge validation
 ./scripts/pre-merge.sh
+
+# Auto-fix (optional — mechanical fixes only)
+docker compose exec web ruff check --fix .
 ```
