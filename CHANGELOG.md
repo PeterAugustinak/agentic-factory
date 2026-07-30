@@ -5,6 +5,18 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-07-30
+
+### Changed
+
+- `/paf:implement-issue`'s verify step runs the project's **test** command only — never lint, never
+  the full pre-merge command — keeping the in-loop feedback fast and cheap;
+  `implementation-verifier` is scoped to match (#47).
+- `/paf:check-out`'s pre-merge gate gained one bounded mutation: when `CLAUDE.md` defines an
+  optional auto-fix command, a failing gate runs it and re-validates **once**, then continues or
+  stops with the residual failures. Everything needing judgement still stops the run.
+  `docs/templates/CLAUDE-template.md` documents the new optional command (#47).
+
 ## [0.15.0] - 2026-07-30
 
 ### Changed
