@@ -70,6 +70,8 @@ Then branch on severity:
 **4. Plan in plan mode (skill, main thread).**
 Enter plan mode with `EnterPlanMode`. In plan mode — one continuous, **read-only** context — explore the codebase and produce a **concrete** implementation plan for the issue: the exact files to change, the exact edits to make, and the test strategy, folding in any `warning` findings from step 3 **and any `error` findings the developer approved** at the step-3 gate. Nothing is written to the codebase during this step. Do the exploration **here**, in the same context that will implement — do not delegate it to a separate agent (see "Why plan mode" above).
 
+**Sweep as you plan.** When a change alters a fact, rule, or name the repository states in more than one place, `grep` for **every** occurrence and fold them all into the plan — the same sweep obligation the builder agent carries (`agents/full-stack-dev.md`; `docs/architecture.md` §1, Builder), applied here because in `implement-issue` the **main thread**, not a builder agent, authors the plan's edits (step 7). Updating one statement of a fact and leaving its other statements stale is the self-contradiction this prevents — the exact defect that otherwise slips past the build and surfaces only at `check-out`. The approved plan (step 5) is the developer's checkpoint on the sweep.
+
 **5. Plan approval — human gate (`ExitPlanMode`).**
 Call `ExitPlanMode` to present the completed plan for the developer's approval. This is the mandatory plan-review gate — nothing is written to the codebase before it.
 - **Changes requested** → revise the plan (still in plan mode) and present again with `ExitPlanMode`. Repeat until approved.
@@ -79,7 +81,7 @@ Call `ExitPlanMode` to present the completed plan for the developer's approval. 
 After approval, from the base branch defined in `CLAUDE.md`, create and switch to `feature/<issue-number>-<short-description>`, deriving the short description from the issue title. All implementation lands on this branch.
 
 **7. Implement the approved plan (skill, same context).**
-Apply the approved plan's exact edits (`Edit`/`Write`) and run any project commands it requires, on the feature branch — the concrete edits are already decided, so this is applying, not re-exploring. Do **not** commit or push — you own git state.
+Apply the approved plan's exact edits (`Edit`/`Write`) and run any project commands it requires, on the feature branch — the concrete edits are already decided, so this is applying, not re-exploring, and it includes **every occurrence the plan's sweep (step 4) enumerated**. Do **not** commit or push — you own git state.
 
 **8. Verify (agent).**
 Invoke `implementation-verifier`, telling it the area the change affects. It runs the project's **test** command **exactly as defined in `CLAUDE.md`**, scoped to that area, and returns `status`. **Tests only** — never the project's lint command and never its full pre-merge command: those are `/paf:check-out`'s pre-merge gate, and pulling them into this loop inflates the cost and latency the two-tier split exists to keep low (`docs/architecture.md` §5, "Verification scope — two tiers"). If `CLAUDE.md` defines no test command, **STOP** and ask the developer — never guess a command or reach for one remembered from another project.
@@ -102,7 +104,7 @@ Wait for all of them, parse each output, and aggregate their `issues` into one f
 - **One or more findings** → continue to step 10.
 
 **10. Triage and apply the findings (agent).**
-Invoke `full-stack-dev` **once** with **all** aggregated findings, instructing it to decide which are worth applying and to apply them — this is a triage-and-apply step, not the application of a pre-approved list. Restate the guardrail in the invocation: `severity: error` findings (bugs, security) default to **applied** — skipping one requires saying so loudly, with justification, in its `summary`; `severity: warning` findings are where it exercises discretion.
+Invoke `full-stack-dev` **once** with **all** aggregated findings, instructing it to decide which are worth applying and to apply them — this is a triage-and-apply step, not the application of a pre-approved list. Restate the guardrail in the invocation: `severity: error` findings (bugs, security) default to **applied** — skipping one requires saying so loudly, with justification, in its `summary`; a finding identifying a **factual or self-consistency defect** (a stale reference, a contradiction between two stated facts) is applied **whatever severity it carries** and is never eligible for the discretionary skip; the remaining `warning` findings are where it exercises discretion. Restate the **sweep** obligation too: any fact, rule, or name it changes must be updated in every place the repository states it, in the same change.
 
 The developer does **not** pre-select fixes here; their manual review after this skill is the curation and revert point. So **surface `full-stack-dev`'s applied-vs-skipped report verbatim** to the developer — it tells them what changed beyond the plan they approved, and is what they curate against.
 
