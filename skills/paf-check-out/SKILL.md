@@ -12,14 +12,14 @@ Finish a feature: run one high-level safety-net review, do the final spec and pr
 
 This is a **confirmation-and-ship gate, not a deep-review-and-fix stage**. The deep review already ran in `/paf:implement-issue`, before the developer's manual review, so nothing here re-opens the code: `check-out` confirms and ships it.
 
-You are the orchestrator running in the main thread. You chain the safety-net and finalisation agents, own all git/VCS I/O, and apply the STOP-and-escalate policy (this skill has **no auto-retry** and **no fix loop** — any failure or blocker halts and returns control to the developer).
+You are the orchestrator running in the main thread. You chain the safety-net and finalisation agents, own all git/VCS I/O, and apply the STOP-and-escalate policy (this skill has **no auto-retry** and **no fix loop** — every failure or blocker that needs judgement to resolve halts the run and returns control to the developer). It has exactly one, bounded mutation: the project's own auto-fix command at the pre-merge gate (step 4), when the project defines one.
 
 ## Input
 
 - Operates on the **current feature branch**. Derive the issue number from the branch name (`feature/<issue-number>-<...>`); `$ARGUMENTS` overrides it. Read the issue with `paf-vcs` — its acceptance criteria are the spec `quality-assurer` checks against.
-- Project context from `CLAUDE.md`: the MR/PR base branch (e.g. `develop`), the full pre-merge validation command, and the merge strategy. The repo and provider are auto-detected from the git `origin` remote.
+- Project context from `CLAUDE.md`: the MR/PR base branch (e.g. `develop`), the full pre-merge validation command, the **optional** auto-fix command (step 4; many projects define none, which is not an error), and the merge strategy. The repo and provider are auto-detected from the git `origin` remote.
 
-**Strict project-context sourcing.** Every project-specific value (repo, base branch, pre-merge validation command, merge strategy) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
+**Strict project-context sourcing.** Every project-specific value (repo, base branch, pre-merge validation command, auto-fix command, merge strategy) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 - **Robust to either state.** `/paf:implement-issue` leaves the work uncommitted, but the developer may have committed it during review. Compute the change to review as the branch's full diff against the base (`git diff <base>`), which covers committed **and** uncommitted changes, so this skill works either way.
 
 ## Parsing agent output
@@ -41,7 +41,7 @@ Then confirm with the developer that they have reviewed `/paf:implement-issue`'s
 Invoke `senior-engineer-reviewer` — and **only** it — passing the change and the issue's requirement, framed **in the invocation** as a high-level confirmation pass: *this diff was already deep-reviewed in `/paf:implement-issue`; the developer's hand-edits since then cannot be isolated from that reviewed implementation, so you are being handed the whole branch diff — look for critical regressions, especially in the hand-edits, and do not re-litigate the already-reviewed implementation.* The depth and focus come from **your framing**, not from the agent's definition — do not modify `senior-engineer-reviewer`, whose deep review is exactly what `/paf:implement-issue` needs from it.
 
 Parse its output and compute the gate **yourself, from the parsed `issues[].severity`** — not from the agent's `status`, which is `success` on completion regardless of what it found (`docs/architecture.md` §4):
-- **Any `severity: error`** → **STOP**: print the findings and hand back to the developer, who fixes them on the branch or re-runs `/paf:implement-issue`. Never fix-and-continue — `check-out` has no fix loop.
+- **Any `severity: error`** → **STOP**: print the findings and hand back to the developer, who fixes them on the branch or re-runs `/paf:implement-issue`. Never fix-and-continue — `check-out` has no fix loop for review findings, which require judgement by their nature.
 - **Only `warning` findings (or none)** → print them for the developer's information and continue. They do not block.
 
 This is the safety net for the one slice of code no agent has seen: the developer's manual hand-edits since `/paf:implement-issue` finished. **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses, and the reviewer may re-see the already-reviewed implementation rather than only the hand-edits.
@@ -53,11 +53,16 @@ Invoke `quality-assurer` with the final change and the issue's acceptance criter
 
 **4. Pre-merge validation (skill).**
 Run the project's **full** pre-merge validation command **exactly as defined in `CLAUDE.md`** (the whole test + lint suite — the safety net a scoped run cannot see). If `CLAUDE.md` defines no such command, **STOP** and ask the developer — never guess one or reach for a script remembered from another project.
-- **Fails** → **STOP** and escalate.
 - **Passes** → continue.
+- **Fails, and `CLAUDE.md` defines no auto-fix command** → **STOP** and escalate.
+- **Fails, and `CLAUDE.md` defines an auto-fix command** → run **that** command, **exactly as defined there** — never a tool, flag, or invocation you chose yourself, and never in place of the developer's judgement — then re-run the pre-merge validation command **once**:
+  - **Now passes** → the failures were mechanically resolvable and the project's own tooling resolved them. Continue, and report what the auto-fix changed (`git diff --stat` is enough) so it shows up in the developer's picture of the branch.
+  - **Still fails** → **STOP** and escalate with the residual failures. Do **not** hand-edit code to make the gate pass, and do not run the auto-fix again.
+
+This is a bounded mechanical step, not a fix loop — see `docs/architecture.md` §5, `check-out` mutation posture, for why the single re-run is enough to tell mechanical failures from ones needing judgement.
 
 **5. Commit and push (skill).**
-Commit any **uncommitted** changes on the branch (the implementation and its review fixes) with a message referencing the issue (e.g. `#<issue-number>`). If the working tree is already clean — the developer committed during review — there is nothing to commit; proceed. Push the branch.
+Commit any **uncommitted** changes on the branch (the implementation, its review fixes, and any pre-merge auto-fix changes from step 4) with a message referencing the issue (e.g. `#<issue-number>`). If the working tree is already clean — the developer committed during review — there is nothing to commit; proceed. Push the branch.
 
 **6. Record this run's cost (skill).**
 Append `check-out`'s own cost to the per-feature ledger so the total below includes it:
@@ -126,10 +131,10 @@ Capture the MR/PR **URL** from `paf-vcs`'s `URL=` output line and print it.
 
 ## Escalation
 
-`check-out` is the final, human-controlled finalisation stage, so it has **no auto-retry and no fix loop** — it never fixes-and-continues. Each of these **stops the run** and returns control to the developer, who fixes the cause and re-runs `/paf:check-out`:
+`check-out` is the final, human-controlled finalisation stage, so it has **no auto-retry and no fix loop** — it never fixes-and-continues on anything requiring judgement. The **one** exception is step 4's optional, project-defined auto-fix (see step 4 for what it is and why it doesn't reopen the fix loop). Each of these **stops the run** and returns control to the developer, who fixes the cause and re-runs `/paf:check-out`:
 - the safety-net review returns an `error` finding (step 2);
 - `quality-assurer` finds unmet criteria (step 3);
-- pre-merge validation fails (step 4);
+- pre-merge validation fails — after the auto-fix and its single re-validation, when the project defines an auto-fix command (step 4);
 - the MR/PR title's `<type>` cannot be resolved by any rule (step 7);
 - malformed or missing agent output (any agent step).
 

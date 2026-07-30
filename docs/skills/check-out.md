@@ -20,12 +20,12 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 
 ## How it works
 
-`check-out` is an orchestrator in the main thread. It runs one safety-net review, does the final checks, and finalises git/GitHub — with **no auto-retry and no fix loop**: any blocker halts and hands control back to the developer.
+`check-out` is an orchestrator in the main thread. It runs one safety-net review, does the final checks, and finalises git/GitHub — with **no auto-retry and no fix loop**: any blocker halts and hands control back to the developer. Its one bounded mutation is the project's own optional auto-fix command at the pre-merge gate (step 4).
 
 1. **Confirm & gather** (skill) — confirm the developer validated the implementation; read the issue's acceptance criteria; compute the change as the branch's diff vs base (committed **or** uncommitted).
 2. **Safety-net review** — `senior-engineer-reviewer`, invoked as a **high-level confirmation pass** (framed at the call site: already deep-reviewed in `implement-issue`; the hand-edits can't be isolated from that reviewed implementation, so it's handed the whole branch diff — look for critical regressions, especially the developer's hand-edits, and don't re-litigate the already-reviewed implementation). The skill computes the gate itself from the findings' severity: `error` **STOPs**, `warning` is surfaced but does not block.
 3. **Final spec check** — `quality-assurer` confirms every acceptance criterion; unmet **STOPs**.
-4. **Pre-merge validation** (skill) — the project's **full** test + lint suite; failure **STOPs**.
+4. **Pre-merge validation** (skill) — the project's **full** test + lint suite. On failure, if `CLAUDE.md` defines an **optional auto-fix command**, the skill runs that command exactly as defined and re-validates **once**: passing means the failures were mechanically resolvable and the run continues (reporting what changed); anything still failing needs judgement and **STOPs**. With no auto-fix command defined, failure **STOPs** as before.
 5. **Commit & push** (skill) — commit whatever is still uncommitted; push.
 6. **Record cost** (skill) — append this run's cost to the per-feature ledger.
 7. **Total & PR** (skill) — total the whole feature across all three main skills and open the PR using the **fixed description template** (Closes line, What this implements, Validation, Deviations, cost table) under a title pinned to the issue title with a conventional-commit type prefix.
@@ -61,7 +61,10 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 +----------------------------------------------+
 | [skill] full pre-merge validation (CLAUDE.md)|
 +----------------------------------------------+
-     |--- fail -> STOP
+     |--- fail + auto-fix cmd defined -> run it once,
+     |    re-validate: pass -> continue (report what
+     |    it changed); residual -> STOP (needs judgment)
+     |--- fail, no auto-fix cmd defined -> STOP
      |
      v  (pass)
 +----------------------------------------------+
@@ -88,23 +91,23 @@ The agents above run in sequence. The deep review (`code-simplifier`, `security-
 ## Human interception points
 
 - **Readiness confirmation** — at step 1 the skill confirms the developer has reviewed `/paf:implement-issue`'s output and is ready to finalise; nothing runs before they say so.
-- **Blocker hand-back** — an `error` finding from the safety-net review (or any other STOP) returns control to the developer rather than being fixed automatically. `check-out` has no fix loop, so every blocker is a decision point.
+- **Blocker hand-back** — an `error` finding from the safety-net review (or any other STOP) returns control to the developer rather than being fixed automatically. `check-out` applies no judgement-requiring fix, so every blocker is a decision point.
 - **Skill boundary** — after the PR is opened, the developer reviews and merges it (the final interception in `architecture.md` §2).
 
 ## Loop caps and escalation
 
-Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** — it is the final human-controlled stage, so the developer (not the factory) decides how to resolve a failure. Each of these **STOPs and escalates**:
+Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** — it is the final human-controlled stage, so the developer (not the factory) decides how to resolve anything requiring judgement. The single exception is step 4's optional auto-fix: one tool-driven, behaviour-preserving mechanical pass, which is bounded to a single attempt and is not a fix loop. Each of these **STOPs and escalates**:
 - the safety-net review returns an `error` finding;
 - `quality-assurer` finds unmet criteria;
-- pre-merge validation fails;
+- pre-merge validation fails — after the auto-fix and its single re-validation, where the project defines one;
 - the MR/PR title's `<type>` cannot be resolved by any rule;
 - malformed/missing agent output.
 
-**Two-tier verification.** The scoped `implementation-verifier` runs in `/paf:implement-issue`'s fix loops; the **full** suite runs here as pre-merge validation — the safety net that catches cross-module regressions a scoped run cannot see. `check-out` runs no scoped verification of its own, because it applies no fixes.
+**Two-tier verification.** The scoped `implementation-verifier` runs **tests only** in `/paf:implement-issue`'s fix loops; the **full** test + lint suite runs here as pre-merge validation — the safety net that catches cross-module regressions a scoped run cannot see, and the tier the lint command belongs to. `check-out` runs no scoped verification of its own, because it authors no fixes of its own: its only mutation is the optional mechanical auto-fix at the gate, which the full re-validation already covers.
 
 ## Git handling and clean-tree robustness
 
-The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (the implementation and its review fixes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from `CLAUDE.md`. With squash merge, the number of commits on the branch does not matter.
+The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (the implementation, its review fixes, and any pre-merge auto-fix changes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from `CLAUDE.md`. With squash merge, the number of commits on the branch does not matter.
 
 ## MR/PR description and title
 
