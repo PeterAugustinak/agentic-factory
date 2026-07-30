@@ -5,6 +5,15 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-07-30
+
+### Changed
+
+- `/paf:check-out` writes the MR/PR description from a fixed skeleton (`Closes #<issue>`, What this
+  implements, Validation, Deviations, cost table) instead of an ad-hoc body. The title is pinned to
+  the issue title with a conventional-commit type prefix resolved by a fixed order, and the skill
+  stops rather than invent one (#49).
+
 ## [0.14.0] - 2026-07-29
 
 Graded MINOR: `implement-issue`'s validation becomes source-aware, fixing the recurring failure
