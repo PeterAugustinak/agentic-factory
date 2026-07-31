@@ -69,7 +69,7 @@ The skill runs **inline in the current conversation**, so the prior discussion i
      |
      v
 +----------------------------------------------+
-| [skill] report per-invocation cost (EUR);    |
+| [skill] report per-invocation cost + tokens; |
 |         append to per-feature cost ledger    |
 +----------------------------------------------+
 ```
@@ -91,7 +91,7 @@ Planning and implementation belong to `/paf:implement-issue`. `issue-validator` 
 
 The skill marks its invocation start at step 1, and the final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode. It:
 
-- prices only this invocation's slice of the session transcript — from the step-1 mark onward, main-thread + any agent usage — using [`pricing.json`](../../skills/paf-shared/pricing.json) and converts the total to **EUR** (a model missing from the price table is priced at the latest known same-family rate, with a note to update it, rather than dropped);
+- prices only this invocation's slice of the session transcript — from the step-1 mark onward, main-thread + any agent usage — using [`pricing.json`](../../skills/paf-shared/pricing.json), converts the total to **EUR**, and prints the token breakdown (in / out / cached / total) alongside it. Model ids are canonicalised first — a trailing `-YYYYMMDD` snapshot date is stripped, since pricing is per model and not per snapshot, which is why the price table's keys must be dateless. A model still missing from the table after that is priced at the latest known same-family rate, with a note to add it, rather than dropped;
 - appends an entry to the per-feature ledger at `~/.claude/paf/costs/<project>/<issue>.jsonl` (user scope — no footprint in the target repository);
 - keyed by the **issue number**, so `/paf:implement-issue` and `/paf:check-out` add to the same ledger and `/paf:check-out` reports the **total** feature cost in the PR.
 

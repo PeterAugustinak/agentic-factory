@@ -17,11 +17,16 @@ last, so each run is costed only from its own invocation onward — a disjoint
 slice. Slicing is by the per-line ISO 8601 `timestamp` every transcript record
 carries (main and subagent alike).
 
-Pricing comes from pricing.json alongside this script (factory-maintained). A
-model absent from pricing.json is priced at the latest known rate of the same
-family (opus/sonnet/haiku) and flagged so pricing.json can be updated — its
-tokens are never silently dropped. The ledger lives under the user's ~/.claude
-namespace, never in the project.
+Pricing comes from pricing.json alongside this script (factory-maintained).
+Model ids are canonicalised before lookup — a trailing snapshot date
+(`-YYYYMMDD`) is stripped, because pricing is per model, not per snapshot — so
+**pricing.json keys must be dateless** (`claude-haiku-4-5`, never
+`claude-haiku-4-5-20251001`) or they can never match — `load_config` rejects a
+dated key outright rather than silently mismatching it. A model still absent from
+pricing.json after that is priced at the latest known rate of the same family
+(opus/sonnet/haiku) and flagged so pricing.json can be updated — its tokens are
+never silently dropped. The ledger lives under the user's ~/.claude namespace,
+never in the project.
 
 Usage:
   paf-report-cost.py mark      --session <id> --skill <name>
@@ -54,7 +59,18 @@ FAMILIES = ("opus", "sonnet", "haiku")
 # Token usage fields tracked per model, in the order they're summed and priced.
 TOKEN_FIELDS = ("input", "output", "cache_read", "cache_write_5m", "cache_write_1h")
 
+# The subset of TOKEN_FIELDS reported as a single "cached" column.
+CACHE_FIELDS = ("cache_read", "cache_write_5m", "cache_write_1h")
+
+# The four fields shown to the user (CLI output and the PR table), in display
+# order. One constant so the aggregate table's row cells and its totals row
+# can never drift out of sync with each other.
+DISPLAY_FIELDS = ("in", "out", "cached", "total")
+
 _SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+# A trailing snapshot date on a model id (claude-haiku-4-5-20251001).
+_SNAPSHOT_SUFFIX = re.compile(r"-\d{8}$")
 
 
 def _validate(name: str, value: str, digits_only: bool = False) -> None:
@@ -73,7 +89,18 @@ def project_slug() -> str:
 def load_config() -> dict:
     with open(PRICING_PATH) as fh:
         cfg = json.load(fh)
-    return {"models": cfg["models"], "usd_to_eur": cfg["usd_to_eur"]}
+    models = cfg["models"]
+    # Enforce the dateless-keys invariant `canonical_model` relies on: a dated
+    # key can never match after canonicalisation, silently reintroducing the
+    # false "not in pricing.json" fallback this change fixed.
+    dated = [m for m in models if _SNAPSHOT_SUFFIX.search(m)]
+    if dated:
+        sys.exit(
+            f"ERROR: {PRICING_PATH} has dated model key(s) {dated} — pricing.json keys must be "
+            f"dateless (e.g. 'claude-haiku-4-5', never 'claude-haiku-4-5-20251001'); a dated key "
+            f"can never match a canonicalised model id."
+        )
+    return {"models": models, "usd_to_eur": cfg["usd_to_eur"]}
 
 
 def find_transcripts(session_id: str) -> list[Path]:
@@ -101,6 +128,48 @@ def parse_ts(value):
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return None
+
+
+def canonical_model(model_id: str) -> str:
+    """Strip a trailing snapshot date (`-YYYYMMDD`) from a model id.
+
+    `claude-haiku-4-5-20251001` is a dated snapshot of `claude-haiku-4-5`, and
+    pricing is per model, not per snapshot — so the two must price identically
+    and share one bucket. The documented id grammar makes the trailing 8-digit
+    segment unambiguous: `claude-{name}-{major}[-{minor}]` for 4.6 and later,
+    `claude-{name}-{major}-{minor}-{YYYYMMDD}` before it — a version segment is
+    never 8 digits. Source:
+    https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions"""
+    return _SNAPSHOT_SUFFIX.sub("", model_id)
+
+
+def token_breakdown(tokens: dict) -> dict:
+    """Collapse the five tracked token fields into the four reported ones.
+
+    `cached` merges the three cache fields (read + both write TTLs); `total` is
+    in + out + cached. The five fields are disjoint — the API counts
+    `input_tokens` as those neither read from nor used to create a cache — so
+    summing them does not double-count."""
+    cached = sum(tokens[f] for f in CACHE_FIELDS)
+    return {
+        "in": tokens["input"],
+        "out": tokens["output"],
+        "cached": cached,
+        "total": tokens["input"] + tokens["output"] + cached,
+    }
+
+
+def abbrev_tokens(n: int) -> str:
+    """Compact a token count for display: 812, 48.2k, 1.4M.
+
+    Raw integers are unreadable and make the PR table too wide. The 1M threshold
+    is the value that *rounds* to 1.0M at one decimal, so no cell ever reads
+    "1000.0k"."""
+    if n >= 999_950:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)
 
 
 def model_family(model_id: str):
@@ -137,10 +206,11 @@ def cost_from_transcripts(paths: list[Path], pricing: dict, since=None) -> dict:
     """Sum tokens per model across the main transcript AND every subagent
     transcript, and price them. When `since` is set, only messages timestamped
     at or after it are counted — the slice belonging to a single skill
-    invocation. A model absent from `pricing` is priced at the latest known rate
-    of its own family (recorded in `fallback_models`); only a model with no
-    family match at all is dropped (recorded in `unknown_models`). Returns totals
-    + fallbacks + unknowns."""
+    invocation. Model ids are canonicalised first (see `canonical_model`), so a
+    dated snapshot and its alias share one bucket. A model still absent from
+    `pricing` is priced at the latest known rate of its own family (recorded in
+    `fallback_models`); only a model with no family match at all is dropped
+    (recorded in `unknown_models`). Returns totals + fallbacks + unknowns."""
     per_model_tokens: dict[str, dict[str, int]] = {}
     # A single assistant turn is written across several transcript lines (one per
     # content block: thinking, tool_use, ...), and the SAME `usage` is copied onto
@@ -170,6 +240,9 @@ def cost_from_transcripts(paths: list[Path], pricing: dict, since=None) -> dict:
                 # Skip Claude Code internal placeholders like "<synthetic>" — not billable.
                 if model.startswith("<"):
                     continue
+                # Bucket by the dateless id: pricing is per model, not per snapshot,
+                # so a dated snapshot and its alias are one rate-identical bucket.
+                model = canonical_model(model)
                 # Count each assistant message's usage once (see seen_ids note above).
                 mid = msg.get("id")
                 if mid is not None:
@@ -285,17 +358,25 @@ def cmd_record(args) -> None:
     if marker.exists():
         marker.unlink()
 
+    tok = token_breakdown(result["tokens"])
     print(f"--- {args.skill} — cost ---")
+    # Abbreviated exactly as the aggregate table does, so the terminal and the
+    # PR report the same numbers in the same shape.
+    print(
+        f"Tokens: {abbrev_tokens(tok['in'])} in · {abbrev_tokens(tok['out'])} out · "
+        f"{abbrev_tokens(tok['cached'])} cached · {abbrev_tokens(tok['total'])} total"
+    )
     print(f"Cost: €{cost_eur:.2f}")
     for fb in result["fallback_models"]:
         print(
             f"NOTE: {fb['model']} is not in pricing.json — priced at the latest known "
-            f"{fb['family']} rate ({fb['priced_as']}). Update {PRICING_PATH} to add {fb['model']}."
+            f"{fb['family']} rate ({fb['priced_as']}). Add the dateless key "
+            f"\"{fb['model']}\" to {PRICING_PATH}."
         )
     if result["unknown_models"]:
         print(
             f"WARNING: no pricing and no same-family fallback for {result['unknown_models']} — "
-            f"their tokens were excluded. Update {PRICING_PATH}."
+            f"their tokens were excluded. Add them to {PRICING_PATH} (dateless keys)."
         )
 
 
@@ -317,13 +398,27 @@ def cmd_aggregate(args) -> None:
                 entries.append(json.loads(line))
 
     total_cost = sum(e["total_cost_eur"] for e in entries)
+    # Accumulated from RAW counts and abbreviated only at print time — never
+    # summed from the rounded display strings. The displayed columns therefore
+    # will not always add up to the displayed total ("1.4k + 1.4k" against a
+    # "2.9k" total); that is deliberate, so the total stays the real total.
+    totals = dict.fromkeys(DISPLAY_FIELDS, 0)
 
     lines = [f"## Factory run cost — feature #{args.issue}", ""]
-    lines.append("| Skill | Cost (EUR) |")
-    lines.append("|---|---|")
+    lines.append("| Skill | In | Out | Cached | Total | Cost (EUR) |")
+    lines.append("|---|---:|---:|---:|---:|---:|")
     for e in entries:
-        lines.append(f"| {e['skill']} | €{e['total_cost_eur']:.2f} |")
-    lines.append(f"| **Total** | **€{total_cost:.2f}** |")
+        # Defense in depth: the ledger is re-read here rather than trusted from
+        # the write path, and this table is pasted verbatim into a PR/MR
+        # description — a public collaboration surface.
+        _validate("skill", e["skill"])
+        tok = token_breakdown(e["tokens"])
+        for k in totals:
+            totals[k] += tok[k]
+        cells = " | ".join(abbrev_tokens(tok[k]) for k in DISPLAY_FIELDS)
+        lines.append(f"| {e['skill']} | {cells} | €{e['total_cost_eur']:.2f} |")
+    bold = " | ".join(f"**{abbrev_tokens(totals[k])}**" for k in DISPLAY_FIELDS)
+    lines.append(f"| **Total** | {bold} | **€{total_cost:.2f}** |")
     print("\n".join(lines))
 
     if args.cleanup:

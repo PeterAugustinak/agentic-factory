@@ -139,7 +139,7 @@ Planning and building run in the main thread via native plan mode rather than as
      |
      v
 +----------------------------------------------+
-| [skill] report per-invocation cost (EUR);    |
+| [skill] report per-invocation cost + tokens; |
 |         append to per-feature cost ledger    |
 +----------------------------------------------+
 ```
@@ -181,7 +181,7 @@ The skill owns git state (`architecture.md` §2). After the plan is approved it 
 
 ## Cost reporting
 
-The skill marks its invocation start at step 1, and the final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the MR/PR. Only this invocation's slice of the transcript (from the step-1 mark onward) is priced, so running `implement-issue` and `check-out` in one CLI session does not double-count. Cost is converted to **EUR**. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
+The skill marks its invocation start at step 1, and the final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the MR/PR. Only this invocation's slice of the transcript (from the step-1 mark onward) is priced, so running `implement-issue` and `check-out` in one CLI session does not double-count. Cost is converted to **EUR** and printed with the run's token breakdown (in / out / cached / total). See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
 
 ## Related files
 
