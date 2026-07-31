@@ -5,6 +5,31 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-07-31
+
+### Added
+
+- The cost report shows a token breakdown (in / out / cached / total) beside the EUR cost, in
+  `record`'s output and in the `aggregate` table that lands in the MR/PR (#56).
+
+### Fixed
+
+- The false-positive "not in `pricing.json`" note for a dated model snapshot: model ids are
+  canonicalised by stripping a trailing `-YYYYMMDD`, so `claude-haiku-4-5-20251001` matches the
+  priced `claude-haiku-4-5` exactly. `pricing.json` keys must now be dateless (#56).
+
+## [0.17.0] - 2026-07-30
+
+### Changed
+
+- `full-stack-dev` carries a sweep obligation: a fact, rule, or name it changes must be updated
+  everywhere the repository states it. `/paf:implement-issue`'s plan-mode step carries the same
+  obligation, since there the main thread authors the edits (#58).
+- The builder's triage gains a non-skippable class: a factual or self-consistency defect is applied
+  whatever severity it carries (#58).
+- `full-stack-dev`'s tool constraint is corrected — the hook path-restricts file writes, not Bash
+  (#58).
+
 ## [0.16.0] - 2026-07-30
 
 ### Changed
