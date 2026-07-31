@@ -74,8 +74,8 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
      v
 +----------------------------------------------+
 | [skill] record check-out cost; aggregate the |
-|   whole feature (EUR); open PR — fixed body  |
-|   template, "<type>: <issue title>" title    |
+|   whole feature (tokens + EUR); open PR —    |
+|   fixed body template, "<type>: <issue>"     |
 +----------------------------------------------+
 ```
 
@@ -130,9 +130,9 @@ Closes #<issue-number>.
 
 ## Factory run cost — feature #<issue-number>
 
-| Skill | Cost (EUR) |
-|---|---|
-| ... | ... |
+| Skill | In | Out | Cached | Total | Cost (EUR) |
+|---|---:|---:|---:|---:|---:|
+| ... | ... | ... | ... | ... | ... |
 ```
 
 - The **cost section** is appended **verbatim** from `paf-report-cost.py aggregate` — heading and table as printed, never authored or reformatted by the model.
@@ -153,7 +153,7 @@ This makes every PAF-opened MR/PR self-describing and consistent.
 
 ## Cost in the PR
 
-`check-out` marks its invocation start at step 1 and records its own run (that invocation's slice only) to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three main skills** — `create-issue`, `implement-issue`, `check-out` — and appends that **EUR cost** table **verbatim** as the **last section of the PR description** (see [MR/PR description and title](#mrpr-description-and-title) above). Because `check-out` prices only its own slice, running it in the same CLI session as `implement-issue` does not re-count `implement-issue`'s tokens. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
+`check-out` marks its invocation start at step 1 and records its own run (that invocation's slice only) to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three main skills** — `create-issue`, `implement-issue`, `check-out` — and appends that **token-and-EUR cost** table **verbatim** as the **last section of the PR description** (see [MR/PR description and title](#mrpr-description-and-title) above). Because `check-out` prices only its own slice, running it in the same CLI session as `implement-issue` does not re-count `implement-issue`'s tokens. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
 
 ## Related files
 

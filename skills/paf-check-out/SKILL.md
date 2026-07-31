@@ -108,9 +108,9 @@ Closes #<issue-number>.
 
 ## Factory run cost — feature #<issue-number>
 
-| Skill | Cost (EUR) |
-|---|---|
-| ... | ... |
+| Skill | In | Out | Cached | Total | Cost (EUR) |
+|---|---:|---:|---:|---:|---:|
+| ... | ... | ... | ... | ... | ... |
 ```
 
 Rules for filling it in:

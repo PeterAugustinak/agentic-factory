@@ -301,8 +301,10 @@ Every skill run ends with a single report of the **token cost of that invocation
 
 - Cost is **not** self-reported by agents. The skill computes it from the session transcript at `transcript_path`, which records per-message `usage` (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) and `model`, enabling correct per-model pricing.(7) (9)
 - **Per-invocation slice, not the whole session.** A skill marks its start at its first step and prices only the transcript slice from that mark onward (main-thread and subagent messages alike). This is required because multiple skills can run in **one** CLI session (see the aggregation note below): pricing the whole transcript would re-price an earlier skill's tokens and inflate the feature total, and a `create-issue` run inside a large multi-day session would price the entire session. Each run is therefore costed as a disjoint slice.
-- **Unpriced models are never dropped.** If the session used a model absent from the price table, its tokens are priced at the latest known rate of the same family (opus/sonnet/haiku) and the report flags that the price table must be updated — an undercount is never silently produced.
+- **Pricing is per model, not per snapshot.** A model id is canonicalised before it is priced: a trailing snapshot date (`-YYYYMMDD`) is stripped, so a dated snapshot and its alias are the same model at the same rate.(10) The price table's keys are therefore **dateless** — a dated key could never match — and a dated snapshot of a priced model is an exact match, not a fallback.
+- **Unpriced models are never dropped.** If the session used a model still absent from the price table after that canonicalisation, its tokens are priced at the latest known rate of the same family (opus/sonnet/haiku) and the report flags that the price table must be updated — an undercount is never silently produced.
 - **Currency.** Anthropic bills in USD; PAF reports cost in **EUR**, converted with a factory-maintained USD→EUR rate kept alongside the per-model price table. Both are updated together and carry their source and date.
+- **Tokens as well as money.** The report shows the token breakdown — in, out, cached, total — beside the EUR cost, in both the CLI output and the PR. Money alone hides whether a run was expensive because of volume or because of model choice; the counts are already collected for pricing, so surfacing them costs nothing.
 - The internal mechanism for attributing usage to individual agents is an implementation detail; the architecture requires only that the final total is reported.
 
 #### Cross-skill cost aggregation
@@ -314,7 +316,7 @@ A feature spans the three main-skill runs — `create-issue`, `implement-issue`,
 - **Totalled at check-out.** `check-out` records its own run, then sums every entry for the feature and writes the **total cost — with a per-skill breakdown — into the PR description**, then removes the ledger. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost.
 - **Graceful degradation.** If the branch → issue-number mapping is unavailable, `check-out` reports whatever entries it can correlate rather than failing.
 
-The exact ledger location, record format, and pricing table are implementation details of the shared cost helper; the architecture fixes only that per-feature cost is aggregated across the three main skills, stored in user scope, reported in EUR, and surfaced in the PR.
+The exact ledger location, record format, and pricing table are implementation details of the shared cost helper; the architecture fixes only that per-feature cost is aggregated across the three main skills, stored in user scope, reported in EUR with a token breakdown, and surfaced in the PR.
 
 ---
 
@@ -346,3 +348,4 @@ All architecture decisions are grounded in the official Claude Code documentatio
 7. Hooks — `PreToolUse` input schema and `agent_type`, exit codes, environment variables (`CLAUDE_PROJECT_DIR`), `transcript_path`, `InstructionsLoaded`. https://code.claude.com/docs/en/hooks
 8. Memory — How CLAUDE.md files load. https://code.claude.com/docs/en/memory#how-claude-md-files-load
 9. Manage costs effectively. https://code.claude.com/docs/en/costs
+10. Model ids and versions — the id grammar `claude-{name}-{major}[-{minor}]` (4.6 and later) and `claude-{name}-{major}-{minor}-{YYYYMMDD}` (before it), which is what makes a trailing 8-digit segment a snapshot date rather than a version. https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions
