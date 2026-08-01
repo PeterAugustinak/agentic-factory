@@ -1,7 +1,7 @@
 {
   "_comment": "PAF model pricing table — maintained by the factory, used by the cost-reporting helper. USD per 1,000,000 tokens. Cache rates follow the documented multipliers: cache write (5m TTL) = 1.25x input, cache write (1h TTL) = 2x input, cache read = 0.1x input. Model keys MUST be dateless ('claude-haiku-4-5', never 'claude-haiku-4-5-20251001'): the helper strips a trailing -YYYYMMDD snapshot date before lookup, because pricing is per model and not per snapshot, so a dated key could never match.",
-  "_source": "https://claude.com/pricing#api and Claude API pricing reference (claude-api skill), captured 2026-07-25",
-  "_updated": "2026-07-25",
+  "_source": "https://claude.com/pricing#api and Claude API pricing reference (claude-api skill), captured 2026-08-01",
+  "_updated": "2026-08-01",
   "currency": "USD",
   "unit_tokens": 1000000,
   "usd_to_eur": 0.92,
@@ -36,6 +36,13 @@
       "cache_write_5m": 6.25,
       "cache_write_1h": 10.00,
       "cache_read": 0.50
+    },
+    "claude-fable-5": {
+      "input": 10.00,
+      "output": 50.00,
+      "cache_write_5m": 12.50,
+      "cache_write_1h": 20.00,
+      "cache_read": 1.00
     }
   }
 }
