@@ -5,6 +5,16 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-08-02
+
+### Changed
+
+- `issue-validator`'s findings are bounded to factual/feasibility defects — implementation guidance
+  is no longer in scope. `create-issue`'s correction and change-request loops re-validate only the
+  claims that changed, never the whole draft again, and validator warnings are folded directly into
+  the drafted issue's `References` section (tagged `Validator note:`) instead of gating the
+  developer's review (#64).
+
 ## [0.18.0] - 2026-07-31
 
 ### Added
