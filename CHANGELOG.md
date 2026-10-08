@@ -5,6 +5,21 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-10-08
+
+Graded MINOR: #61 is an enhancement (new test coverage), not a bug fix. Nothing the installer ships
+changes: `paf-vcs` and every other installed file are byte-identical to 0.20.0.
+
+### Added
+
+- `tests/test_paf_vcs.py` — coverage for `skills/paf-shared/paf-vcs`, the last shipped deterministic
+  script without tests. It runs the shipped adapter as a subprocess on a hermetic `PATH` with stub
+  `gh`/`glab` that record their argv and stdin, against temporary git repos. It asserts exact-host
+  provider detection (lookalike, userinfo, path, and case spoofs rejected), the exact argv composed
+  per verb for both providers, the `NUMBER=`/`URL=`/`---` contract of the create verbs and verbatim
+  pass-through of the rest, body-on-stdin for `gh` versus body-on-argv with stdin from `/dev/null` for
+  `glab`, and every clear-failure path on exit code and stderr (#61).
+
 ## [0.20.0] - 2026-10-08
 
 ### Changed
