@@ -186,6 +186,44 @@ def shell_segments(cmd: str):
     return [segment for segment in segments if segment]
 
 
+def _requote(token: str) -> str:
+    """`token` unchanged, unless it contains whitespace — in which case it is
+    re-wrapped in a quote character before rejoining. `shlex` strips the quotes off
+    a quoted multi-word argument (`-C "/tmp/my repo"`) as it tokenizes, and a naive
+    space-join of the resulting tokens loses the fact that `/tmp/my` and `repo` were
+    ONE argument, not a segment boundary. Combined with backslash-escaping the command
+    name, that indistinguishable respacing let `g\\it -C "/tmp/my repo" commit -m x`
+    evade GIT_MUTATE on BOTH the raw string and the naive reconstruction at once,
+    since GIT_ARG's quoted alternative depends on seeing the quotes to span the space
+    (#44). Re-wrapping restores that shape. `"` is used unless the token itself
+    contains one, in which case `'` is used instead — the evasion never needs the
+    escaped-and-reassembled command NAME token itself to contain whitespace, so this
+    never has to requote the very token the escaping trick targets.
+    """
+    if not re.search(r"\s", token):
+        return token
+    quote = "'" if '"' in token else '"'
+    return f"{quote}{token}{quote}"
+
+
+def escape_normalized(cmd: str) -> str:
+    """`cmd` reconstructed from the same shlex lexing above, so a command name split
+    by backslash-escaping or quote concatenation (`g\\it`, `c\\url`, `"g""it"`) cannot
+    dodge EXTERNAL_IO/GIT_MUTATE the way it dodges a regex over the raw string — shlex
+    already resolves the same trick for the read-only allowlist, so an escaped mutate
+    command used to clear GIT_MUTATE and then land on that allowlist's `git` entry
+    (#44). Whitespace-containing tokens are re-quoted before rejoining (`_requote()`)
+    so a quoted multi-word argument does not collapse into an indistinguishable extra
+    "word". Run this ALONGSIDE the raw string, not instead of it: an unparsable command
+    (unbalanced quoting) is returned unchanged here, and the raw-string check is what
+    still catches it.
+    """
+    segments = shell_segments(cmd)
+    if segments is None:
+        return cmd
+    return "\n".join(" ".join(_requote(token) for token in tokens) for tokens in segments)
+
+
 def _redirect_violation(tokens: list) -> str:
     """Why a segment's redirections are not read-only, or "" when they are."""
     for i, token in enumerate(tokens):
@@ -236,6 +274,18 @@ def within_project(path: str, project: str) -> bool:
     return resolved == project or resolved.startswith(project + os.sep)
 
 
+def _typed_or_none(value, expected_type):
+    """`value` unchanged when it is `None` or already `expected_type`; otherwise
+    `defer()` — a field present but of the wrong shape is not ours to judge, the
+    same policy #22 established for the payload's own outer shape, applied to
+    every nested field the hook reads (#44). Shared by every "present but wrong
+    type" guard below so the idiom is written, and audited, once.
+    """
+    if value is not None and not isinstance(value, expected_type):
+        defer()
+    return value
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -245,29 +295,35 @@ def main() -> None:
     if not isinstance(data, dict):
         defer()  # valid JSON but not an object (null/list/string) is not ours to judge
 
-    agent = data.get("agent_type") or ""
-    tool = data.get("tool_name") or ""
-    tool_input = data.get("tool_input") or {}
-    project = os.path.realpath(
-        os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-    )
-
     # --- Main thread (the orchestrating skill): owns all I/O and git state. ---
     # Allowed unconditionally, not gated on a command family: gating on the first
     # word made compound/piped/cd-prefixed commands fall through to a prompt (#22).
-    # Per the Claude Code hooks documentation, `agent_type` is OMITTED ENTIRELY for
-    # the main thread and present with a real name only for a subagent/--agent run,
-    # so main-thread identity is the ABSENCE of the key — not a falsy value — and a
-    # key present but empty/null fails safe into the restricted agent branch below.
+    # Checked before any other field of `data` is even extracted, let alone
+    # validated: per the Claude Code hooks documentation, `agent_type` is OMITTED
+    # ENTIRELY for the main thread and present with a real name only for a
+    # subagent/--agent run, so main-thread identity is the ABSENCE of the key —
+    # not a falsy value, and never conditioned on `tool_input` (or anything else)
+    # being well-formed (#44). A key present but empty/null fails safe into the
+    # restricted agent branch below.
     if "agent_type" not in data:
         allow("Main thread (orchestrating skill) is unrestricted (architecture.md §3).")
 
     # --- Agents: restricted; allow only their legitimate calls. ---
+    agent = _typed_or_none(data.get("agent_type"), str) or ""
+    tool = _typed_or_none(data.get("tool_name"), str) or ""
+    tool_input = _typed_or_none(data.get("tool_input"), dict) or {}
+    project = os.path.realpath(
+        os.environ.get("CLAUDE_PROJECT_DIR")
+        or _typed_or_none(data.get("cwd"), str)
+        or os.getcwd()
+    )
+
     if tool == "Bash":
-        cmd = tool_input.get("command") or ""
-        if EXTERNAL_IO.search(cmd):
+        cmd = _typed_or_none(tool_input.get("command"), str) or ""
+        normalized = escape_normalized(cmd)
+        if EXTERNAL_IO.search(cmd) or EXTERNAL_IO.search(normalized):
             deny("Agents may not perform external I/O (gh/network); it is skill-owned (architecture.md §2).")
-        if GIT_MUTATE.search(cmd):
+        if GIT_MUTATE.search(cmd) or GIT_MUTATE.search(normalized):
             deny("Agents never change git state; the skill owns branch/commit/push (architecture.md §2).")
         if agent in READ_ONLY_AGENTS:
             violation = read_only_violation(cmd)
@@ -287,7 +343,9 @@ def main() -> None:
         allow("Web lookup allowed; web access is gated by the agent's tools: allowlist.")
 
     if tool in ("Edit", "Write", "MultiEdit"):
-        path = tool_input.get("file_path") or tool_input.get("path") or ""
+        file_path = _typed_or_none(tool_input.get("file_path"), str)
+        path_field = _typed_or_none(tool_input.get("path"), str)
+        path = file_path or path_field or ""
         if not path:
             defer()
         if within_project(path, project):

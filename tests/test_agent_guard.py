@@ -259,6 +259,42 @@ class ReadOnlyViolationTests(unittest.TestCase):
         self.assertViolation("")
 
 
+class EscapeNormalizedTests(unittest.TestCase):
+    """The reconstruction EXTERNAL_IO/GIT_MUTATE are additionally checked against
+    (main(), #44), so a command name split by escaping or quoting cannot dodge them."""
+
+    def test_plain_command_is_unchanged_in_shape(self):
+        self.assertEqual(guard.escape_normalized("git commit -m x"), "git commit -m x")
+
+    def test_backslash_escape_inside_a_word_is_resolved(self):
+        self.assertEqual(guard.escape_normalized("g\\it commit -m x"), "git commit -m x")
+
+    def test_adjacent_quoted_fragments_concatenate(self):
+        self.assertEqual(guard.escape_normalized('"g""it" commit -m x'), "git commit -m x")
+
+    def test_unparsable_command_is_returned_unchanged(self):
+        self.assertEqual(guard.escape_normalized("grep 'unbalanced"), "grep 'unbalanced")
+
+    def test_compound_command_segments_stay_separated(self):
+        self.assertEqual(guard.escape_normalized("cat x && g\\it push"), "cat x\ngit push")
+
+    def test_quoted_multiword_argument_is_requoted(self):
+        # A naive space-join would make "/tmp/my" and "repo" indistinguishable from
+        # two separate words, losing the fact they were one quoted argument (#44).
+        self.assertEqual(
+            guard.escape_normalized('git -C "/tmp/my repo" commit -m x'),
+            'git -C "/tmp/my repo" commit -m x',
+        )
+
+    def test_combined_escaping_and_quoted_argument_preserves_the_quoting(self):
+        # The bypass this closes: an escaped command name PLUS a quoted multi-word
+        # argument together evaded both the raw-string and a naive reconstruction.
+        self.assertEqual(
+            guard.escape_normalized('g\\it -C "/tmp/my repo" commit -m x'),
+            'git -C "/tmp/my repo" commit -m x',
+        )
+
+
 class WithinProjectTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -462,6 +498,8 @@ class HookDecisionTests(unittest.TestCase):
             text=True,
             env=env,
         )
+        # The hook's own contract: it always exits 0, whatever it decides or is handed.
+        self.assertEqual(proc.returncode, 0, f"hook exited {proc.returncode}, stderr: {proc.stderr}")
         out = proc.stdout.strip()
         if not out:
             return None  # defer — the hook emits nothing
@@ -677,6 +715,199 @@ class HookDecisionTests(unittest.TestCase):
                 "tool_input": {},
             })
         )
+
+    def test_agent_write_using_the_path_fallback_field_is_allowed(self):
+        self.assertEqual(
+            self.run_hook({
+                "agent_type": "full-stack-dev",
+                "tool_name": "Write",
+                "tool_input": {"path": os.path.join(self.project, "a.py")},
+            }),
+            "allow",
+        )
+
+    def test_agent_multi_edit_inside_project_is_allowed(self):
+        self.assertEqual(
+            self.run_hook({
+                "agent_type": "full-stack-dev",
+                "tool_name": "MultiEdit",
+                "tool_input": {"file_path": os.path.join(self.project, "a.py")},
+            }),
+            "allow",
+        )
+
+    def test_agent_multi_edit_outside_project_is_denied(self):
+        self.assertEqual(
+            self.run_hook({
+                "agent_type": "full-stack-dev",
+                "tool_name": "MultiEdit",
+                "tool_input": {"file_path": "/etc/passwd"},
+            }),
+            "deny",
+        )
+
+    # --- malformed nested tool_input (#44) ------------------------------------
+
+    def test_non_dict_tool_input_defers(self):
+        self.assertIsNone(
+            self.run_hook({
+                "agent_type": "code-explorer",
+                "tool_name": "Bash",
+                "tool_input": "x",
+            })
+        )
+
+    def test_non_string_bash_command_defers(self):
+        self.assertIsNone(
+            self.run_hook({
+                "agent_type": "code-explorer",
+                "tool_name": "Bash",
+                "tool_input": {"command": ["rm", "-rf", "/"]},
+            })
+        )
+
+    def test_non_string_file_path_defers(self):
+        self.assertIsNone(
+            self.run_hook({
+                "agent_type": "full-stack-dev",
+                "tool_name": "Write",
+                "tool_input": {"file_path": 123},
+            })
+        )
+
+    def test_non_string_path_fallback_field_defers(self):
+        self.assertIsNone(
+            self.run_hook({
+                "agent_type": "full-stack-dev",
+                "tool_name": "Write",
+                "tool_input": {"path": 123},
+            })
+        )
+
+    def test_non_string_agent_type_defers(self):
+        # A dict/list survives `data.get("agent_type") or ""` (truthy) and would
+        # otherwise crash unhashable at `agent in READ_ONLY_AGENTS` (#44).
+        self.assertIsNone(
+            self.run_hook({
+                "agent_type": {"x": 1},
+                "tool_name": "Bash",
+                "tool_input": {"command": "grep foo ."},
+            })
+        )
+
+    def test_non_string_cwd_defers_when_claude_project_dir_is_unset(self):
+        # `cwd` is the fallback used only when CLAUDE_PROJECT_DIR is absent, so it
+        # must go through run_hook()'s subprocess directly with that var excluded
+        # from the environment. A dict/int survives `... or data.get("cwd") or ...`
+        # (truthy) and would otherwise crash `os.path.realpath()` with a TypeError,
+        # violating the hook's always-exits-0 contract (#44).
+        env = {"PATH": os.environ.get("PATH", "")}
+        proc = subprocess.run(
+            [sys.executable, str(AGENT_GUARD)],
+            input=json.dumps({
+                "agent_type": "code-explorer",
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "cwd": 123,
+            }),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 0, f"hook exited {proc.returncode}, stderr: {proc.stderr}")
+        self.assertEqual(proc.stdout.strip(), "")
+
+    def test_non_string_tool_name_defers(self):
+        self.assertIsNone(
+            self.run_hook({
+                "agent_type": "code-explorer",
+                "tool_name": ["Bash"],
+                "tool_input": {"command": "ls"},
+            })
+        )
+
+    def test_main_thread_with_malformed_tool_input_is_still_allowed(self):
+        # The main-thread check must run before tool_input is even extracted, let
+        # alone validated: a malformed nested field must not make main-thread
+        # identity (checked first, unconditionally) unreachable (#44).
+        self.assertEqual(
+            self.run_hook({"tool_name": "Bash", "tool_input": "not-a-dict"}),
+            "allow",
+        )
+
+    # --- escaping/quoting evasion of EXTERNAL_IO / GIT_MUTATE (#44) -----------
+
+    def test_git_mutate_is_not_evaded_by_backslash_escaping(self):
+        self.assertEqual(
+            self.run_hook({
+                "agent_type": "full-stack-dev",
+                "tool_name": "Bash",
+                "tool_input": {"command": "g\\it commit -m x"},
+            }),
+            "deny",
+        )
+
+    def test_read_only_agent_git_mutate_is_not_evaded_by_backslash_escaping(self):
+        # Before #44 this reached the read-only allowlist, where shlex resolves the
+        # same escape and 'git' clears it — allowing a mutate command through.
+        self.assertEqual(
+            self.run_hook({
+                "agent_type": "code-explorer",
+                "tool_name": "Bash",
+                "tool_input": {"command": "g\\it commit -m x"},
+            }),
+            "deny",
+        )
+
+    def test_external_io_is_not_evaded_by_backslash_escaping(self):
+        for command in ("c\\url https://example.com", "g\\h issue view 1"):
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.run_hook({
+                        "agent_type": "full-stack-dev",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": command},
+                    }),
+                    "deny",
+                )
+
+    def test_git_mutate_is_not_evaded_by_quote_splitting(self):
+        for agent in ("full-stack-dev", "code-explorer"):
+            with self.subTest(agent=agent):
+                self.assertEqual(
+                    self.run_hook({
+                        "agent_type": agent,
+                        "tool_name": "Bash",
+                        "tool_input": {"command": '"g""it" commit -m x'},
+                    }),
+                    "deny",
+                )
+
+    def test_read_only_agent_denied_the_combined_escape_and_quoted_argument_bypass(self):
+        # g\it (backslash-escaped name) combined with a quoted multi-word argument
+        # evaded both the raw-string and the naive-reconstruction checks at once —
+        # the precise "worse for read-only agents" scenario #44 reports.
+        self.assertEqual(
+            self.run_hook({
+                "agent_type": "code-explorer",
+                "tool_name": "Bash",
+                "tool_input": {"command": 'g\\it -C "/tmp/my repo" commit -m x'},
+            }),
+            "deny",
+        )
+
+    def test_read_only_agent_plain_git_log_and_diff_are_not_false_flagged(self):
+        # The normalized check must not false-positive on legitimate read-only git.
+        for command in ("git log --oneline -5", "git diff develop"):
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.run_hook({
+                        "agent_type": "code-explorer",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": command},
+                    }),
+                    "allow",
+                )
 
     # --- defers --------------------------------------------------------------
 
