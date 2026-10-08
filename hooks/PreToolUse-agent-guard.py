@@ -8,16 +8,20 @@ WITHOUT a permission prompt and forbidden ones are blocked:
 
 - ALLOW — the main thread unconditionally (the trusted orchestrator owns all I/O
   and git state, §2), plus each agent's legitimate tool set: read-only Bash,
-  build/test Bash, project-scoped writes, and web lookups (gated by each agent's
-  `tools:` allowlist). These skip the permission prompt.
+  build/test Bash, project-scoped writes, project-scoped reads (plus the session's
+  own saved tool results), and web lookups (gated by each agent's `tools:`
+  allowlist). These skip the permission prompt.
 - DENY  — agents doing external I/O (gh/curl/wget/ssh/...), agents changing git
   state (add/commit/push/...), read-only agents running non-read-only Bash, and
   any write outside the project root. All skill-owned or unsafe (§2).
+- ASK   — an agent's Read/Grep/Glob reaching outside the project root: forces a
+  human permission prompt, which auto mode's classifier cannot approve silently,
+  so a legitimate read of an added directory still goes through (#62).
 - DEFER — anything unrecognized: emit nothing, so Claude Code's normal permission
   flow (and prompt) applies. Keeps a human safety net for novel calls.
 
 Reads the hook payload as JSON on stdin; emits a PreToolUse decision as JSON on
-stdout (allow/deny) or nothing (defer); always exits 0.
+stdout (allow/deny/ask) or nothing (defer); always exits 0.
 """
 
 import json
@@ -106,6 +110,17 @@ GIT_MUTATE = re.compile(
     r"submodule|switch|tag|update-index|update-ref|worktree)(?:[^\w]|$)"
 )
 
+# Glob syntax characters. A Glob `pattern` is bounded by its LITERAL prefix — the path
+# components before the first one carrying any of these — so `/etc/*` or `../*` reach
+# outside the root even when the call's `path` is inside it (#62).
+GLOB_MAGIC = re.compile(r"[*?\[{]")
+
+# A brace or extglob (`@(`, `+(`, `!(`, `?(`, `*(`) alternative that begins with `/` or `~`:
+# each alternative is a separate path, so it can restart at the filesystem root or home
+# whatever the pattern's first component looks like (#62). `,` and `|` are the alternative
+# separators; a stray match (a filename holding `,/`) only costs a prompt.
+ALTERNATIVE_ROOT = re.compile(r"[{(,|][/~]")
+
 
 def _emit(decision: str, reason: str) -> None:
     json.dump(
@@ -127,6 +142,10 @@ def allow(reason: str) -> None:
 
 def deny(reason: str) -> None:
     _emit("deny", reason)
+
+
+def ask(reason: str) -> None:
+    _emit("ask", reason)
 
 
 def defer() -> None:
@@ -270,8 +289,68 @@ def read_only_violation(cmd: str) -> str:
 def within_project(path: str, project: str) -> bool:
     if not path:
         return False
-    resolved = os.path.realpath(path if os.path.isabs(path) else os.path.join(project, path))
+    try:
+        resolved = os.path.realpath(path if os.path.isabs(path) else os.path.join(project, path))
+    except ValueError:
+        return False  # an embedded NUL byte: realpath raises, and no tool can open it
     return resolved == project or resolved.startswith(project + os.sep)
+
+
+def glob_reach(pattern: str, base: str):
+    """The directory a Glob `pattern` searched from `base` can reach, or None when
+    that cannot be bounded statically.
+
+    The reach is `base` joined with the pattern's literal prefix, so an absolute
+    pattern replaces `base` outright and a literal `..` climbs out of it — both then
+    resolved by `within_project()`'s realpath like any other path (#62). None (so the
+    caller asks) when no prefix can bound the match:
+    - a `..` at or after the first wildcard (`src/**/../..`, `{a,../..}/x`) climbs from a
+      directory only the match itself decides. A plain substring test on purpose: it
+      also fires on a name like `a..b*`, which only costs a prompt;
+    - a brace or extglob alternative that starts absolute or home-relative
+      (`{/etc,/tmp}/*`, `{~/.ssh/id_rsa,x}`, `@(/etc/passwd|x)`) is its own root, and
+      the first-component prefix says nothing about it. Checked on the whole pattern,
+      since `@(` is not itself a wildcard character.
+    Raises ValueError on an unexpandable `~` (NUL, lone surrogate); the caller asks.
+    """
+    expanded = os.path.expanduser(pattern)
+    if ALTERNATIVE_ROOT.search(expanded):
+        return None
+    magic = GLOB_MAGIC.search(expanded)
+    if not magic:
+        return os.path.join(base, expanded)
+    if ".." in expanded[magic.start():]:
+        return None
+    prefix = expanded[: magic.start()].rpartition("/")[0]
+    if not prefix and expanded.startswith("/"):
+        prefix = "/"  # `/*` still enumerates the filesystem root; "" would collapse to base
+    return os.path.join(base, prefix)
+
+
+def session_tool_results(transcript_path: str, session_id: str) -> str:
+    """The session's `tool-results/` directory, or "" when it cannot be located.
+
+    Claude Code saves a tool result too large to return inline into the session
+    directory and has the model read it back from there — for a subagent too, into the
+    MAIN session's `<session_id>/tool-results/`, outside the project root (#62). That
+    directory is found by walking up from `transcript_path` (the main `<session_id>.jsonl`,
+    or a subagent's `<session_id>/subagents/agent-*.jsonl`) to the one named `session_id`.
+    """
+    if not transcript_path or not session_id:
+        return ""
+    try:
+        current = os.path.realpath(transcript_path)
+    except ValueError:
+        return ""  # an embedded NUL byte: no such session directory can exist
+    if current.endswith(".jsonl"):
+        current = current[: -len(".jsonl")]
+    while True:
+        if os.path.basename(current) == session_id:
+            return os.path.join(current, "tool-results")
+        parent = os.path.dirname(current)
+        if parent == current:
+            return ""
+        current = parent
 
 
 def _typed_or_none(value, expected_type):
@@ -351,6 +430,41 @@ def main() -> None:
         if within_project(path, project):
             allow("Write confined to the project root.")
         deny(f"Writes must stay within the project root ({project}); target resolves outside it.")
+
+    if tool in ("Read", "Grep", "Glob"):
+        # Relative paths resolve the way the tools resolve them: against the working
+        # directory, which is also what an absent Grep/Glob `path` defaults to. `~` is
+        # expanded first, or `~/.ssh/x` would be judged as a project-relative path.
+        # Checked in order: project root, then the session's tool results, else ask. An
+        # unexpandable `~` (NUL, lone surrogate) raises ValueError, which falls through
+        # to ask rather than crashing: the hook must always exit 0.
+        try:
+            cwd = _typed_or_none(data.get("cwd"), str) or project
+            if tool == "Read":
+                target = _typed_or_none(tool_input.get("file_path"), str)
+                if not target:
+                    defer()
+            else:
+                target = _typed_or_none(tool_input.get("path"), str) or "."
+            target = os.path.join(cwd, os.path.expanduser(target))
+            if tool == "Glob":
+                pattern = _typed_or_none(tool_input.get("pattern"), str) or ""
+                target = glob_reach(pattern, target)
+            if target is not None:
+                if within_project(target, project):
+                    allow("Read confined to the project root.")
+                # Computed only here, so a malformed transcript_path/session_id cannot
+                # disturb an in-root read. The realpath is deliberate: `tool-results`
+                # itself may be a symlink, and within_project() resolves the target.
+                tool_results = session_tool_results(
+                    _typed_or_none(data.get("transcript_path"), str) or "",
+                    _typed_or_none(data.get("session_id"), str) or "",
+                )
+                if tool_results and within_project(target, os.path.realpath(tool_results)):
+                    allow("Read of this session's saved tool results.")
+        except (ValueError, OSError):
+            pass
+        ask(f"{agent} is reading outside the project root ({project}); confirm this read.")
 
     defer()  # anything else — normal permission flow
 

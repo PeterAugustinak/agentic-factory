@@ -5,6 +5,24 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-10-08
+
+### Changed
+
+- Agents' `Read`/`Grep`/`Glob` are path-contained by the `PreToolUse` hook, which now also matches
+  those tools. Reads inside the project root, or of the session's own saved tool results, are
+  allowed; anything reaching outside gets an `ask` decision, a human prompt that auto mode's
+  classifier cannot approve silently. Re-run the installer to pick up the new matcher (#62).
+
+## [0.19.1] - 2026-10-08
+
+### Fixed
+
+- The `PreToolUse` agent-guard no longer crashes on a malformed `tool_input`: every payload field it
+  reads is type-checked and defers instead of raising. Its git-mutation and external-I/O checks now
+  also run against an escape-normalized form of the command, closing backslash-escape and
+  quote-splitting evasions (#44).
+
 ## [0.19.0] - 2026-08-02
 
 ### Changed
