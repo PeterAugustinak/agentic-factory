@@ -20,8 +20,9 @@ Supported hook events: `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, `Not
 - **All agents** → no external I/O (`gh`/network) and no git state changes — both skill-owned, and the git pattern skips git's global options so `git -C <dir> commit` is caught too.
 - **`code-explorer`, `implementation-planner`** → read-only Bash only (default-deny allowlist, applied to every segment of a compound command, plus denials for output redirection and commands' own write flags such as `find -delete` and `tree -o`).
 - **Any agent with Edit/Write** → writes confined to the project root (`CLAUDE_PROJECT_DIR`).
+- **Any agent's Read/Grep/Glob** → allowed inside the project root and the session's own saved tool results; anything reaching outside them gets an `ask` decision, a human permission prompt that auto mode's classifier cannot approve silently.
 
-It reads the hook payload as JSON on stdin and, to block, prints a `permissionDecision: "deny"` object (`hookSpecificOutput`) on stdout; otherwise it exits 0 with no output so the normal permission flow proceeds.
+It reads the hook payload as JSON on stdin and prints a `permissionDecision` object (`hookSpecificOutput`) on stdout — `allow` for a vetted call (no prompt), `deny` to block, `ask` to force a prompt — or exits 0 with no output so the normal permission flow proceeds for anything it does not recognize.
 
 ## Wiring into settings
 
@@ -32,7 +33,7 @@ The hook is registered in `settings.json` under `hooks.PreToolUse`, matched to t
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit",
+        "matcher": "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task",
         "hooks": [
           { "type": "command", "command": "python3 ~/.claude/hooks/paf/PreToolUse-agent-guard.py" }
         ]
@@ -42,7 +43,7 @@ The hook is registered in `settings.json` under `hooks.PreToolUse`, matched to t
 }
 ```
 
-The matcher limits the hook to the tools whose *use* it may deny; read-only tools (`Read`, `WebSearch`, `WebFetch`) are governed by the agents' frontmatter allowlists and need no hook.
+The matcher covers every tool the hook decides on: the ones it may deny or confine (`Bash`, the write tools, and the read tools `Read`/`Grep`/`Glob`), plus `WebSearch`/`WebFetch`, which it allows for an agent without a prompt, and `Task`, which it sees and leaves to the normal permission flow.
 
 ## Install target
 

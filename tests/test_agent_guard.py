@@ -324,6 +324,9 @@ class WithinProjectTests(unittest.TestCase):
     def test_empty_path(self):
         self.assertFalse(guard.within_project("", self.project))
 
+    def test_embedded_nul_byte_is_outside_rather_than_a_crash(self):
+        self.assertFalse(guard.within_project(self.project + "/a\x00b", self.project))
+
     def test_symlink_inside_project_pointing_outside_is_rejected(self):
         # within_project() resolves symlinks via os.path.realpath(), so a link
         # that physically sits inside the project but resolves to a target
@@ -337,6 +340,86 @@ class WithinProjectTests(unittest.TestCase):
         link_path = os.path.join(self.project, "escape_link")
         os.symlink(outside_target, link_path)
         self.assertFalse(guard.within_project(link_path, self.project))
+
+
+class GlobReachTests(unittest.TestCase):
+    def test_relative_pattern_is_bounded_by_the_base(self):
+        self.assertEqual(guard.glob_reach("**/*.py", "/p"), "/p/")
+
+    def test_literal_prefix_extends_the_base(self):
+        self.assertEqual(guard.glob_reach("src/**/*.ts", "/p"), "/p/src")
+
+    def test_absolute_pattern_replaces_the_base(self):
+        self.assertEqual(guard.glob_reach("/etc/*", "/p"), "/etc")
+
+    def test_literal_parent_climb_is_kept_for_realpath(self):
+        self.assertEqual(guard.glob_reach("../*", "/p"), "/p/..")
+
+    def test_pattern_without_wildcards_is_all_literal(self):
+        self.assertEqual(guard.glob_reach("a/b.txt", "/p"), "/p/a/b.txt")
+
+    def test_parent_climb_after_a_wildcard_is_unbounded(self):
+        self.assertIsNone(guard.glob_reach("src/**/../../x", "/p"))
+
+    def test_parent_climb_inside_a_brace_is_unbounded(self):
+        self.assertIsNone(guard.glob_reach("{a,../..}/x", "/p"))
+
+    def test_home_is_expanded(self):
+        self.assertEqual(guard.glob_reach("~/*", "/p"), os.path.expanduser("~"))
+
+    def test_other_wildcard_characters_end_the_prefix(self):
+        self.assertEqual(guard.glob_reach("src/?.py", "/p"), "/p/src")
+        self.assertEqual(guard.glob_reach("src/[ab].py", "/p"), "/p/src")
+        self.assertIsNone(guard.glob_reach("?/../x", "/p"))
+        self.assertIsNone(guard.glob_reach("[ab]/../x", "/p"))
+
+    def test_wildcard_in_the_first_component_after_root_stays_absolute(self):
+        # `/*` splits to a "" prefix, which os.path.join would collapse to the base.
+        for pattern in ("/*", "/{a,b}/x", "/?x/*"):
+            with self.subTest(pattern=pattern):
+                self.assertEqual(guard.glob_reach(pattern, "/p"), "/")
+
+    def test_absolute_or_home_alternatives_are_unbounded(self):
+        for pattern in ("{/etc,/tmp}/*", "{/etc/passwd,x}", "{~/.ssh/*,x}",
+                        "{x,/etc/passwd}", "@(/etc/passwd|x)", "+(x|~/y)"):
+            with self.subTest(pattern=pattern):
+                self.assertIsNone(guard.glob_reach(pattern, "/p"))
+
+    def test_relative_alternatives_are_bounded(self):
+        self.assertEqual(guard.glob_reach("{src,test}/**/*.py", "/p"), "/p/")
+        self.assertEqual(guard.glob_reach("src/**/*.{ts,tsx}", "/p"), "/p/src")
+
+
+class SessionToolResultsTests(unittest.TestCase):
+    def test_from_the_main_transcript(self):
+        self.assertEqual(
+            guard.session_tool_results("/h/proj/s1.jsonl", "s1"), "/h/proj/s1/tool-results"
+        )
+
+    def test_from_a_subagent_transcript(self):
+        self.assertEqual(
+            guard.session_tool_results("/h/proj/s1/subagents/agent-a.jsonl", "s1"),
+            "/h/proj/s1/tool-results",
+        )
+
+    def test_unmatched_session_id(self):
+        self.assertEqual(guard.session_tool_results("/h/proj/s1.jsonl", "s2"), "")
+
+    def test_missing_fields(self):
+        self.assertEqual(guard.session_tool_results("", "s1"), "")
+        self.assertEqual(guard.session_tool_results("/h/proj/s1.jsonl", ""), "")
+
+    def test_nul_byte_is_not_located(self):
+        self.assertEqual(guard.session_tool_results("/h/proj/s1\x00.jsonl", "s1"), "")
+
+    def test_nearest_matching_component_wins(self):
+        self.assertEqual(
+            guard.session_tool_results("/h/s1/proj/s1/subagents/agent-a.jsonl", "s1"),
+            "/h/s1/proj/s1/tool-results",
+        )
+
+    def test_path_without_a_jsonl_suffix(self):
+        self.assertEqual(guard.session_tool_results("/h/proj/s1", "s1"), "/h/proj/s1/tool-results")
 
 
 class ExternalIoRegexTests(unittest.TestCase):
@@ -472,8 +555,9 @@ class GitMutateRegexTests(unittest.TestCase):
                 self.assertFalse(guard.GIT_MUTATE.search(command))
 
 
-class HookDecisionTests(unittest.TestCase):
-    """Drives the hook as a subprocess and asserts on its emitted decision."""
+class HookRunner:
+    """Drives the hook as a subprocess and asserts on its emitted decision. A mixin,
+    so a TestCase built on it does not re-run another TestCase's tests."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -504,6 +588,10 @@ class HookDecisionTests(unittest.TestCase):
         if not out:
             return None  # defer — the hook emits nothing
         return json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+
+
+class HookDecisionTests(HookRunner, unittest.TestCase):
+    """End-to-end allow/deny/defer decisions for each tool family."""
 
     # --- main thread ---------------------------------------------------------
 
@@ -915,8 +1003,8 @@ class HookDecisionTests(unittest.TestCase):
         self.assertIsNone(
             self.run_hook({
                 "agent_type": "full-stack-dev",
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/etc/passwd"},
+                "tool_name": "NotebookEdit",
+                "tool_input": {"notebook_path": "/etc/passwd"},
             })
         )
 
@@ -925,6 +1013,228 @@ class HookDecisionTests(unittest.TestCase):
 
     def test_non_object_json_defers(self):
         self.assertIsNone(self.run_hook("[1, 2, 3]"))
+
+
+class ReadContainmentTests(HookRunner, unittest.TestCase):
+    """Agent Read/Grep/Glob are allowed inside the project root and the session's own
+    tool-results, and get `ask` everywhere else (#62)."""
+
+    def setUp(self):
+        super().setUp()
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        self.outside = os.path.realpath(outside.name)
+        # A session directory laid out the way Claude Code lays it out, outside the root.
+        self.session_id = "sess-1"
+        session_dir = os.path.join(self.outside, self.session_id)
+        os.makedirs(os.path.join(session_dir, "tool-results"))
+        os.makedirs(os.path.join(session_dir, "subagents"))
+        self.main_transcript = session_dir + ".jsonl"
+        self.agent_transcript = os.path.join(session_dir, "subagents", "agent-a.jsonl")
+        self.saved_result = os.path.join(session_dir, "tool-results", "x.txt")
+
+    def read(self, tool, tool_input, agent="code-explorer", **extra):
+        payload = {"agent_type": agent, "tool_name": tool, "tool_input": tool_input,
+                   "cwd": self.project}
+        payload.update(extra)
+        return self.run_hook(payload)
+
+    # --- inside the root ------------------------------------------------------
+
+    def test_read_inside_the_root_is_allowed(self):
+        self.assertEqual(self.read("Read", {"file_path": os.path.join(self.project, "a.py")}), "allow")
+
+    def test_relative_read_resolves_against_cwd(self):
+        self.assertEqual(self.read("Read", {"file_path": "a.py"}), "allow")
+        self.assertEqual(self.read("Read", {"file_path": "a.py"}, cwd=self.outside), "ask")
+
+    def test_grep_and_glob_inside_the_root_are_allowed(self):
+        for tool in ("Grep", "Glob"):
+            with self.subTest(tool=tool):
+                self.assertEqual(
+                    self.read(tool, {"pattern": "*.py", "path": os.path.join(self.project, "src")}),
+                    "allow",
+                )
+                self.assertEqual(self.read(tool, {"pattern": "*.py", "path": "src"}), "allow")
+
+    def test_absent_path_is_the_cwd(self):
+        for tool in ("Grep", "Glob"):
+            with self.subTest(tool=tool):
+                self.assertEqual(self.read(tool, {"pattern": "*.py"}), "allow")
+                self.assertEqual(self.read(tool, {"pattern": "*.py", "path": ""}), "allow")
+                self.assertEqual(self.read(tool, {"pattern": "*.py"}, cwd=self.outside), "ask")
+
+    def test_recursive_glob_pattern_is_allowed(self):
+        self.assertEqual(self.read("Glob", {"pattern": "**/*.py"}), "allow")
+        self.assertEqual(self.read("Glob", {"pattern": "{src,test}/**/*.py"}), "allow")
+
+    def test_glob_without_a_pattern_is_allowed_inside_the_root(self):
+        self.assertEqual(self.read("Glob", {}), "allow")
+
+    def test_cwd_below_the_root_is_still_inside(self):
+        sub = os.path.join(self.project, "sub")
+        os.makedirs(sub)
+        self.assertEqual(self.read("Read", {"file_path": "../a.py"}, cwd=sub), "allow")
+        self.assertEqual(self.read("Read", {"file_path": "../../x"}, cwd=sub), "ask")
+        for tool in ("Grep", "Glob"):
+            with self.subTest(tool=tool):
+                self.assertEqual(self.read(tool, {"pattern": "*.py"}, cwd=sub), "allow")
+
+    # --- outside the root ---------------------------------------------------
+
+    def test_outside_paths_ask(self):
+        cases = [
+            ("Read", {"file_path": "/etc/passwd"}),
+            ("Read", {"file_path": os.path.join(self.project, "..", "x")}),
+            ("Read", {"file_path": self.project + "-evil/x"}),
+            ("Read", {"file_path": "~/.ssh/id_rsa"}),
+            ("Read", {"file_path": self.project + "/a\x00b"}),
+            ("Grep", {"pattern": "secret", "path": "/etc"}),
+            ("Grep", {"pattern": "secret", "path": ".."}),
+            ("Grep", {"pattern": "secret", "path": "~"}),
+            ("Glob", {"pattern": "*", "path": "/etc"}),
+        ]
+        for tool, tool_input in cases:
+            with self.subTest(tool=tool, tool_input=tool_input):
+                self.assertEqual(self.read(tool, tool_input), "ask")
+
+    def test_glob_pattern_reaching_outside_asks(self):
+        for pattern in ("/etc/*", "../*", "../../**/*.env", "~/*", "src/**/../../x", "{a,../..}/x",
+                        "/*", "/{a,b}/x", "/?x/*", "{/etc,/tmp}/*", "{/etc/passwd,x}",
+                        "{~/.ssh/*,x}", "@(/etc/passwd|x)"):
+            with self.subTest(pattern=pattern):
+                self.assertEqual(self.read("Glob", {"pattern": pattern}), "ask")
+
+    def test_symlink_inside_the_root_pointing_outside_asks(self):
+        link = os.path.join(self.project, "link")
+        os.symlink(self.outside, link)
+        self.assertEqual(self.read("Read", {"file_path": os.path.join(link, "x")}), "ask")
+        self.assertEqual(self.read("Grep", {"pattern": "x", "path": "link"}), "ask")
+        self.assertEqual(self.read("Glob", {"pattern": "link/*"}), "ask")
+        self.assertEqual(self.read("Glob", {"pattern": "*", "path": "link"}), "ask")
+
+    def test_additional_directory_still_asks(self):
+        # Pins the decision "no additional-directories list in the payload, so ask": a
+        # read there is outside the root as far as the hook can tell, a prompt not a deny.
+        lib = os.path.join(self.outside, "lib.py")
+        self.assertEqual(self.read("Read", {"file_path": lib}), "ask")
+        self.assertEqual(self.read("Grep", {"pattern": "x", "path": self.outside}), "ask")
+        self.assertEqual(self.read("Glob", {"pattern": "*.py", "path": self.outside}), "ask")
+
+    def test_web_agent_reading_outside_asks(self):
+        self.assertEqual(
+            self.read("Grep", {"pattern": "key", "path": "/etc"}, agent="issue-validator"), "ask"
+        )
+
+    # --- the session's saved tool results ---------------------------------------
+
+    def test_saved_tool_result_is_allowed(self):
+        for transcript in (self.main_transcript, self.agent_transcript):
+            with self.subTest(transcript=transcript):
+                self.assertEqual(
+                    self.read("Read", {"file_path": self.saved_result},
+                              transcript_path=transcript, session_id=self.session_id),
+                    "allow",
+                )
+
+    def test_session_transcripts_are_not_part_of_the_carve_out(self):
+        self.assertEqual(
+            self.read("Read", {"file_path": self.agent_transcript},
+                      transcript_path=self.main_transcript, session_id=self.session_id),
+            "ask",
+        )
+
+    def test_saved_tool_result_needs_the_matching_session(self):
+        self.assertEqual(
+            self.read("Read", {"file_path": self.saved_result},
+                      transcript_path=self.main_transcript, session_id="other"),
+            "ask",
+        )
+        self.assertEqual(self.read("Read", {"file_path": self.saved_result}), "ask")
+
+    def test_grep_and_glob_of_the_tool_results_directory_are_allowed(self):
+        results_dir = os.path.dirname(self.saved_result)
+        for tool in ("Grep", "Glob"):
+            with self.subTest(tool=tool):
+                self.assertEqual(
+                    self.read(tool, {"pattern": "*", "path": results_dir},
+                              transcript_path=self.main_transcript, session_id=self.session_id),
+                    "allow",
+                )
+
+    def test_tool_results_carve_out_does_not_widen(self):
+        session_dir = os.path.dirname(os.path.dirname(self.saved_result))
+        results_dir = os.path.dirname(self.saved_result)
+        os.makedirs(session_dir + "/tool-results-evil")
+        cases = [
+            os.path.join(results_dir, "..", "x"),
+            os.path.join(session_dir, "tool-results-evil", "x"),
+        ]
+        # A symlink inside tool-results that leads out of it.
+        elsewhere = tempfile.TemporaryDirectory()
+        self.addCleanup(elsewhere.cleanup)
+        os.symlink(os.path.realpath(elsewhere.name), os.path.join(results_dir, "out"))
+        cases.append(os.path.join(results_dir, "out", "x"))
+        for target in cases:
+            with self.subTest(target=target):
+                self.assertEqual(
+                    self.read("Read", {"file_path": target},
+                              transcript_path=self.main_transcript, session_id=self.session_id),
+                    "ask",
+                )
+
+    # --- malformed input and the main thread ----------------------------------
+
+    def test_unexpandable_home_asks_instead_of_crashing(self):
+        # os.path.expanduser raises ValueError on these; the hook must still exit 0 (#62).
+        for bad in ("~\u0000/x", "~\ud800/x"):
+            for tool, tool_input in (("Read", {"file_path": bad}),
+                                     ("Grep", {"pattern": "x", "path": bad}),
+                                     ("Glob", {"pattern": bad})):
+                with self.subTest(tool=tool, bad=bad):
+                    self.assertEqual(self.read(tool, tool_input), "ask")
+
+    def test_malformed_session_fields_do_not_disturb_an_in_root_read(self):
+        # Tool results are only consulted after the root check fails, so a NUL or a wrong
+        # type in transcript_path/session_id is irrelevant to an in-root read...
+        target = {"file_path": os.path.join(self.project, "a.py")}
+        for extra in ({"transcript_path": "/x\u0000y.jsonl"}, {"session_id": "s\u0000"},
+                      {"transcript_path": ["x"]}, {"session_id": {}}):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.read("Read", target, **extra), "allow")
+
+    def test_malformed_session_fields_on_an_outside_read(self):
+        # ...but they are consulted for an outside one: a NUL asks, a wrong type defers.
+        target = {"file_path": self.saved_result}
+        self.assertEqual(self.read("Read", target, transcript_path="/x\u0000y.jsonl",
+                                   session_id=self.session_id), "ask")
+        self.assertEqual(self.read("Read", target, session_id="s\u0000",
+                                   transcript_path=self.main_transcript), "ask")
+        self.assertIsNone(self.read("Read", target, transcript_path=["x"]))
+        self.assertIsNone(self.read("Read", target, session_id={}))
+
+    def test_non_string_cwd_defers(self):
+        self.assertIsNone(self.read("Read", {"file_path": "a.py"}, cwd=123))
+
+    def test_malformed_fields_defer(self):
+        cases = [
+            ("Read", {"file_path": 123}),
+            ("Read", {}),
+            ("Grep", {"pattern": "x", "path": ["/etc"]}),
+            ("Glob", {"pattern": {"x": 1}}),
+        ]
+        for tool, tool_input in cases:
+            with self.subTest(tool=tool, tool_input=tool_input):
+                self.assertIsNone(self.read(tool, tool_input))
+
+    def test_main_thread_reads_are_unrestricted(self):
+        for tool, tool_input in (("Read", {"file_path": "/etc/passwd"}),
+                                 ("Grep", {"pattern": "x", "path": "/etc"}),
+                                 ("Glob", {"pattern": "/etc/*"})):
+            with self.subTest(tool=tool):
+                self.assertEqual(
+                    self.run_hook({"tool_name": tool, "tool_input": tool_input}), "allow"
+                )
 
 
 if __name__ == "__main__":
