@@ -5,6 +5,16 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.0] - 2026-10-09
+
+### Changed
+
+- `/paf:implement-issue`'s plan-mode exploration is told to spend turns, not reads: independent
+  reads and searches go out as parallel tool calls in one turn, files already in context are not
+  re-read unless changed, and a known range of a large file is read instead of the whole file.
+  Dependent reads stay sequential and no read the plan needs is skipped. The implementation step
+  batches independent edits the same way (#67).
+
 ## [0.23.0] - 2026-10-09
 
 ### Added
