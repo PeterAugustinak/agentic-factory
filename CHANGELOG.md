@@ -5,6 +5,31 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-10-09
+
+### Added
+
+- Exact `pricing.json` entries for `claude-opus-5-5` and `claude-sonnet-5-5`, whose cache reads are
+  0.05x input rather than 0.1x. `claude-haiku-5-5` is priced by its two prompt-length tiers through a
+  new `prompt_tiers` schema: the cost helper now prices each transcript message on its own, at the
+  tier its prompt length (input + cache reads + cache writes) selects, as Anthropic bills it. Runs on
+  these models no longer fall back to an older same-family rate (#70).
+
+### Fixed
+
+- `claude-sonnet-5` is priced at its standard $2/$10 (cache read $0.20) instead of the stale $3/$15,
+  and the pricing table no longer claims a fixed cache multiplier for every model. Re-run the
+  installer to pick up the new prices (#70).
+
+## [0.22.0] - 2026-10-09
+
+### Changed
+
+- `/paf:implement-issue`'s parallel deep review passes the reviewers a compact change manifest —
+  created files by path, and a zero-context diff with its added lines stripped — instead of embedding
+  the full `git diff` in all of their prompts. Each reviewer still sees every created and modified
+  file and reads the changed ranges itself (#66).
+
 ## [0.21.0] - 2026-10-08
 
 Graded MINOR: #61 is an enhancement (new test coverage), not a bug fix. Nothing the installer ships
