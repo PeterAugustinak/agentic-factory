@@ -25,8 +25,10 @@ Model ids are canonicalised before lookup — a trailing snapshot date
 dated key outright rather than silently mismatching it. A model still absent from
 pricing.json after that is priced at the latest known rate of the same family
 (opus/sonnet/haiku) and flagged so pricing.json can be updated — its tokens are
-never silently dropped. The ledger lives under the user's ~/.claude namespace,
-never in the project.
+never silently dropped. Each message is priced on its own, because a model
+priced by prompt length (`prompt_tiers` in pricing.json) bills each request at
+the tier its prompt length — input + cache reads + cache writes — selects. The
+ledger lives under the user's ~/.claude namespace, never in the project.
 
 Usage:
   paf-report-cost.py mark      --session <id> --skill <name>
@@ -202,16 +204,43 @@ def latest_priced_in_family(family: str, pricing: dict):
     return max(candidates, key=model_version)
 
 
+def tier_rates(entry: dict, prompt_tokens: int) -> dict:
+    """The rates that apply to one request of `prompt_tokens` prompt length.
+
+    A flat entry applies at every length. A `prompt_tiers` entry is an ordered
+    list: the first tier whose `max_prompt_tokens` is at least the prompt length
+    applies, and the last tier carries no cap. Claude Haiku 5.5 is priced this
+    way — "up to 100,000" and "over 100,000" prompt tokens, where a request's
+    prompt length counts all of its input tokens, including cache reads and
+    cache writes, and each request is priced on its own. Source:
+    https://platform.claude.com/docs/en/about-claude/pricing#long-context-pricing"""
+    tiers = entry.get("prompt_tiers")
+    if not tiers:
+        return entry
+    for tier in tiers:
+        cap = tier.get("max_prompt_tokens")
+        if cap is None or prompt_tokens <= cap:
+            return tier
+    return tiers[-1]
+
+
 def cost_from_transcripts(paths: list[Path], pricing: dict, since=None) -> dict:
-    """Sum tokens per model across the main transcript AND every subagent
-    transcript, and price them. When `since` is set, only messages timestamped
-    at or after it are counted — the slice belonging to a single skill
-    invocation. Model ids are canonicalised first (see `canonical_model`), so a
-    dated snapshot and its alias share one bucket. A model still absent from
-    `pricing` is priced at the latest known rate of its own family (recorded in
-    `fallback_models`); only a model with no family match at all is dropped
-    (recorded in `unknown_models`). Returns totals + fallbacks + unknowns."""
-    per_model_tokens: dict[str, dict[str, int]] = {}
+    """Sum tokens across the main transcript AND every subagent transcript,
+    and price them. When `since` is set, only messages timestamped at or after
+    it are counted — the slice belonging to a single skill invocation. Model ids
+    are canonicalised first (see `canonical_model`), so a dated snapshot and its
+    alias price identically. A model still absent from `pricing` is priced at
+    the latest known rate of its own family (recorded in `fallback_models`);
+    only a model with no family match at all is dropped (recorded in
+    `unknown_models`). Each message is priced on its own, at the tier its prompt
+    length selects (see `tier_rates`). Returns totals + fallbacks + unknowns."""
+    total_cost = 0.0
+    unknown_models = []
+    fallback_models = []
+    tokens_total = dict.fromkeys(TOKEN_FIELDS, 0)
+    # The rate entry each canonical model id resolved to (None = unpriceable),
+    # resolved once per model so fallbacks/unknowns are recorded once.
+    resolved: dict = {}
     # A single assistant turn is written across several transcript lines (one per
     # content block: thinking, tool_use, ...), and the SAME `usage` is copied onto
     # each. Count each message's usage exactly once, keyed by message id, or the
@@ -249,42 +278,41 @@ def cost_from_transcripts(paths: list[Path], pricing: dict, since=None) -> dict:
                     if mid in seen_ids:
                         continue
                     seen_ids.add(mid)
-                t = per_model_tokens.setdefault(
-                    model,
-                    dict.fromkeys(TOKEN_FIELDS, 0),
-                )
-                t["input"] += usage.get("input_tokens", 0)
-                t["output"] += usage.get("output_tokens", 0)
-                t["cache_read"] += usage.get("cache_read_input_tokens", 0)
+                t = dict.fromkeys(TOKEN_FIELDS, 0)
+                t["input"] = usage.get("input_tokens", 0)
+                t["output"] = usage.get("output_tokens", 0)
+                t["cache_read"] = usage.get("cache_read_input_tokens", 0)
                 cc = usage.get("cache_creation") or {}
                 if cc:
-                    t["cache_write_5m"] += cc.get("ephemeral_5m_input_tokens", 0)
-                    t["cache_write_1h"] += cc.get("ephemeral_1h_input_tokens", 0)
+                    t["cache_write_5m"] = cc.get("ephemeral_5m_input_tokens", 0)
+                    t["cache_write_1h"] = cc.get("ephemeral_1h_input_tokens", 0)
                 else:
                     # No TTL breakdown available — price all cache writes at the 5m rate.
-                    t["cache_write_5m"] += usage.get("cache_creation_input_tokens", 0)
+                    t["cache_write_5m"] = usage.get("cache_creation_input_tokens", 0)
+                for k in TOKEN_FIELDS:
+                    tokens_total[k] += t[k]
 
-    total_cost = 0.0
-    unknown_models = []
-    fallback_models = []
-    tokens_total = dict.fromkeys(TOKEN_FIELDS, 0)
-    for model, tok in per_model_tokens.items():
-        for k in tokens_total:
-            tokens_total[k] += tok[k]
-        rates = pricing.get(model)
-        if not rates:
-            # Unpriced model: fall back to the latest known price of the same
-            # family rather than dropping its tokens from the total.
-            family = model_family(model)
-            alt = latest_priced_in_family(family, pricing) if family else None
-            if alt:
-                rates = pricing[alt]
-                fallback_models.append({"model": model, "priced_as": alt, "family": family})
-            else:
-                unknown_models.append(model)
-                continue
-        for k in TOKEN_FIELDS:
-            total_cost += tok[k] / 1_000_000 * rates[k]
+                if model not in resolved:
+                    rates = pricing.get(model)
+                    if not rates:
+                        # Unpriced model: fall back to the latest known price of
+                        # the same family rather than dropping its tokens.
+                        family = model_family(model)
+                        alt = latest_priced_in_family(family, pricing) if family else None
+                        if alt:
+                            rates = pricing[alt]
+                            fallback_models.append({"model": model, "priced_as": alt, "family": family})
+                        else:
+                            unknown_models.append(model)
+                    resolved[model] = rates
+                entry = resolved[model]
+                if not entry:
+                    continue
+                # Prompt length counts every input token, cache reads and writes included.
+                prompt = t["input"] + sum(t[f] for f in CACHE_FIELDS)
+                rates = tier_rates(entry, prompt)
+                for k in TOKEN_FIELDS:
+                    total_cost += t[k] / 1_000_000 * rates[k]
 
     return {
         "total_cost_usd": round(total_cost, 4),
