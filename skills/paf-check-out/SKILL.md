@@ -8,7 +8,7 @@ allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git
 
 # check-out
 
-Finish a feature: run one high-level safety-net review, do the final spec and pre-merge checks, then commit, push, and open the MR/PR — with the **whole feature's** cost in the MR/PR description. This is the third and final skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
+Finish a feature: run one high-level safety-net review when the branch changed since `/paf:implement-issue`'s hand-off, do the final spec and pre-merge checks, then commit, push, and open the MR/PR — with the **whole feature's** cost in the MR/PR description. This is the third and final skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
 
 This is a **confirmation-and-ship gate, not a deep-review-and-fix stage**. The deep review already ran in `/paf:implement-issue`, before the developer's manual review, so nothing here re-opens the code: `check-out` confirms and ships it.
 
@@ -37,14 +37,24 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "$
 
 Then confirm with the developer that they have reviewed `/paf:implement-issue`'s implementation and are ready to finalise. Determine the issue number (branch name or `$ARGUMENTS`), read the issue for its acceptance criteria, and compute the change to review (`git diff <base>` per above).
 
+Then — only after that confirmation, so the developer's editing is finished — compare the branch against `/paf:implement-issue`'s hand-off fingerprint:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-fingerprint.py" check --issue "<issue-number>"
+```
+
+It recomputes the content fingerprint against the base commit pinned at the hand-off and prints a `VERDICT=` line and a `REASON=` line. **Only output with exactly one `VERDICT=` line, and that line exactly `VERDICT=skip`, skips step 2.** Anything else — `VERDICT=review` (content changed, committed or not; no fingerprint recorded; an unreadable record), a missing or repeated verdict line, or a failed command — means step 2 runs exactly as below. Never decide the skip by judgement.
+
 **2. Safety-net review (agent).**
-Invoke `senior-engineer-reviewer` — and **only** it — passing the change and the issue's requirement, framed **in the invocation** as a high-level confirmation pass: *this diff was already deep-reviewed in `/paf:implement-issue`; the developer's hand-edits since then cannot be isolated from that reviewed implementation, so you are being handed the whole branch diff — look for critical regressions, especially in the hand-edits, and do not re-litigate the already-reviewed implementation.* The depth and focus come from **your framing**, not from the agent's definition — do not modify `senior-engineer-reviewer`, whose deep review is exactly what `/paf:implement-issue` needs from it.
+**On `VERDICT=skip`** — the branch content is identical to the deep-reviewed hand-off, so there are no hand-edits to review: do **not** invoke the reviewer. Print the skip loudly, with the helper's `REASON=` text — e.g. *"Safety-net review skipped: branch content is identical to `/paf:implement-issue`'s reviewed hand-off (fingerprint match) — no hand-edits to review."* — and continue to step 3. A commit made during review that changes no content lands here: committing is not editing.
+
+**Otherwise**, invoke `senior-engineer-reviewer` — and **only** it — passing the change and the issue's requirement, framed **in the invocation** as a high-level confirmation pass: *this diff was already deep-reviewed in `/paf:implement-issue`; the developer's hand-edits since then cannot be isolated from that reviewed implementation, so you are being handed the whole branch diff — look for critical regressions, especially in the hand-edits, and do not re-litigate the already-reviewed implementation.* The depth and focus come from **your framing**, not from the agent's definition — do not modify `senior-engineer-reviewer`, whose deep review is exactly what `/paf:implement-issue` needs from it.
 
 Parse its output and compute the gate **yourself, from the parsed `issues[].severity`** — not from the agent's `status`, which is `success` on completion regardless of what it found (`docs/architecture.md` §4):
 - **Any `severity: error`** → **STOP**: print the findings and hand back to the developer, who fixes them on the branch or re-runs `/paf:implement-issue`. Never fix-and-continue — `check-out` has no fix loop for review findings, which require judgement by their nature.
 - **Only `warning` findings (or none)** → print them for the developer's information and continue. They do not block.
 
-This is the safety net for the one slice of code no agent has seen: the developer's manual hand-edits since `/paf:implement-issue` finished. **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses, and the reviewer may re-see the already-reviewed implementation rather than only the hand-edits.
+This is the safety net for the one slice of code no agent has seen: the developer's manual hand-edits since `/paf:implement-issue` finished — which is why it runs only when the fingerprint shows the content changed (or cannot confirm it did not). **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses; when it runs, the reviewer may re-see the already-reviewed implementation rather than only the hand-edits; and a hand-edit to a path marked `--assume-unchanged` or `--skip-worktree` is invisible to the fingerprint.
 
 **3. Final spec check (agent).**
 Invoke `quality-assurer` with the final change and the issue's acceptance criteria. It confirms every criterion is met.
@@ -78,6 +88,12 @@ Aggregate the whole feature's cost across all three main skills and clean up the
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" aggregate \
   --issue "<issue-number>" --cleanup
+```
+
+and remove the feature's hand-off fingerprint on the same lifecycle:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-fingerprint.py" clear --issue "<issue-number>"
 ```
 
 Then open the MR/PR against the base branch from `CLAUDE.md`, passing the description on stdin (source branch is inferred by the adapter). The issue title is attacker-influenceable text (anyone who can file an issue controls it) — never paste it directly into a double-quoted command-line argument, where a title containing `"`, a backtick, `$(...)`, `;`, or `&&` could break out and run arbitrary shell code with your git/gh/glab credentials. Instead, first bind the resolved title to a shell variable via a **single-quoted** assignment — escaping any single quote in the title as `'\''` (the standard technique for embedding arbitrary text inside a single-quoted shell string) — then pass the variable, never the raw text, as `--title`:

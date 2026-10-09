@@ -30,7 +30,7 @@ Once an issue exists and its approach is sound enough to build:
 8. **Deep review in parallel** — `senior-engineer-reviewer`, `code-simplifier`, `security-engineer`, `test-coverage-reviewer` run concurrently over the change, supplied as a compact **change manifest** instead of the full diff in four prompts (created files, plus a zero-context diff without its added lines, whose ranges each reviewer `Read`s); the skill aggregates their findings. No findings takes the **skip path** straight to the hand-off.
 9. **Triage & apply** — `full-stack-dev` receives **all** findings and decides which are worth applying, then applies them: `error` findings apply by default (a skip must be loud and justified), a **factual / self-consistency defect** applies whatever severity it carries (never skippable as discretionary), and the remaining `warning` findings are its discretion. It also **sweeps** — a fact, rule, or name it changes is updated everywhere the repo states it. The skill surfaces its applied-vs-skipped report to the developer — the developer doesn't pre-select fixes; their manual review is the curation point.
 10. **Re-verify** — `implementation-verifier` runs again, since step 9 may have changed the code and tests are the gate. On failure `full-stack-dev` fixes from its output and it re-verifies, up to a cap; the reviewers are **not** re-run.
-11. **Hand off** (skill) — leave the verified, reviewed changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`).
+11. **Hand off** (skill) — leave the verified, reviewed changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`), and pin the hand-off: `paf-fingerprint.py record` stores the base commit sha and a content fingerprint of every changed path (tracked and untracked) under `~/.claude/paf/`, so `/paf:check-out` can skip its safety-net review when nothing changed since.
 12. **Cost** (skill) — append this invocation's cost to the per-feature cost ledger.
 
 ### Why plan mode
@@ -135,7 +135,8 @@ Planning and building run in the main thread via native plan mode rather than as
      v  (pass)                                            |
 +----------------------------------------------+       <--+
 | [skill] leave changes UNCOMMITTED on branch  |
-|   for review (no commit / push / MR/PR)      |
+|   for review (no commit / push / MR/PR);     |
+|   record hand-off fingerprint (pinned base)  |
 +----------------------------------------------+
      |
      v
@@ -169,7 +170,7 @@ The reviewers run **concurrently**; the rest run in sequence. Planning and imple
 
 Per `architecture.md` §5 there are **two** fix loops, each capped the same way:
 - **Verify-fix loop (main thread).** On verification failure, the **same main-thread context that built the code** (now in edit mode) applies the fix (informed by the failure output) and re-verifies, at most **twice** — never a cold builder agent, which would re-derive the change.
-- **Review-fix loop (`full-stack-dev`).** After the review fixes are applied, `implementation-verifier` re-runs; on failure `full-stack-dev` fixes from its output and it re-verifies, at most **twice**. The reviewers run **exactly once** per invocation and are never re-run — the second look at the code is the developer's manual review plus `/paf:check-out`'s safety-net review.
+- **Review-fix loop (`full-stack-dev`).** After the review fixes are applied, `implementation-verifier` re-runs; on failure `full-stack-dev` fixes from its output and it re-verifies, at most **twice**. The reviewers run **exactly once** per invocation and are never re-run — the second look at the code is the developer's manual review plus `/paf:check-out`'s safety-net review, which runs whenever the branch's content changed after the hand-off.
 - **No self-validation.** Whoever applied a fix never validates it — `implementation-verifier` re-runs as a separate agent each time.
 - **STOP conditions** (each halts and escalates to the developer, who fixes the cause and re-runs): a validator blocker the developer **declines** at the gate (a PAF-validated issue skips validation; an approved blocker is folded into the plan instead); verification still failing after either retry cap; malformed/missing agent output from any agent.
 - **Scoped verification.** `implementation-verifier` runs a **targeted subset** of the **test** suite (the changed area), keeping both loops fast; the **full** test + lint suite runs later at `/paf:check-out`.
@@ -189,6 +190,7 @@ The skill marks its invocation start at step 1, and the final step runs [`skills
 - [`skills/paf-implement-issue/SKILL.md`](../../skills/paf-implement-issue/SKILL.md) — the operational definition.
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
 - [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost reporting.
+- [`skills/paf-shared/paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py) — the hand-off fingerprint `/paf:check-out` compares against.
 - [`agents/issue-validator.md`](../../agents/issue-validator.md), [`agents/implementation-verifier.md`](../../agents/implementation-verifier.md), [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md), [`agents/code-simplifier.md`](../../agents/code-simplifier.md), [`agents/security-engineer.md`](../../agents/security-engineer.md), [`agents/test-coverage-reviewer.md`](../../agents/test-coverage-reviewer.md), [`agents/full-stack-dev.md`](../../agents/full-stack-dev.md) — the agent definitions this skill uses.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```
