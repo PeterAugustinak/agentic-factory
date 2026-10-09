@@ -1,12 +1,32 @@
 {
-  "_comment": "PAF model pricing table — maintained by the factory, used by the cost-reporting helper. USD per 1,000,000 tokens. Cache rates follow the documented multipliers: cache write (5m TTL) = 1.25x input, cache write (1h TTL) = 2x input, cache read = 0.1x input. Model keys MUST be dateless ('claude-haiku-4-5', never 'claude-haiku-4-5-20251001'): the helper strips a trailing -YYYYMMDD snapshot date before lookup, because pricing is per model and not per snapshot, so a dated key could never match.",
-  "_source": "https://claude.com/pricing#api and Claude API pricing reference (claude-api skill), captured 2026-08-01",
-  "_updated": "2026-08-01",
+  "_comment": "PAF model pricing table — maintained by the factory, used by the cost-reporting helper. USD per 1,000,000 tokens. Every rate is listed per model exactly as the pricing page states it: cache rates are not a fixed multiple of input across models (cache read is 0.1x input on most models but 0.05x on Opus 5.5 and Sonnet 5.5). A model priced by prompt length carries 'prompt_tiers' instead of flat rates: an ordered list where each request is priced at the first tier whose 'max_prompt_tokens' is at least that request's prompt length (input + cache reads + cache writes); the last tier has no cap. Model keys MUST be dateless ('claude-haiku-4-5', never 'claude-haiku-4-5-20251001'): the helper strips a trailing -YYYYMMDD snapshot date before lookup, because pricing is per model and not per snapshot, so a dated key could never match.",
+  "_source": "https://platform.claude.com/docs/en/about-claude/pricing (model pricing, prompt caching and long context pricing sections), read 2026-10-09",
+  "_updated": "2026-10-09",
   "currency": "USD",
   "unit_tokens": 1000000,
   "usd_to_eur": 0.92,
   "_usd_to_eur_source": "ECB euro reference rates (https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates) — maintained; update alongside the model rates. Captured 2026-06-08.",
   "models": {
+    "claude-haiku-5-5": {
+      "prompt_tiers": [
+        {
+          "max_prompt_tokens": 100000,
+          "input": 0.10,
+          "output": 0.50,
+          "cache_write_5m": 0.125,
+          "cache_write_1h": 0.20,
+          "cache_read": 0.01
+        },
+        {
+          "input": 0.50,
+          "output": 2.50,
+          "cache_write_5m": 0.625,
+          "cache_write_1h": 1.00,
+          "cache_read": 0.05
+        }
+      ],
+      "_note": "Priced per request by prompt length (input + cache reads + cache writes): up to 100,000 tokens the first tier, over 100,000 the second."
+    },
     "claude-haiku-4-5": {
       "input": 1.00,
       "output": 5.00,
@@ -14,13 +34,26 @@
       "cache_write_1h": 2.00,
       "cache_read": 0.10
     },
+    "claude-sonnet-5-5": {
+      "input": 2.00,
+      "output": 10.00,
+      "cache_write_5m": 2.50,
+      "cache_write_1h": 4.00,
+      "cache_read": 0.10
+    },
     "claude-sonnet-5": {
-      "input": 3.00,
-      "output": 15.00,
-      "cache_write_5m": 3.75,
-      "cache_write_1h": 6.00,
-      "cache_read": 0.30,
-      "_note": "Introductory pricing $2.00 input / $10.00 output per MTok runs through 2026-08-31; standard rates listed here."
+      "input": 2.00,
+      "output": 10.00,
+      "cache_write_5m": 2.50,
+      "cache_write_1h": 4.00,
+      "cache_read": 0.20
+    },
+    "claude-opus-5-5": {
+      "input": 4.00,
+      "output": 20.00,
+      "cache_write_5m": 5.00,
+      "cache_write_1h": 8.00,
+      "cache_read": 0.20
     },
     "claude-opus-5": {
       "input": 5.00,

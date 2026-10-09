@@ -44,6 +44,28 @@ PRICING = {
     },
 }
 
+# A prompt-length-tiered stand-in, shaped like pricing.json's claude-haiku-5-5:
+# up to 1M prompt tokens one rate, over it ten times that, so which tier priced a
+# message is obvious from the cost.
+TIERED_PRICING = {
+    "claude-haiku-9": {
+        "prompt_tiers": [
+            {"max_prompt_tokens": 1_000_000, "input": 1.0, "output": 1.0,
+             "cache_write_5m": 1.0, "cache_write_1h": 1.0, "cache_read": 1.0},
+            {"input": 10.0, "output": 10.0,
+             "cache_write_5m": 10.0, "cache_write_1h": 10.0, "cache_read": 10.0},
+        ],
+    },
+}
+
+SHIPPED_PRICING_PATH = REPO_ROOT / "skills" / "paf-shared" / "pricing.json"
+
+
+def shipped_models():
+    """The "models" block of the real pricing.json PAF ships."""
+    with open(SHIPPED_PRICING_PATH) as fh:
+        return json.load(fh)["models"]
+
 
 def record(timestamp, model, mid=None, **usage):
     """One transcript line, in the shape Claude Code writes."""
@@ -191,6 +213,30 @@ class LatestPricedInFamilyTests(unittest.TestCase):
         self.assertIsNone(cost.latest_priced_in_family("fable", PRICING))
 
 
+class TierRatesTests(unittest.TestCase):
+    TIERED = TIERED_PRICING["claude-haiku-9"]
+
+    def test_flat_entry_applies_at_every_length(self):
+        flat = PRICING["claude-sonnet-5"]
+        self.assertIs(cost.tier_rates(flat, 0), flat)
+        self.assertIs(cost.tier_rates(flat, 10_000_000), flat)
+
+    def test_at_the_cap_is_the_lower_tier(self):
+        # "up to" the cap is inclusive.
+        self.assertEqual(cost.tier_rates(self.TIERED, 1_000_000)["input"], 1.0)
+
+    def test_over_the_cap_is_the_higher_tier(self):
+        self.assertEqual(cost.tier_rates(self.TIERED, 1_000_001)["input"], 10.0)
+
+    def test_zero_length_is_the_lowest_tier(self):
+        self.assertEqual(cost.tier_rates(self.TIERED, 0)["input"], 1.0)
+
+    def test_every_tier_capped_falls_through_to_the_last(self):
+        capped = {"prompt_tiers": [{"max_prompt_tokens": 10, "input": 1.0},
+                                   {"max_prompt_tokens": 20, "input": 2.0}]}
+        self.assertEqual(cost.tier_rates(capped, 21)["input"], 2.0)
+
+
 class LoadConfigTests(unittest.TestCase):
     """`load_config` enforces the dateless-keys invariant `canonical_model`
     relies on, so a dated key can never silently reintroduce the false
@@ -226,6 +272,144 @@ class ShippedPricingFileTests(unittest.TestCase):
             models = json.load(fh)["models"]
         dated = [m for m in models if cost._SNAPSHOT_SUFFIX.search(m)]
         self.assertEqual(dated, [], f"dated model key(s) in pricing.json: {dated}")
+
+    # Five rates in the order input / 5m write / 1h write / cache read / output,
+    # USD per MTok, from https://platform.claude.com/docs/en/about-claude/pricing
+    # (read 2026-10-09).
+    EXPECTED = {
+        "claude-opus-5-5": (4.0, 5.0, 8.0, 0.20, 20.0),
+        "claude-sonnet-5-5": (2.0, 2.50, 4.0, 0.10, 10.0),
+        "claude-sonnet-5": (2.0, 2.50, 4.0, 0.20, 10.0),
+    }
+    HAIKU_5_5_TIERS = (
+        (100_000, (0.10, 0.125, 0.20, 0.01, 0.50)),
+        (None, (0.50, 0.625, 1.0, 0.05, 2.50)),
+    )
+
+    @staticmethod
+    def five(rates):
+        return tuple(rates[k] for k in
+                     ("input", "cache_write_5m", "cache_write_1h", "cache_read", "output"))
+
+    def test_flat_entries_match_the_pricing_page(self):
+        models = shipped_models()
+        for model, expected in self.EXPECTED.items():
+            with self.subTest(model=model):
+                self.assertEqual(self.five(models[model]), expected)
+
+    def test_haiku_5_5_tiers_match_the_pricing_page(self):
+        tiers = shipped_models()["claude-haiku-5-5"]["prompt_tiers"]
+        self.assertEqual(
+            [(t.get("max_prompt_tokens"), self.five(t)) for t in tiers],
+            list(self.HAIKU_5_5_TIERS),
+        )
+
+    def test_sonnet_5_introductory_pricing_note_is_gone(self):
+        self.assertNotIn("_note", shipped_models()["claude-sonnet-5"])
+
+    def test_there_is_no_haiku_5(self):
+        self.assertNotIn("claude-haiku-5", shipped_models())
+
+    def test_comment_no_longer_claims_fixed_cache_multipliers(self):
+        with open(REPO_ROOT / "skills" / "paf-shared" / "pricing.json") as fh:
+            comment = json.load(fh)["_comment"]
+        self.assertNotIn("cache read = 0.1x input", comment)
+        self.assertNotIn("follow the documented multipliers", comment)
+
+    def test_opus_and_sonnet_5_5_cache_reads_are_0_05x_input(self):
+        models = shipped_models()
+        for model in ("claude-opus-5-5", "claude-sonnet-5-5"):
+            with self.subTest(model=model):
+                rates = models[model]
+                self.assertAlmostEqual(rates["cache_read"], 0.05 * rates["input"])
+                self.assertNotAlmostEqual(rates["cache_read"], 0.1 * rates["input"])
+
+
+class ShippedPricingCostTests(unittest.TestCase):
+    """Runs on the 5.5 models priced through the real pricing.json: each at its
+    own rates, never a same-family fallback."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.models = shipped_models()
+
+    def price(self, model, **usage):
+        path = Path(self._tmp.name) / "main.jsonl"
+        path.write_text(json.dumps(record("2026-10-09T10:00:00Z", model, mid="m1", **usage)) + "\n")
+        return cost.cost_from_transcripts([path], self.models)
+
+    ALL_FIELDS_1M = dict(
+        input_tokens=1_000_000, output_tokens=1_000_000, cache_read_input_tokens=1_000_000,
+        cache_creation={"ephemeral_5m_input_tokens": 1_000_000,
+                        "ephemeral_1h_input_tokens": 1_000_000},
+    )
+
+    def test_flat_models_price_at_their_own_rates(self):
+        for model, expected in (
+            ("claude-opus-5-5", 37.2),      # 4 + 20 + 5 + 8 + 0.20
+            ("claude-sonnet-5-5", 18.6),    # 2 + 10 + 2.50 + 4 + 0.10
+            ("claude-sonnet-5", 18.7),      # 2 + 10 + 2.50 + 4 + 0.20
+        ):
+            with self.subTest(model=model):
+                result = self.price(model, **self.ALL_FIELDS_1M)
+                self.assertAlmostEqual(result["total_cost_usd"], expected)
+                self.assertEqual(result["fallback_models"], [])
+                self.assertEqual(result["unknown_models"], [])
+
+    def test_haiku_5_5_up_to_100k_prompt_tokens(self):
+        # 50k input + 40k cache read = 90k prompt: the lower tier.
+        result = self.price("claude-haiku-5-5", input_tokens=50_000,
+                            cache_read_input_tokens=40_000, output_tokens=10_000)
+        # 0.05 * 0.10 + 0.04 * 0.01 + 0.01 * 0.50
+        self.assertAlmostEqual(result["total_cost_usd"], 0.0104)
+        self.assertEqual(result["fallback_models"], [])
+
+    def test_haiku_5_5_over_100k_prompt_tokens_counting_cache_reads(self):
+        # 50k input alone is under the threshold; the 60k cache read takes the
+        # prompt to 110k, so the WHOLE request is billed at the higher tier.
+        result = self.price("claude-haiku-5-5", input_tokens=50_000,
+                            cache_read_input_tokens=60_000, output_tokens=10_000)
+        # 0.05 * 0.50 + 0.06 * 0.05 + 0.01 * 2.50
+        self.assertAlmostEqual(result["total_cost_usd"], 0.053)
+        self.assertEqual(result["fallback_models"], [])
+
+    def test_haiku_5_5_over_100k_counting_cache_writes(self):
+        result = self.price("claude-haiku-5-5", input_tokens=1,
+                            cache_creation={"ephemeral_5m_input_tokens": 100_000,
+                                            "ephemeral_1h_input_tokens": 0})
+        # 100,001 prompt tokens: 0.000001 * 0.50 + 0.1 * 0.625
+        self.assertAlmostEqual(result["total_cost_usd"], 0.0625)
+
+    def test_haiku_5_5_exactly_100k_prompt_is_the_lower_tier(self):
+        result = self.price("claude-haiku-5-5", input_tokens=100_000)
+        self.assertAlmostEqual(result["total_cost_usd"], 0.01)  # 0.1 * 0.10, not 0.05
+
+    def test_haiku_5_5_over_100k_counting_1h_cache_writes(self):
+        result = self.price("claude-haiku-5-5", input_tokens=1,
+                            cache_creation={"ephemeral_5m_input_tokens": 0,
+                                            "ephemeral_1h_input_tokens": 100_000})
+        # 100,001 prompt tokens, higher tier: 0.000001 * 0.50 + 0.1 * 1.0
+        self.assertAlmostEqual(result["total_cost_usd"], 0.1, places=5)
+
+    def test_haiku_5_5_over_100k_counting_unbroken_cache_creation(self):
+        result = self.price("claude-haiku-5-5", input_tokens=1,
+                            cache_creation_input_tokens=100_000)
+        # No TTL breakdown: priced as 5m writes, higher tier.
+        self.assertAlmostEqual(result["total_cost_usd"], 0.0625)
+
+    def test_dated_snapshot_of_haiku_5_5_is_not_a_fallback(self):
+        result = self.price("claude-haiku-5-5-20260901", input_tokens=1_000_000)
+        self.assertEqual(result["fallback_models"], [])
+        self.assertAlmostEqual(result["total_cost_usd"], 0.5)  # 1M prompt: the higher tier
+
+    def test_a_genuinely_missing_model_still_falls_back(self):
+        result = self.price("claude-opus-6", input_tokens=1_000_000)
+        self.assertEqual(
+            result["fallback_models"],
+            [{"model": "claude-opus-6", "priced_as": "claude-opus-5-5", "family": "opus"}],
+        )
+        self.assertAlmostEqual(result["total_cost_usd"], 4.0)
 
 
 class CostFromTranscriptsTests(unittest.TestCase):
@@ -434,6 +618,28 @@ class CostFromTranscriptsTests(unittest.TestCase):
         result = cost.cost_from_transcripts([path], PRICING)
         self.assertEqual(result["tokens"]["input"], 2_000_000)
 
+    def test_each_message_is_priced_at_its_own_tier(self):
+        # One message at the cap (lower tier), one over it (higher tier). Priced
+        # in aggregate, 2.2M prompt tokens would all land in the higher tier (22.0).
+        path = self.write("main.jsonl", [
+            record("2026-07-25T10:00:00Z", "claude-haiku-9", mid="m1", input_tokens=1_000_000),
+            record("2026-07-25T10:00:01Z", "claude-haiku-9", mid="m2",
+                   input_tokens=600_000, cache_read_input_tokens=600_000),
+        ])
+        result = cost.cost_from_transcripts([path], TIERED_PRICING)
+        self.assertEqual(result["total_cost_usd"], 13.0)  # 1M * 1 + 1.2M * 10
+
+    def test_unpriced_model_falling_back_onto_a_tiered_entry_is_tiered(self):
+        path = self.write("main.jsonl", [
+            record("2026-07-25T10:00:00Z", "claude-haiku-10", mid="m1", input_tokens=1_000_000),
+            record("2026-07-25T10:00:01Z", "claude-haiku-10", mid="m2", input_tokens=1_100_000),
+        ])
+        result = cost.cost_from_transcripts([path], TIERED_PRICING)
+        self.assertEqual(result["total_cost_usd"], 12.0)  # 1M * 1 + 1.1M * 10
+        self.assertEqual(
+            result["fallback_models"],
+            [{"model": "claude-haiku-10", "priced_as": "claude-haiku-9", "family": "haiku"}],
+        )
 
 def tokens(inp=0, out=0, cache_read=0, cache_write_5m=0, cache_write_1h=0):
     """A ledger entry's `tokens` dict, in the shape `cmd_record` writes."""
@@ -635,6 +841,36 @@ class RecordOutputTests(CliTestCase):
         self.assertIn("latest known sonnet rate (claude-sonnet-5-1)", out)
         self.assertIn('Add the dateless key "claude-3-5-sonnet"', out)
 
+
+
+class ShippedPricingRecordOutputTests(CliTestCase):
+    """`cmd_record` against the real pricing.json's models: a 5.5 run prints no
+    fallback NOTE, and a genuinely missing model still does."""
+
+    SINCE = RecordOutputTests.SINCE
+    record_run = RecordOutputTests.record_run
+
+    def setUp(self):
+        super().setUp()
+        cost.PRICING_PATH.write_text(json.dumps({"models": shipped_models(), "usd_to_eur": 0.5}))
+
+    def test_no_note_for_the_5_5_models(self):
+        for model, eur in (("claude-opus-5-5", "2.00"), ("claude-sonnet-5-5", "1.00"),
+                           ("claude-haiku-5-5", "0.25")):
+            with self.subTest(model=model):
+                out = self.record_run([
+                    record("2026-07-25T10:00:00Z", model, mid="m1", input_tokens=1_000_000),
+                ])
+                self.assertIn(f"Cost: €{eur}", out)
+                self.assertNotIn("NOTE:", out)
+                self.assertNotIn("WARNING", out)
+
+    def test_note_still_fires_for_a_missing_model(self):
+        out = self.record_run([
+            record("2026-07-25T10:00:00Z", "claude-sonnet-6", mid="m1", input_tokens=1_000_000),
+        ])
+        self.assertIn("NOTE: claude-sonnet-6 is not in pricing.json", out)
+        self.assertIn("latest known sonnet rate (claude-sonnet-5-5)", out)
 
 if __name__ == "__main__":
     unittest.main()
