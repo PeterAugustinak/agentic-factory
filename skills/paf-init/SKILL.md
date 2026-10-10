@@ -48,16 +48,19 @@ Print the environment findings with their remedies, then the instructions findin
 - **Everything ok** → print **`PAF ready`** and **stop**. Nothing is written. A `warn` without a finding (an unverified launch directory, the pre-2.1.281 Bedrock caveat) is printed as a note and does not block readiness.
 - **Otherwise** → print **`PAF not ready`**. If there are no instructions findings, stop here. The remaining remedies are the developer's to apply.
 
+Report findings only. Never announce which fix you will apply: the developer chooses at step 4.
+
 **4. Fix gate (human gate).**
-Only when there are instructions findings. Ask **one** `AskUserQuestion` with these options:
+Only when there are instructions findings. Ask **one** `AskUserQuestion`. **Every fix option applies all content findings**; the options differ only in which file gets them and how a hidden `AGENTS.md` is made to load. Keep each option's description to one short line. Options:
 - **Fix the main instructions file** (the loaded `CLAUDE.md`/`AGENTS.md`; with no file at all, create `AGENTS.md`; with an `AGENTS.md` that does not load, create `CLAUDE.md` containing `@AGENTS.md`);
 - **Add a local `CLAUDE.local.md`** (personal, git-ignored);
 - **Delete `CLAUDE.md`**, offered **only** when all three hold:
   - the finding is a hidden `AGENTS.md`;
   - the root `CLAUDE.md` is the **only** file hiding it (`AGENTS_HIDDEN` is set, and no `.claude/CLAUDE.md`, `CLAUDE.local.md` or parent-directory `CLAUDE.md` also hides it);
-  - by meaning, that `CLAUDE.md` holds nothing but a pointer to `AGENTS.md`.
+  - by meaning, that `CLAUDE.md` holds nothing but a pointer to `AGENTS.md`;
+  - the `claude-version` check is `ok` (v2.1.281 or later). On an older or unknown version, sessions can fail to read `AGENTS.md` directly, so the option is not offered (https://code.claude.com/docs/en/memory#agents-md).
 
-  Its description must carry the caveat: sessions that cannot read `AGENTS.md` directly would then have no project instructions. Those are Claude Code before v2.1.277, the built-in AGENTS.md plugin disabled via `/plugin`, the first session after upgrading from v2.1.276 or earlier, and, before v2.1.281, Amazon Bedrock or telemetry-disabled sessions. The `@AGENTS.md` import (the first option) works in all of them. Source: https://code.claude.com/docs/en/memory#agents-md ("Remove the `CLAUDE.md` if it holds nothing else, or keep it if some of your sessions can't load `AGENTS.md` directly").
+  No version caveat in its description: the condition above already rules those sessions out.
 - **Don't fix**.
 
 **Don't fix**, a dismissed prompt or no answer → stop. Nothing is written.
