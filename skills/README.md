@@ -24,6 +24,7 @@ The installer places each skill **flat** at `~/.claude/skills/<skill-name>/`, an
 
 | Skill | Command | Purpose |
 |-------|---------|---------|
+| `init` | `/paf:init` | Check and fix a repository's readiness for PAF (run first in a new repo) |
 | `create-issue` | `/paf:create-issue` | Produce a structured GitHub issue from a feature idea |
 | `implement-issue` | `/paf:implement-issue` | Plan and implement a feature from an approved issue |
 | `check-out` | `/paf:check-out` | Review, fix, and post a PR for completed work |

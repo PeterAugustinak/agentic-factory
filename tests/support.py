@@ -19,6 +19,7 @@ AGENT_GUARD = REPO_ROOT / "hooks" / "PreToolUse-agent-guard.py"
 REPORT_COST = REPO_ROOT / "skills" / "paf-shared" / "paf-report-cost.py"
 PAF_VCS = REPO_ROOT / "skills" / "paf-shared" / "paf-vcs"
 FINGERPRINT = REPO_ROOT / "skills" / "paf-shared" / "paf-fingerprint.py"
+READINESS = REPO_ROOT / "skills" / "paf-shared" / "paf-readiness.py"
 
 
 def load_module(path, name):

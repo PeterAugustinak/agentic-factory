@@ -5,7 +5,7 @@
 1. Create a directory under `skills/`: `skills/<skill-name>/`
 2. Add `skills/<skill-name>/SKILL.md` following `docs/authoring/skill-definition-format.md`
 3. Required frontmatter: `description` (what + when), and `disable-model-invocation: true` — factory skills are explicit-invocation only. Never set `context: fork` (a forked skill runs as a subagent and cannot orchestrate agents).
-4. Skills are orchestrators — they invoke agents, enforce human gates, handle VCS I/O, and report cost. No cognitive work in skill files.
+4. Skills are orchestrators — they invoke agents, enforce human gates, and handle VCS I/O. Every skill also reports cost, except those exempted in `docs/architecture.md` §5. No cognitive work in skill files, except the main-thread exceptions documented in `docs/architecture.md` §2.
 5. Document the new skill in `skills/README.md`, and add its human-facing explanation (diagram, flow) in `docs/skills/<skill-name>.md`
 
 Invoke after install: `/skill-name`
