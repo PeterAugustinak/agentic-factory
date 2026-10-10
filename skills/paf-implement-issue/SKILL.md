@@ -25,7 +25,7 @@ This skill's **verify-fix loop** (step 8) is fixed in the main thread, and its *
 - The issue number is in `$ARGUMENTS`. Read the issue with `paf-vcs` — its description and proposed approach are the starting point.
 - Project context comes from the project instructions (`CLAUDE.md` or `AGENTS.md`, whichever Claude Code loaded): the branch convention (`feature/<issue-number>-<short-description>`), the base branch that feature branches and MRs/PRs target (e.g. `develop`), and the exact **test** command (the scoped, in-loop verification command — this skill never needs the lint or full pre-merge command). The repo and provider are auto-detected from the git `origin` remote. Do not hardcode any of it.
 
-**Strict project-context sourcing.** Every project-specific value (repo, labels, branch convention, test command) comes **only** from *this* project's instructions and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
+**Strict project-context sourcing.** Every project-specific value (repo, branch convention, test command) comes **only** from *this* project's instructions and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 
 ## Parsing agent output
 

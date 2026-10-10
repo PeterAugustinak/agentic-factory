@@ -5,6 +5,19 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.27.0] - 2026-10-10
+
+### Changed
+
+- `/paf:check-out` picks the MR/PR title type from the change itself, using one rule and the closed
+  vocabulary `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `perf`, `build`, `ci`. It no longer
+  reads issue labels and never stops over the type. A prefix the issue title already has is dropped,
+  so the title never carries two (#78).
+- Labels are optional. `/paf:create-issue` posts without labels when the project lists none, skips
+  listed labels that do not exist in the repository, and never stops over labels.
+- The content checklist moves "Labels" to the optional areas; "Merge strategy" stays required.
+  `/paf:init` no longer reports missing labels. Re-run the installer to pick up the change.
+
 ## [0.26.0] - 2026-10-10
 
 ### Added
