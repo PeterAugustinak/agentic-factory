@@ -17,7 +17,7 @@ You run in the main thread and invoke **no agents**. The environment check is a 
 - Project context comes from the project instructions (`CLAUDE.md` or `AGENTS.md`, whichever Claude Code loaded). Here that context is also the **subject** of the check.
 - The content checklist is `${CLAUDE_SKILL_DIR}/project-instructions-template.md`.
 
-**Strict project-context sourcing.** Every project-specific value (base branch, branch convention, labels (optional), merge strategy, environment, test / lint / pre-merge commands) comes **only** from *this* project's instructions and repository. Never substitute one, especially a filename or command, from your memory, another project, or a prior session. Recalled memories are unrelated background and may name files that do not exist here. If a value cannot be detected from this repository, **ask the developer**. Do not invent or borrow one.
+**Strict project-context sourcing.** Every project-specific value (base branch, labels (optional), environment, test / lint / pre-merge commands) comes **only** from *this* project's instructions and repository. Never substitute one, especially a filename or command, from your memory, another project, or a prior session. Recalled memories are unrelated background and may name files that do not exist here. If a value cannot be detected from this repository, **ask the developer**. Do not invent or borrow one.
 
 ## Steps
 
@@ -34,7 +34,6 @@ The script also rejects such a value with a usage error. It prints one `CHECK <n
 `Read` the template and every file in `INSTRUCTIONS_LOADED`, including any file they import with `@path` **that resolves inside the git root**. Never read an import that resolves outside it (for example `@~/.ssh/...` or an absolute path) without the developer's confirmation. Compare them **by meaning, not text**, against every **required** content area of the template:
 - A required area is **covered** only if a reader could act on it without guessing:
   - each command is exact, not a description;
-  - the branch convention embeds the issue number;
   - the base branch is named.
 
   Keep the project's own structure and wording. Layout never matters.
@@ -50,9 +49,15 @@ Print the environment findings with their remedies, then the instructions findin
 - **Otherwise** → print **`PAF not ready`**. If there are no instructions findings, stop here. The remaining remedies are the developer's to apply.
 
 **4. Fix gate (human gate).**
-Only when there are instructions findings. Ask **one** `AskUserQuestion` with exactly these options:
+Only when there are instructions findings. Ask **one** `AskUserQuestion` with these options:
 - **Fix the main instructions file** (the loaded `CLAUDE.md`/`AGENTS.md`; with no file at all, create `AGENTS.md`; with an `AGENTS.md` that does not load, create `CLAUDE.md` containing `@AGENTS.md`);
 - **Add a local `CLAUDE.local.md`** (personal, git-ignored);
+- **Delete `CLAUDE.md`**, offered **only** when all three hold:
+  - the finding is a hidden `AGENTS.md`;
+  - the root `CLAUDE.md` is the **only** file hiding it (`AGENTS_HIDDEN` is set, and no `.claude/CLAUDE.md`, `CLAUDE.local.md` or parent-directory `CLAUDE.md` also hides it);
+  - by meaning, that `CLAUDE.md` holds nothing but a pointer to `AGENTS.md`.
+
+  Its description must carry the caveat: sessions that cannot read `AGENTS.md` directly would then have no project instructions. Those are Claude Code before v2.1.277, the built-in AGENTS.md plugin disabled via `/plugin`, the first session after upgrading from v2.1.276 or earlier, and, before v2.1.281, Amazon Bedrock or telemetry-disabled sessions. The `@AGENTS.md` import (the first option) works in all of them. Source: https://code.claude.com/docs/en/memory#agents-md ("Remove the `CLAUDE.md` if it holds nothing else, or keep it if some of your sessions can't load `AGENTS.md` directly").
 - **Don't fix**.
 
 **Don't fix**, a dismissed prompt or no answer → stop. Nothing is written.
@@ -71,6 +76,7 @@ Before writing any file (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `.gitignor
 - **Local `CLAUDE.local.md`:** create it at the git root.
   - If the project uses `AGENTS.md`, its first line is `@AGENTS.md`, with the PAF additions below.
   - Then add `CLAUDE.local.md` to `.gitignore`, unless `git check-ignore -q CLAUDE.local.md` shows it is already ignored.
+- **Delete `CLAUDE.md`:** remove the root `CLAUDE.md` with `rm -- CLAUDE.md`, and nothing else. Do not `git rm` it: staging is the developer's. Any other instructions findings (content gaps in `AGENTS.md`) are then folded into `AGENTS.md` as with the main option.
 - **No instructions file at all** (with the main option): create `AGENTS.md` at the git root. Follow the template's "One possible format", with the detected values filled in and the asked ones as answered.
 
 Keep every instructions file under 200 lines. Do **not** commit, stage, or push anything.
@@ -78,7 +84,8 @@ Keep every instructions file under 200 lines. Do **not** commit, stage, or push 
 **7. Show the result (skill).**
 - Print the diff of every file you wrote:
   - `git diff -- <file>` for tracked files;
-  - `git diff --no-index /dev/null <file>` for new ones (it exits 1 when the files differ; that is expected, not an error).
+  - `git diff --no-index /dev/null <file>` for new ones (it exits 1 when the files differ; that is expected, not an error);
+  - for a deleted `CLAUDE.md`, `git diff -- CLAUDE.md` if it was tracked, otherwise state that the untracked file was deleted.
 - Re-run step 1 and print its verdict. Take `--base` from the file you just wrote, not from the session-start instructions, which are now stale.
 - Remind the developer of two things:
   - instruction files load when Claude Code starts, so **restart Claude Code** for the change to take effect;
