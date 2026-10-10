@@ -346,7 +346,7 @@ The project's **instructions file** — `CLAUDE.md` or `AGENTS.md`, whichever Cl
 - **No duplication.** A value that exists in the project instructions is never repeated in an agent prompt or skill file. The project instructions hold project-specific context (stack, entry points, conventions, exact test/lint/pre-merge commands, and the optional auto-fix command), kept under ~200 lines. Agent prompts hold only factory-level role, tool scope, and output-contract instructions.
 - **Verification.** The `InstructionsLoaded` hook can log exactly which instruction files reached each agent.(7) It does **not** fire for an `AGENTS.md` read directly through the Project instructions setting — only for one a `CLAUDE.md` imports or symlinks to — so it cannot confirm an `AGENTS.md`-only project.(8)
 
-- **Feature-branch naming is PAF's, not the project's.** Every feature branch is `feature/<issue-number>-<short-description>`. `implement-issue` creates it and `check-out` reads the issue number back out of it to find the issue and the cost ledger, so the pattern is fixed by the factory and is not part of the project instructions.
+- **Feature-branch naming is PAF's, not the project's.** Every feature branch is `feature/<issue-number>-<short-description>`. `implement-issue` creates it and `check-out` reads the issue number back out of it to find the issue and the cost ledger, so the pattern is fixed by the factory and is not part of the project instructions. The merge strategy is not project context either: PAF opens the MR/PR but never merges it; merging is the developer's.
 
 This is why skills do not manually inject project-instruction sections into agents — it is unnecessary given native auto-loading.
 
