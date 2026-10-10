@@ -5,6 +5,21 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.0] - 2026-10-10
+
+### Added
+
+- `/paf:init` offers a fourth fix option, **Delete `CLAUDE.md`**, when a root `CLAUDE.md` that only
+  points to `AGENTS.md` is the sole file hiding it. The option warns that sessions unable to read
+  `AGENTS.md` directly would then have no project instructions.
+
+### Changed
+
+- The project instructions no longer need a branch strategy or a merge strategy. Feature-branch
+  naming (`feature/<issue-number>-<short-description>`) is PAF's own fixed convention; the skills no
+  longer mention merging. `/paf:init` stops asking for both.
+- `/paf:init` checks the content of a hidden `AGENTS.md` too, not just the pointer file hiding it.
+
 ## [0.27.0] - 2026-10-10
 
 ### Changed

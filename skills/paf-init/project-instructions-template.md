@@ -28,24 +28,10 @@ skips entirely when the area is absent.
 
 What the project does, its stack, and its key entry points. Grounds every agent that reads the file.
 
-### Branch strategy
-
-The feature-branch naming convention. **It must embed the issue number** — that is how the factory
-links a branch to its issue and attributes cost to the feature.
-
-> Example: `feature/<issue-number>-<short-description>`
-
-Used by `/paf:implement-issue` (creates the branch) and `/paf:check-out` (derives the issue number
-back out of it).
-
 ### Base branch
 
 The branch feature branches start from and that MRs/PRs target — `develop`, `main`, whatever your
 project uses. Used by `/paf:implement-issue` and `/paf:check-out`.
-
-### Merge strategy
-
-How branches are merged (squash, merge commit, rebase).
 
 ### Environment setup
 
@@ -115,10 +101,8 @@ Primary stack: Django [version], PostgreSQL, deployed via AWS CDK.
 
 ## Project conventions
 
-- **Feature branches:** `feature/<issue-number>-<short-description>`
 - **Base branch (MR/PR target):** `develop`
 - **Labels:** enhancement, bug, documentation
-- **Merge strategy:** squash merge
 
 ## Local development
 

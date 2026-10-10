@@ -30,15 +30,15 @@ It takes no argument. The installer ends with the same hint: *"Using PAF in a re
    - the base branch named in the instructions exists, locally or on `origin`. The name comes from a repository file, so the skill passes it single-quoted and only if it is a plain branch name (letters, digits, `.`, `_`, `/`, `-`, no leading `-`); the script rejects anything else with a usage error;
    - Claude Code was launched from the git root;
    - which project instructions files Claude Code loads, and whether an `AGENTS.md` is hidden.
-2. **Instructions check.** The skill reads the loaded files and the content checklist ([`project-instructions-template.md`](../../skills/paf-init/project-instructions-template.md)). It follows `@path` imports only when they resolve inside the git root (anything else needs the developer's confirmation). It compares them **by meaning, not text**. For every required area that is missing or unusable (for example a test command described in words, or a branch convention without the issue number), it reports the exact text to add.
+2. **Instructions check.** The skill reads the loaded files, any hidden `AGENTS.md` (it holds the project's real instructions, so its gaps are fixed there), and the content checklist ([`project-instructions-template.md`](../../skills/paf-init/project-instructions-template.md)). It follows `@path` imports only when they resolve inside the git root (anything else needs the developer's confirmation). It compares them **by meaning, not text**. For every required area that is missing or unusable (for example a test command described in words, or no base branch), it reports the exact text to add.
 3. **Report.** Everything ok → `PAF ready`, and nothing is written. Otherwise `PAF not ready`, with every finding and its exact fix. Environment problems the skill cannot fix get a clear remedy (install or authenticate the CLI, move to a supported host, upgrade Claude Code, restart from the git root). The instructions check still runs. A `skip` or a `warn` is only a note and never blocks readiness. When an `AGENTS.md` exists but nothing loads it (the `claude-md` setting, or an old Claude Code), the fix is a `CLAUDE.md` containing `@AGENTS.md`, not a second `AGENTS.md`.
-4. **Fix gate.** If the instructions file has findings, one question: **fix the main instructions file**, **add a local `CLAUDE.local.md`**, or **don't fix**.
+4. **Fix gate.** If the instructions file has findings, one question: **fix the main instructions file**, **add a local `CLAUDE.local.md`**, or **don't fix**. A fourth option, **delete `CLAUDE.md`**, is offered only for a hidden `AGENTS.md` whose sole hider is a root `CLAUDE.md` that holds nothing but a pointer to `AGENTS.md`. It carries the caveat that sessions unable to read `AGENTS.md` directly (Claude Code before v2.1.277, the AGENTS.md plugin disabled, the first session after an upgrade from v2.1.276 or earlier, and before v2.1.281 Bedrock or telemetry-disabled sessions) would be left without project instructions. The `@AGENTS.md` import works in all of them ([memory docs](https://code.claude.com/docs/en/memory#agents-md)).
 5. **Fill values.** Values the repository shows (base branch, test/lint/pre-merge commands, labels) are detected. The skill asks only for the rest and never invents one.
 6. **Write.**
    - Main file: missing items are folded into the file's existing sections. A new section is created only where none fits.
    - Local option: `CLAUDE.local.md` starts with `@AGENTS.md` when the project uses `AGENTS.md`, and is added to `.gitignore`.
    - No file at all: a new `AGENTS.md` following the checklist's format.
-   - Hidden `AGENTS.md`: an `@AGENTS.md` line in `CLAUDE.md`.
+   - Hidden `AGENTS.md`: an `@AGENTS.md` line in `CLAUDE.md`, or, with the delete option, `CLAUDE.md` removed (`rm`, never `git rm`).
    - Before any write the skill checks the target is not a symlink leaving the git root. `Write`/`Edit` are deliberately not pre-approved in `allowed-tools`: their permission prompt is a second gate after the fix gate.
 7. **Show.** The diff is printed and the check re-runs, with `--base` taken from the file just written. Nothing is committed. Restart Claude Code so the new instructions load.
 
@@ -82,9 +82,10 @@ The launch directory is read from the Claude Code process (`$CLAUDE_PID`), becau
      v
 +----------------------------------------------+
 | [human gate] fix main / local CLAUDE.local.md|
-|              / don't fix                     |
+|   / delete CLAUDE.md (pointer-only, hidden   |
+|   AGENTS.md) / don't fix                     |
 +----------------------------------------------+
-     | fix                       | don't fix -> stop
+     | fix or delete             | don't fix -> stop
      v
   [skill] detect values; ask only undetectable ones
      |
