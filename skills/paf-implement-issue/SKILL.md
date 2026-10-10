@@ -23,9 +23,9 @@ This skill's **verify-fix loop** (step 8) is fixed in the main thread, and its *
 ## Input
 
 - The issue number is in `$ARGUMENTS`. Read the issue with `paf-vcs` — its description and proposed approach are the starting point.
-- Project context comes from `CLAUDE.md`: the branch convention (`feature/<issue-number>-<short-description>`), the base branch that feature branches and MRs/PRs target (e.g. `develop`), and the exact **test** command (the scoped, in-loop verification command — this skill never needs the lint or full pre-merge command). The repo and provider are auto-detected from the git `origin` remote. Do not hardcode any of it.
+- Project context comes from the project instructions (`CLAUDE.md` or `AGENTS.md`, whichever Claude Code loaded): the branch convention (`feature/<issue-number>-<short-description>`), the base branch that feature branches and MRs/PRs target (e.g. `develop`), and the exact **test** command (the scoped, in-loop verification command — this skill never needs the lint or full pre-merge command). The repo and provider are auto-detected from the git `origin` remote. Do not hardcode any of it.
 
-**Strict project-context sourcing.** Every project-specific value (repo, labels, branch convention, test command) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
+**Strict project-context sourcing.** Every project-specific value (repo, labels, branch convention, test command) comes **only** from *this* project's instructions and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 
 ## Parsing agent output
 
@@ -80,13 +80,13 @@ Call `ExitPlanMode` to present the completed plan for the developer's approval. 
 - **Approved** → the session leaves plan mode into edit mode; continue in the **same context** (the concrete edits are already worked out).
 
 **6. Create the feature branch (skill).**
-After approval, from the base branch defined in `CLAUDE.md`, create and switch to `feature/<issue-number>-<short-description>`, deriving the short description from the issue title. All implementation lands on this branch.
+After approval, from the base branch defined in the project instructions, create and switch to `feature/<issue-number>-<short-description>`, deriving the short description from the issue title. All implementation lands on this branch.
 
 **7. Implement the approved plan (skill, same context).**
 Apply the approved plan's exact edits (`Edit`/`Write`) and run any project commands it requires, on the feature branch — the concrete edits are already decided, so this is applying, not re-exploring, and it includes **every occurrence the plan's sweep (step 4) enumerated**. Do **not** commit or push — you own git state. The step-4 turn discipline holds: batch independent edits into one turn.
 
 **8. Verify (agent).**
-Invoke `implementation-verifier`, telling it the area the change affects. It runs the project's **test** command **exactly as defined in `CLAUDE.md`**, scoped to that area, and returns `status`. **Tests only** — never the project's lint command and never its full pre-merge command: those are `/paf:check-out`'s pre-merge gate, and pulling them into this loop inflates the cost and latency the two-tier split exists to keep low (`docs/architecture.md` §5, "Verification scope — two tiers"). If `CLAUDE.md` defines no test command, **STOP** and ask the developer — never guess a command or reach for one remembered from another project.
+Invoke `implementation-verifier`, telling it the area the change affects. It runs the project's **test** command **exactly as defined in the project instructions**, scoped to that area, and returns `status`. **Tests only** — never the project's lint command and never its full pre-merge command: those are `/paf:check-out`'s pre-merge gate, and pulling them into this loop inflates the cost and latency the two-tier split exists to keep low (`docs/architecture.md` §5, "Verification scope — two tiers"). If the project instructions define no test command, **STOP** and ask the developer — never guess a command or reach for one remembered from another project.
 - **`status: success`** → continue to step 9 (review).
 - **`status: failure`, retries remaining (< 2 done)** → apply the fix yourself **in the same main-thread context that built the code** (still in edit mode) — you already hold the plan and the edits, so there is no re-exploration — informed by the verifier's failure output; then re-invoke `implementation-verifier`. Do **not** delegate the fix to a separate builder agent (see "Why plan mode" above). Do this at most **twice** (initial run + 2 fix-and-reverify cycles). The implementer never verifies its own fix — `implementation-verifier` always re-runs as a separate agent.
 - **`status: failure`, retries exhausted** → **STOP**: print a structured escalation report (what failed, the last `implementation-verifier` output, a suggested next action). The developer adjusts the plan or issue and re-runs `/paf:implement-issue`.
@@ -125,7 +125,7 @@ Do **not** re-run the review agents in this loop, or anywhere else in this invoc
 **12. Hand off for review (skill).**
 Do **not** commit, push, or open an MR/PR. Leave the verified, reviewed changes **uncommitted** on the feature branch so the developer can review them as working-tree changes in their IDE (the clearest review surface). `/paf:check-out` commits the implementation plus the review fixes, pushes, and opens the MR/PR.
 
-Then pin the hand-off, so `/paf:check-out` can tell deterministically whether anything changed on the branch since this reviewed state — and skip its safety-net review when nothing did. Pass the base branch defined in `CLAUDE.md`:
+Then pin the hand-off, so `/paf:check-out` can tell deterministically whether anything changed on the branch since this reviewed state — and skip its safety-net review when nothing did. Pass the base branch defined in the project instructions:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-fingerprint.py" record --issue "<issue-number>" --base "<base-branch>"

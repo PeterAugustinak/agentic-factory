@@ -36,7 +36,7 @@ agentic-factory/
 │   ├── CONTRIBUTING.md       # How to add skills, agents, and hooks
 │   ├── authoring/            # How to author a component (agent/skill definition formats)
 │   ├── skills/               # Per-skill documentation (diagram + how it works)
-│   └── templates/            # CLAUDE-template.md — CLAUDE.md content checklist for adopting projects
+│   └── templates/            # project-instructions-template.md — content checklist for adopting projects
 ├── CLAUDE.md       # This file
 └── README.md       # Project overview and install command
 ```

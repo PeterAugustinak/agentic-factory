@@ -17,9 +17,9 @@ You are the orchestrator running in the main thread. You chain the safety-net an
 ## Input
 
 - Operates on the **current feature branch**. Derive the issue number from the branch name (`feature/<issue-number>-<...>`); `$ARGUMENTS` overrides it. Read the issue with `paf-vcs` — its acceptance criteria are the spec `quality-assurer` checks against.
-- Project context from `CLAUDE.md`: the MR/PR base branch (e.g. `develop`), the full pre-merge validation command, the **optional** auto-fix command (step 4; many projects define none, which is not an error), and the merge strategy. The repo and provider are auto-detected from the git `origin` remote.
+- Project context from the project instructions (`CLAUDE.md` or `AGENTS.md`, whichever Claude Code loaded): the MR/PR base branch (e.g. `develop`), the full pre-merge validation command, the **optional** auto-fix command (step 4; many projects define none, which is not an error), and the merge strategy. The repo and provider are auto-detected from the git `origin` remote.
 
-**Strict project-context sourcing.** Every project-specific value (repo, base branch, pre-merge validation command, auto-fix command, merge strategy) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
+**Strict project-context sourcing.** Every project-specific value (repo, base branch, pre-merge validation command, auto-fix command, merge strategy) comes **only** from *this* project's instructions and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 - **Robust to either state.** `/paf:implement-issue` leaves the work uncommitted, but the developer may have committed it during review. Compute the change to review as the branch's full diff against the base (`git diff <base>`), which covers committed **and** uncommitted changes, so this skill works either way.
 
 ## Parsing agent output
@@ -62,10 +62,10 @@ Invoke `quality-assurer` with the final change and the issue's acceptance criter
 - **All met** → continue.
 
 **4. Pre-merge validation (skill).**
-Run the project's **full** pre-merge validation command **exactly as defined in `CLAUDE.md`** (the whole test + lint suite — the safety net a scoped run cannot see). If `CLAUDE.md` defines no such command, **STOP** and ask the developer — never guess one or reach for a script remembered from another project.
+Run the project's **full** pre-merge validation command **exactly as defined in the project instructions** (the whole test + lint suite — the safety net a scoped run cannot see). If the project instructions define no such command, **STOP** and ask the developer — never guess one or reach for a script remembered from another project.
 - **Passes** → continue.
-- **Fails, and `CLAUDE.md` defines no auto-fix command** → **STOP** and escalate.
-- **Fails, and `CLAUDE.md` defines an auto-fix command** → run **that** command, **exactly as defined there** — never a tool, flag, or invocation you chose yourself, and never in place of the developer's judgement — then re-run the pre-merge validation command **once**:
+- **Fails, and the project instructions define no auto-fix command** → **STOP** and escalate.
+- **Fails, and the project instructions define an auto-fix command** → run **that** command, **exactly as defined there** — never a tool, flag, or invocation you chose yourself, and never in place of the developer's judgement — then re-run the pre-merge validation command **once**:
   - **Now passes** → the failures were mechanically resolvable and the project's own tooling resolved them. Continue, and report what the auto-fix changed (`git diff --stat` is enough) so it shows up in the developer's picture of the branch.
   - **Still fails** → **STOP** and escalate with the residual failures. Do **not** hand-edit code to make the gate pass, and do not run the auto-fix again.
 
@@ -96,7 +96,7 @@ and remove the feature's hand-off fingerprint on the same lifecycle:
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-fingerprint.py" clear --issue "<issue-number>"
 ```
 
-Then open the MR/PR against the base branch from `CLAUDE.md`, passing the description on stdin (source branch is inferred by the adapter). The issue title is attacker-influenceable text (anyone who can file an issue controls it) — never paste it directly into a double-quoted command-line argument, where a title containing `"`, a backtick, `$(...)`, `;`, or `&&` could break out and run arbitrary shell code with your git/gh/glab credentials. Instead, first bind the resolved title to a shell variable via a **single-quoted** assignment — escaping any single quote in the title as `'\''` (the standard technique for embedding arbitrary text inside a single-quoted shell string) — then pass the variable, never the raw text, as `--title`:
+Then open the MR/PR against the base branch from the project instructions, passing the description on stdin (source branch is inferred by the adapter). The issue title is attacker-influenceable text (anyone who can file an issue controls it) — never paste it directly into a double-quoted command-line argument, where a title containing `"`, a backtick, `$(...)`, `;`, or `&&` could break out and run arbitrary shell code with your git/gh/glab credentials. Instead, first bind the resolved title to a shell variable via a **single-quoted** assignment — escaping any single quote in the title as `'\''` (the standard technique for embedding arbitrary text inside a single-quoted shell string) — then pass the variable, never the raw text, as `--title`:
 
 ```
 title='<type>: <issue title>'
@@ -131,7 +131,7 @@ Closes #<issue-number>.
 
 Rules for filling it in:
 - **Cost section** — appended **verbatim** from the `paf-report-cost.py aggregate` output above (its heading and table, as printed). Never authored or reformatted by you. It gives the reviewer — who has no access to this CLI session — the whole feature's cost.
-- **Validation section** — carries the pre-merge validation command **exactly as `CLAUDE.md` defines it** (the same command step 4 ran; never hardcoded, never one remembered from another project) plus the result summary from its **actual** output. Says nothing about the factory's internal agent gates (the reviews, the spec check).
+- **Validation section** — carries the pre-merge validation command **exactly as the project instructions define it** (the same command step 4 ran; never hardcoded, never one remembered from another project) plus the result summary from its **actual** output. Says nothing about the factory's internal agent gates (the reviews, the spec check).
 - **Deviations section** — inferred from the issue body and the `git diff <base>` already in context from step 1, under a strict anchoring rule: report **only** what the issue *explicitly states* — in its Approach, Scope of changes, or acceptance criteria — and the implementation does differently, phrased "what the issue said → what was built". No hedging, no speculation. When nothing anchors, **omit the whole section** — no "None." placeholder.
 - **Never include** — rationale or a "why" section, a changed-files list or per-file narration, trade-off discussion, agent-review findings or statistics, or version-bump notes. A reviewer who wants that level of intent detail finds it in the linked issue.
 - **No `🤖 Generated with [Claude Code]` trailer.**

@@ -177,7 +177,7 @@ Per `architecture.md` §5 there are **two** fix loops, each capped the same way:
 
 ## Git handling
 
-The skill owns git state (`architecture.md` §2). After the plan is approved it creates the `feature/<issue>-<short-description>` branch from the base branch (`CLAUDE.md`) and implements on it, but **leaves the changes uncommitted**. This is deliberate: uncommitted working-tree changes are the clearest review surface — the developer sees every added/modified file highlighted in the IDE, with per-file diffs, instead of having to diff `HEAD` against the base. Because the project uses **squash merge**, deferring the commit costs nothing in history.
+The skill owns git state (`architecture.md` §2). After the plan is approved it creates the `feature/<issue>-<short-description>` branch from the base branch (project instructions) and implements on it, but **leaves the changes uncommitted**. This is deliberate: uncommitted working-tree changes are the clearest review surface — the developer sees every added/modified file highlighted in the IDE, with per-file diffs, instead of having to diff `HEAD` against the base. Because the project uses **squash merge**, deferring the commit costs nothing in history.
 
 `/paf:check-out` then commits the implementation plus the review fixes, pushes the branch, and opens the MR/PR. The intended flow is tight — implement → review → check-out — so the uncommitted window is short.
 

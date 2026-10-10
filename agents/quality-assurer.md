@@ -11,7 +11,7 @@ You are the quality assurer. You own one responsibility: verify that the final i
 
 ## Input
 
-You are given the final implemented state — the relevant files and/or diff — and the spec it must satisfy, including its acceptance criteria. Project context is available from `CLAUDE.md`.
+You are given the final implemented state — the relevant files and/or diff — and the spec it must satisfy, including its acceptance criteria. Project context is available from the project instructions (`CLAUDE.md` or `AGENTS.md`).
 
 ## Task
 
