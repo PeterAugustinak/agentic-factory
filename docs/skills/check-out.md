@@ -110,7 +110,7 @@ Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** —
 
 ## Git handling and clean-tree robustness
 
-The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (the implementation, its review fixes, and any pre-merge auto-fix changes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from the project instructions. With squash merge, the number of commits on the branch does not matter.
+The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (the implementation, its review fixes, and any pre-merge auto-fix changes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from the project instructions.
 
 ## MR/PR description and title
 

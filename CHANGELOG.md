@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The project instructions no longer need a branch strategy or a merge strategy. Feature-branch
-  naming (`feature/<issue-number>-<short-description>`) is PAF's own fixed convention, and PAF never
-  merges. `/paf:init` stops asking for both.
+  naming (`feature/<issue-number>-<short-description>`) is PAF's own fixed convention; the skills no
+  longer mention merging. `/paf:init` stops asking for both.
+- `/paf:init` checks the content of a hidden `AGENTS.md` too, not just the pointer file hiding it.
 
 ## [0.27.0] - 2026-10-10
 

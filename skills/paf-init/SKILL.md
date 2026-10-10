@@ -31,7 +31,7 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-readiness.py" [--base='<base-bran
 The script also rejects such a value with a usage error. It prints one `CHECK <name> <ok|warn|fail|skip> <message>` line per check and a `REMEDY <name> <fix>` line for every `warn` or `fail`. It also prints `INSTRUCTIONS_LOADED`, `AGENTS_HIDDEN` and `VERDICT` (environment only). Keep the whole output. A `fail` the skill cannot fix (CLI missing or unauthenticated, unsupported host, old Claude Code, not launched from the git root) makes the repo **not ready**. A `skip` or a `warn` is a note and never blocks readiness. Step 2 still runs.
 
 **2. Instructions check (skill, main thread).**
-`Read` the template and every file in `INSTRUCTIONS_LOADED`, including any file they import with `@path` **that resolves inside the git root**. Never read an import that resolves outside it (for example `@~/.ssh/...` or an absolute path) without the developer's confirmation. Compare them **by meaning, not text**, against every **required** content area of the template:
+`Read` the template, every file in `INSTRUCTIONS_LOADED` and every file in `AGENTS_HIDDEN`, including any file they import with `@path` **that resolves inside the git root**. A hidden `AGENTS.md` holds the project's real instructions, so it is part of the content check, and its gaps are fixed in `AGENTS.md` itself. Never read an import that resolves outside it (for example `@~/.ssh/...` or an absolute path) without the developer's confirmation. Compare them **by meaning, not text**, against every **required** content area of the template:
 - A required area is **covered** only if a reader could act on it without guessing:
   - each command is exact, not a description;
   - the base branch is named.
@@ -76,7 +76,7 @@ Before writing any file (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `.gitignor
 - **Local `CLAUDE.local.md`:** create it at the git root.
   - If the project uses `AGENTS.md`, its first line is `@AGENTS.md`, with the PAF additions below.
   - Then add `CLAUDE.local.md` to `.gitignore`, unless `git check-ignore -q CLAUDE.local.md` shows it is already ignored.
-- **Delete `CLAUDE.md`:** remove the root `CLAUDE.md` with `rm -- CLAUDE.md`, and nothing else. Do not `git rm` it: staging is the developer's. Any other instructions findings (content gaps in `AGENTS.md`) are then folded into `AGENTS.md` as with the main option.
+- **Delete `CLAUDE.md`:** remove the root `CLAUDE.md` with `rm -- CLAUDE.md`, and nothing else. Do not `git rm` it: staging is the developer's. Content gaps found in `AGENTS.md` (step 2) are then folded into `AGENTS.md` as with the main option.
 - **No instructions file at all** (with the main option): create `AGENTS.md` at the git root. Follow the template's "One possible format", with the detected values filled in and the asked ones as answered.
 
 Keep every instructions file under 200 lines. Do **not** commit, stage, or push anything.
