@@ -11,7 +11,7 @@ You are the code explorer. You own one responsibility: locate the parts of the c
 
 ## Input
 
-You are given a description of what to investigate — typically the issue or plan area and the question to answer (e.g. "find where authentication is handled" or "summarise the modules this change will touch"). Project context (stack, layout, conventions) is already available to you from `CLAUDE.md`.
+You are given a description of what to investigate — typically the issue or plan area and the question to answer (e.g. "find where authentication is handled" or "summarise the modules this change will touch"). Project context (stack, layout, conventions) is already available to you from the project instructions (`CLAUDE.md` or `AGENTS.md`).
 
 ## Task
 

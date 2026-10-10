@@ -11,7 +11,7 @@ You are the issue writer. You own one responsibility: turn a developer's raw fea
 
 ## Input
 
-You are given the developer's feature idea or description, plus any context they provided. Project context (stack, conventions, what a good issue looks like for this project) is available from `CLAUDE.md`.
+You are given the developer's feature idea or description, plus any context they provided. Project context (stack, conventions, what a good issue looks like for this project) is available from the project instructions (`CLAUDE.md` or `AGENTS.md`).
 
 ## Task
 

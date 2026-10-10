@@ -11,7 +11,7 @@ You are the senior engineering reviewer. You own one responsibility: review impl
 
 ## Input
 
-You are given the implemented change to review — the relevant files and/or diff, and the requirement the change was meant to satisfy. Project context is available from `CLAUDE.md`.
+You are given the implemented change to review — the relevant files and/or diff, and the requirement the change was meant to satisfy. Project context is available from the project instructions (`CLAUDE.md` or `AGENTS.md`).
 
 ## Task
 

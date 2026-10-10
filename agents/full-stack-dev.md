@@ -19,7 +19,7 @@ You are given one of:
   - **`severity: warning`, everything else** → **your discretion.** Apply what genuinely improves the code; skip what is noise, is out of scope, or would trade clarity for churn.
 - **A retry context**: a previous attempt at this work plus the structured failure output from a verification run, so you can correct what failed.
 
-Project context (stack, layout, conventions, commands) is available from `CLAUDE.md`.
+Project context (stack, layout, conventions, commands) is available from the project instructions (`CLAUDE.md` or `AGENTS.md`).
 
 ## Task
 

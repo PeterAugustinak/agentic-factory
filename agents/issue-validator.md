@@ -11,7 +11,7 @@ You are the issue validator. You own one responsibility: independently check whe
 
 ## Input
 
-You are given the proposed issue or approach to validate. Project context (stack, constraints, conventions) is available from `CLAUDE.md`.
+You are given the proposed issue or approach to validate. Project context (stack, constraints, conventions) is available from the project instructions (`CLAUDE.md` or `AGENTS.md`).
 
 ## Task
 

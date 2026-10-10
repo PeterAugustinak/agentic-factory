@@ -16,9 +16,9 @@ You are the orchestrator running in the main thread. You invoke the `issue-write
 
 This skill runs inline in the current conversation, so **the prior discussion of the idea is already in your context** — use it as the primary input. `$ARGUMENTS` may carry a short seed if the developer invoked the skill with one, but it is optional and does not replace the conversation. Heavy exploration of the idea (e.g. via `/grill-me`) happens in the conversation *before* this skill; this skill concludes that discussion into an issue.
 
-Project context — the repo and provider are auto-detected from the git `origin` remote (via `paf-vcs`; no CLAUDE.md field needed); any standard labels come from `CLAUDE.md`. Do not hardcode either.
+Project context — the repo and provider are auto-detected from the git `origin` remote (via `paf-vcs`; no project-instructions field needed); any standard labels come from the project instructions (`CLAUDE.md` or `AGENTS.md`, whichever Claude Code loaded). Do not hardcode either.
 
-**Strict project-context sourcing.** Every project-specific value (repo, labels) comes **only** from *this* project's `CLAUDE.md` and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name things that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
+**Strict project-context sourcing.** Every project-specific value (repo, labels) comes **only** from *this* project's instructions and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name things that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 
 ## Steps
 

@@ -44,7 +44,7 @@ PAF agents set none of the other supported frontmatter fields (`disallowedTools`
 
 ## Body (system prompt)
 
-The markdown body after the frontmatter becomes the agent's system prompt. A subagent receives **only this body plus basic environment details** — not the main Claude Code system prompt, and not `architecture.md`.(5) Project context arrives separately because `CLAUDE.md` auto-loads into every agent (`architecture.md` §6). Everything else the agent needs must be in this body.
+The markdown body after the frontmatter becomes the agent's system prompt. A subagent receives **only this body plus basic environment details** — not the main Claude Code system prompt, and not `architecture.md`.(5) Project context arrives separately because the project instructions (`CLAUDE.md` or `AGENTS.md`) auto-load into every agent (`architecture.md` §6). Everything else the agent needs must be in this body.
 
 Every PAF agent body has the same five sections, in this order:
 

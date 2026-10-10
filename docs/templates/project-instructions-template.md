@@ -1,14 +1,22 @@
-# CLAUDE.md content checklist
+# Project instructions content checklist
 
-`CLAUDE.md` at the root of your project is the **single source of project context** for PAF. It is
-loaded automatically into the main thread and into every agent, so PAF's skills read their
+Your project's **instructions file** — `CLAUDE.md` or `AGENTS.md` at the project root — is the
+**single source of project context** for PAF. PAF does not require either name: Claude Code loads
+whichever one your project has into the main thread and into every agent, so PAF's skills read their
 project-specific values from it and nowhere else — never from an operator's memory, another project,
 or a prior session. If a value a step needs is missing, the skill **STOPs and asks you** rather than
 inventing one.
 
-This is a checklist of the **content areas** your `CLAUDE.md` must cover — not a format. Keep your
-project's existing structure, headings, and voice; PAF reads meaning, not layout. Keep the file under
-200 lines: project-specific context only, no skill logic, agent prompts, or hook scripts. The
+**Which file Claude Code loads.** An `AGENTS.md` is read only when there is no `CLAUDE.md`,
+`.claude/CLAUDE.md`, or `CLAUDE.local.md` in the working directory or above it (Claude Code v2.1.277
+or later). If your project has both, by default only `CLAUDE.md` loads — put `@AGENTS.md` in it to
+include the shared file, or set **Project instructions** to `claude-md-and-agents-md` in `/config`.
+Note that a personal `CLAUDE.local.md` alone is enough to hide an `AGENTS.md`.
+Source: https://code.claude.com/docs/en/memory#agents-md
+
+This is a checklist of the **content areas** your instructions file must cover — not a format. Keep
+your project's existing structure, headings, and voice; PAF reads meaning, not layout. Keep the file
+under 200 lines: project-specific context only, no skill logic, agent prompts, or hook scripts. The
 required areas come first; a short list of **optional** areas follows, each enabling a behaviour PAF
 skips entirely when the area is absent.
 

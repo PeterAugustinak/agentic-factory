@@ -25,7 +25,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 1. **Confirm & gather** (skill) — confirm the developer validated the implementation; read the issue's acceptance criteria; compute the change as the branch's diff vs base (committed **or** uncommitted); then compare the branch to `/paf:implement-issue`'s **hand-off fingerprint** (`paf-fingerprint.py check`), which prints `VERDICT=skip` or `VERDICT=review`.
 2. **Safety-net review** — **skipped** only when the output has exactly one `VERDICT=` line and it is `VERDICT=skip` (the content is identical to the deep-reviewed hand-off, so there are no hand-edits to review); the skip and its reason are printed, never silent. Anything else — content changed (committed or not), no fingerprint, an unreadable record, a failed check — runs it exactly as before: `senior-engineer-reviewer`, invoked as a **high-level confirmation pass** (framed at the call site: already deep-reviewed in `implement-issue`; the hand-edits can't be isolated from that reviewed implementation, so it's handed the whole branch diff — look for critical regressions, especially the developer's hand-edits, and don't re-litigate the already-reviewed implementation). The skill computes the gate itself from the findings' severity: `error` **STOPs**, `warning` is surfaced but does not block.
 3. **Final spec check** — `quality-assurer` confirms every acceptance criterion; unmet **STOPs**.
-4. **Pre-merge validation** (skill) — the project's **full** test + lint suite. On failure, if `CLAUDE.md` defines an **optional auto-fix command**, the skill runs that command exactly as defined and re-validates **once**: passing means the failures were mechanically resolvable and the run continues (reporting what changed); anything still failing needs judgement and **STOPs**. With no auto-fix command defined, failure **STOPs** as before.
+4. **Pre-merge validation** (skill) — the project's **full** test + lint suite. On failure, if the project instructions (`CLAUDE.md` or `AGENTS.md`) define an **optional auto-fix command**, the skill runs that command exactly as defined and re-validates **once**: passing means the failures were mechanically resolvable and the run continues (reporting what changed); anything still failing needs judgement and **STOPs**. With no auto-fix command defined, failure **STOPs** as before.
 5. **Commit & push** (skill) — commit whatever is still uncommitted; push.
 6. **Record cost** (skill) — append this run's cost to the per-feature ledger.
 7. **Total & PR** (skill) — total the whole feature across all three main skills, clear the hand-off fingerprint with the ledger, and open the PR using the **fixed description template** (Closes line, What this implements, Validation, Deviations, cost table) under a title pinned to the issue title with a conventional-commit type prefix.
@@ -62,7 +62,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
      |
      v  (met)
 +----------------------------------------------+
-| [skill] full pre-merge validation (CLAUDE.md)|
+| [skill] full pre-merge validation (instr.)   |
 +----------------------------------------------+
      |--- fail + auto-fix cmd defined -> run it once,
      |    re-validate: pass -> continue (report what
@@ -111,7 +111,7 @@ Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** —
 
 ## Git handling and clean-tree robustness
 
-The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (the implementation, its review fixes, and any pre-merge auto-fix changes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from `CLAUDE.md`. With squash merge, the number of commits on the branch does not matter.
+The skill owns git/GitHub state. It computes the change to review as `git diff <base>`, so it works whether `/paf:implement-issue` left the work uncommitted **or** the developer committed it during review. At the end it commits whatever is still uncommitted (the implementation, its review fixes, and any pre-merge auto-fix changes) — nothing if the tree is already clean — pushes the branch, and opens the PR against the base branch from the project instructions. With squash merge, the number of commits on the branch does not matter.
 
 ## MR/PR description and title
 
@@ -140,7 +140,7 @@ Closes #<issue-number>.
 ```
 
 - The **cost section** is appended **verbatim** from `paf-report-cost.py aggregate` — heading and table as printed, never authored or reformatted by the model.
-- **Validation** carries the pre-merge command exactly as `CLAUDE.md` defines it (the same command step 4 ran, never hardcoded) plus the result summary from its actual output. It says nothing about the factory's internal agent gates.
+- **Validation** carries the pre-merge command exactly as the project instructions define it (the same command step 4 ran, never hardcoded) plus the result summary from its actual output. It says nothing about the factory's internal agent gates.
 - **Deviations** is anchored strictly: only what the issue *explicitly states* — in its Approach, Scope of changes, or acceptance criteria — and the implementation does differently, phrased "what the issue said → what was built", with no hedging or speculation. When nothing anchors, the section is **omitted entirely** — there is no "None." placeholder.
 - The body must **not** contain rationale or a "why" section, a changed-files list or per-file narration, trade-off discussion, agent-review findings or statistics, or version-bump notes — a reviewer who wants that intent detail finds it in the linked issue, which is what the `Closes` line points at. There is no `🤖 Generated with [Claude Code]` trailer.
 - `Closes #<issue-number>` is **always** written, regardless of the base branch. (On both GitHub and GitLab, auto-closing the issue on merge only fires when the MR/PR targets the repository's default branch — but that is a platform behaviour, not something to conditionally implement: the line itself is unconditional.)

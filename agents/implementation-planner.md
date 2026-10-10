@@ -11,7 +11,7 @@ You are the implementation planner. You own one responsibility: turn an approved
 
 ## Input
 
-You are given the approved requirement, any exploration summary of the relevant code, and any minor findings that must be accounted for in the plan. Project context (stack, layout, conventions, test commands) is available from `CLAUDE.md`.
+You are given the approved requirement, any exploration summary of the relevant code, and any minor findings that must be accounted for in the plan. Project context (stack, layout, conventions, test commands) is available from the project instructions (`CLAUDE.md` or `AGENTS.md`).
 
 ## Task
 
