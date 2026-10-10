@@ -5,7 +5,7 @@ Your project's **instructions file** — `CLAUDE.md` or `AGENTS.md` at the proje
 whichever one your project has into the main thread and into every agent, so PAF's skills read their
 project-specific values from it and nowhere else — never from an operator's memory, another project,
 or a prior session. If a value a step needs is missing, the skill **STOPs and asks you** rather than
-inventing one.
+inventing one. Run `/paf:init` in a repository to check its instructions file against this list.
 
 **Which file Claude Code loads.** An `AGENTS.md` is read only when there is no `CLAUDE.md`,
 `.claude/CLAUDE.md`, or `CLAUDE.local.md` in the working directory or above it (Claude Code v2.1.277

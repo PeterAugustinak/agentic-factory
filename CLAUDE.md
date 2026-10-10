@@ -6,8 +6,9 @@ Guidance for agents (and humans) working **on** the factory itself. This file mu
 
 PAF (Personal Agentic Factory) is a set of Claude Code skills, agents, and hooks that take a feature
 from idea to merge request. It is not an application — it is installed into a user's `~/.claude`
-config by `scripts/install.sh`. Entry points: the three main skills in `skills/` (`/paf:create-issue`,
-`/paf:implement-issue`, `/paf:check-out`), the specialist agents in `agents/`, and the
+config by `scripts/install.sh`. Entry points: the skills in `skills/` — `/paf:init` (repository
+readiness) and the three main pipeline skills (`/paf:create-issue`, `/paf:implement-issue`,
+`/paf:check-out`) — the specialist agents in `agents/`, and the
 `PreToolUse` enforcement hook in `hooks/`.
 
 ## No guessing — verify everything
@@ -36,14 +37,14 @@ agentic-factory/
 │   ├── CONTRIBUTING.md       # How to add skills, agents, and hooks
 │   ├── authoring/            # How to author a component (agent/skill definition formats)
 │   ├── skills/               # Per-skill documentation (diagram + how it works)
-│   └── templates/            # project-instructions-template.md — content checklist for adopting projects
+│   └── templates/            # Pointer to the content checklist (skills/paf-init/project-instructions-template.md)
 ├── CLAUDE.md       # This file
 └── README.md       # Project overview and install command
 ```
 
 ## Quick reference
 
-**Adding a skill:** `skills/<name>/SKILL.md` — orchestrator only, explicit invocation, must report cost. See `docs/CONTRIBUTING.md`.
+**Adding a skill:** `skills/<name>/SKILL.md` — orchestrator only, explicit invocation, must report cost (exemptions: `docs/architecture.md` §5). See `docs/CONTRIBUTING.md`.
 
 **Adding an agent:** `agents/<name>.md` — specialist only, no orchestration. Output must follow the contract in `docs/architecture.md` Section 4. See `docs/CONTRIBUTING.md`.
 

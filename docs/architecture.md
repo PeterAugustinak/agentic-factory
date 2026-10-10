@@ -65,6 +65,10 @@ Running the build phase in the main thread means its file writes are **not** sub
 
 The main-thread implementer also carries the builder's **sweep** obligation (§1, Builder): a fact, rule, or name the change touches is updated in **every** place the repository states it, located while planning and applied with the rest of the approved plan. The sweep is inherent to *authoring a change*, so it binds whichever owner authors it — the main-thread plan→build path here (the dominant authoring path, and the one that writes the plan's edits), and the delegated builder agent in the review-fix loop. Here the `ExitPlanMode` gate is where the developer sees the swept occurrences before any write.
 
+#### Main-thread readiness check (`init`)
+
+A second deliberate exception to "cognitive work is delegated to agents": `init` compares the project instructions file against the content checklist **in the main thread**, without agents. The comparison is by meaning (does the file name an exact test command, a branch convention that embeds the issue number), which is cognitive work, but delegating it would buy nothing. An agent would start cold and re-read the same instructions file and template the main thread already holds. The skill also needs the main thread anyway, to ask the developer through `AskUserQuestion` (main-thread-only, (2)) and to write the fix. The deterministic part of the check (git, the `origin` host, the VCS CLI, the Claude Code version, which instructions file loads) is a stdlib script, `paf-shared/paf-readiness.py`, run in one call. `init` reuses `paf-vcs` for the host and CLI rules, so they stay single-sourced. Like the plan→build phase, its writes are main-thread writes outside the hook's agent-scoped path containment (§3). They only happen after the developer picks a fix at the skill's single `AskUserQuestion`, and nothing is committed.
+
 **The review tail, and why there are two fix-owners.** After verification passes, `implement-issue` continues into a **deep review**: the review agents run in parallel over the implemented change, a builder agent triages and applies their findings, and the verifier re-runs. This review sits **here**, in `implement-issue`, and not in `check-out` — a deliberate reversal of the original sequencing. Placed in `check-out`, the automated review ran *after* the developer's manual review at interception 2, so the fixes it produced changed code the developer had already signed off, forcing them to re-review and re-test it. Reviewing before the hand-off means the developer's manual review lands on already-reviewed-and-fixed code. It also sharpens the per-skill responsibilities: `implement-issue` owns *producing correct, clean, reviewed code*; `check-out` owns *confirming and shipping it* (§5).
 
 This gives `implement-issue` two fix loops with two different owners, which is consistent rather than contradictory. The **verify-fix loop** repairs the build itself and therefore stays in the **main thread**: that context still holds the plan and the exact edits, so a cold builder agent would only re-derive them — precisely the cost this section exists to avoid. The **review-fix loop** is delegated to a builder agent, because applying a *discrete list of findings* is not a re-build: each finding names its own location and remedy, so nothing must be re-derived and the cold-context penalty does not arise. Delegating it also returns those writes to the hook's agent-scoped path containment (§3), which main-thread writes do not get. The rule is one rule: keep work in-context when losing the context would cost re-derivation, delegate it when it would not.
@@ -107,6 +111,10 @@ The project instructions (`CLAUDE.md` or `AGENTS.md`) are loaded automatically i
 Each diagram reads top → bottom; a right-side channel (`<-+`) routes a branch back to an earlier step or forward past skipped steps.
 
 Once a skill is implemented, its detailed, up-to-date flow lives in its own document under `docs/<skill>.md`; the maps below are the design intent for skills not yet built and are relocated to the per-skill doc as each is built.
+
+#### `init`
+
+Implemented — see [`docs/skills/init.md`](skills/init.md) for the current flow and explanation. It is a setup and health check run before the main skills, not part of the feature pipeline.
 
 #### `create-issue`
 
@@ -300,7 +308,11 @@ The skill never proceeds on a partial or guessed parse.
 
 ### Cost reporting
 
-Every skill run ends with a single report of the **token cost of that invocation**.
+Every skill run ends with a single report of the **token cost of that invocation** — except the skills listed here, which report no cost:
+
+- `init` — a setup and health check run before any feature exists, so there is no issue to key a ledger entry on (below).
+
+A new skill reports cost by default; exempting one means adding it to this list with its reason.
 
 - Cost is **not** self-reported by agents. The skill computes it from the session transcript at `transcript_path`, which records per-message `usage` (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) and `model`, enabling correct per-model pricing.(7) (9)
 - **Per-invocation slice, not the whole session.** A skill marks its start at its first step and prices only the transcript slice from that mark onward (main-thread and subagent messages alike). This is required because multiple skills can run in **one** CLI session (see the aggregation note below): pricing the whole transcript would re-price an earlier skill's tokens and inflate the feature total, and a `create-issue` run inside a large multi-day session would price the entire session. Each run is therefore costed as a disjoint slice.

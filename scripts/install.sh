@@ -147,3 +147,4 @@ for s in "${installed_skills[@]}"; do
 done
 echo
 echo "Start a new Claude Code session (or restart) to pick up the skills."
+echo "Using PAF in a repo for the first time? Run /paf:init there first."

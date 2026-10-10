@@ -5,6 +5,25 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.0] - 2026-10-10
+
+### Added
+
+- `/paf:init` checks whether a repository is ready for PAF and fixes its project instructions file.
+  It checks the git `origin` host, the `gh`/`glab` CLI and its authentication, `python3`, the
+  Claude Code version, the base branch, launching from the git root, and which instructions file
+  Claude Code loads. It then compares that file by meaning against the content checklist. It is
+  idempotent: on a ready repository it prints "PAF ready" and changes nothing (#77).
+- `skills/paf-shared/paf-readiness.py` runs the environment checks in one call.
+
+### Changed
+
+- The content checklist moved from `docs/templates/` into `skills/paf-init/`, so it is installed;
+  `docs/templates/` now points to it.
+- Every skill reports cost except those listed as exempt in `docs/architecture.md` §5; `/paf:init` is
+  the first exemption.
+- The installer ends with a hint to run `/paf:init` in a repository used with PAF for the first time.
+
 ## [0.25.1] - 2026-10-10
 
 ### Changed
