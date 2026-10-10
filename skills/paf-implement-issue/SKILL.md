@@ -120,10 +120,18 @@ Re-invoke `implementation-verifier` (same scoping rules as step 8): step 10 may 
 - **`status: failure`, retries remaining (< 2 done)** → re-invoke `full-stack-dev` with the verifier's failure output to fix it, then re-invoke `implementation-verifier`. At most **twice** (initial run + 2 fix-and-reverify cycles) — the same policy as step 8.
 - **`status: failure`, retries exhausted** → **STOP**: print a structured escalation report (what failed, the last `implementation-verifier` output, a suggested next action).
 
-Do **not** re-run the review agents in this loop, or anywhere else in this invocation: the deep review runs **exactly once** per `/paf:implement-issue` run. The second look at the code is the developer's manual review, backed by `/paf:check-out`'s safety-net review.
+Do **not** re-run the review agents in this loop, or anywhere else in this invocation: the deep review runs **exactly once** per `/paf:implement-issue` run. The second look at the code is the developer's manual review, backed by `/paf:check-out`'s safety-net review whenever the branch's content changed after the hand-off.
 
 **12. Hand off for review (skill).**
 Do **not** commit, push, or open an MR/PR. Leave the verified, reviewed changes **uncommitted** on the feature branch so the developer can review them as working-tree changes in their IDE (the clearest review surface). `/paf:check-out` commits the implementation plus the review fixes, pushes, and opens the MR/PR.
+
+Then pin the hand-off, so `/paf:check-out` can tell deterministically whether anything changed on the branch since this reviewed state — and skip its safety-net review when nothing did. Pass the base branch defined in `CLAUDE.md`:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-fingerprint.py" record --issue "<issue-number>" --base "<base-branch>"
+```
+
+It pins the base commit and records a content fingerprint of every path that differs from it, tracked and untracked, under the user's `~/.claude/paf/` (never in the repository); a re-run overwrites it. If it fails, print its error and continue — `/paf:check-out` finds no fingerprint of this hand-off — either none at all, or only an earlier run's, which matches only if the content is identical to that earlier reviewed state — and otherwise runs its safety-net review as usual (fails safe).
 
 **13. Report cost (skill).**
 Run the shared cost helper:

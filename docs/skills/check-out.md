@@ -4,7 +4,7 @@ Human-facing documentation for the `check-out` skill. The operational definition
 
 ## Purpose
 
-Finish a feature: run one high-level safety-net review, run the final spec and full pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost in the PR description. `check-out` is the **third and final** skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
+Finish a feature: run one high-level safety-net review when the branch changed since `/paf:implement-issue`'s hand-off, run the final spec and full pre-merge checks, then commit, push, and open the PR — with the **whole feature's** cost in the PR description. `check-out` is the **third and final** skill, run after the developer has reviewed `/paf:implement-issue`'s output on the branch.
 
 This is a **confirmation-and-ship gate, not a deep-review-and-fix stage.** The deep review runs in `/paf:implement-issue`, *before* the developer's manual review — so `check-out` never re-opens the code. See [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
 
@@ -20,15 +20,15 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 
 ## How it works
 
-`check-out` is an orchestrator in the main thread. It runs one safety-net review, does the final checks, and finalises git/GitHub — with **no auto-retry and no fix loop**: any blocker halts and hands control back to the developer. Its one bounded mutation is the project's own optional auto-fix command at the pre-merge gate (step 4).
+`check-out` is an orchestrator in the main thread. It runs one safety-net review (or skips it, loudly, when nothing changed since the hand-off), does the final checks, and finalises git/GitHub — with **no auto-retry and no fix loop**: any blocker halts and hands control back to the developer. Its one bounded mutation is the project's own optional auto-fix command at the pre-merge gate (step 4).
 
-1. **Confirm & gather** (skill) — confirm the developer validated the implementation; read the issue's acceptance criteria; compute the change as the branch's diff vs base (committed **or** uncommitted).
-2. **Safety-net review** — `senior-engineer-reviewer`, invoked as a **high-level confirmation pass** (framed at the call site: already deep-reviewed in `implement-issue`; the hand-edits can't be isolated from that reviewed implementation, so it's handed the whole branch diff — look for critical regressions, especially the developer's hand-edits, and don't re-litigate the already-reviewed implementation). The skill computes the gate itself from the findings' severity: `error` **STOPs**, `warning` is surfaced but does not block.
+1. **Confirm & gather** (skill) — confirm the developer validated the implementation; read the issue's acceptance criteria; compute the change as the branch's diff vs base (committed **or** uncommitted); then compare the branch to `/paf:implement-issue`'s **hand-off fingerprint** (`paf-fingerprint.py check`), which prints `VERDICT=skip` or `VERDICT=review`.
+2. **Safety-net review** — **skipped** only when the output has exactly one `VERDICT=` line and it is `VERDICT=skip` (the content is identical to the deep-reviewed hand-off, so there are no hand-edits to review); the skip and its reason are printed, never silent. Anything else — content changed (committed or not), no fingerprint, an unreadable record, a failed check — runs it exactly as before: `senior-engineer-reviewer`, invoked as a **high-level confirmation pass** (framed at the call site: already deep-reviewed in `implement-issue`; the hand-edits can't be isolated from that reviewed implementation, so it's handed the whole branch diff — look for critical regressions, especially the developer's hand-edits, and don't re-litigate the already-reviewed implementation). The skill computes the gate itself from the findings' severity: `error` **STOPs**, `warning` is surfaced but does not block.
 3. **Final spec check** — `quality-assurer` confirms every acceptance criterion; unmet **STOPs**.
 4. **Pre-merge validation** (skill) — the project's **full** test + lint suite. On failure, if `CLAUDE.md` defines an **optional auto-fix command**, the skill runs that command exactly as defined and re-validates **once**: passing means the failures were mechanically resolvable and the run continues (reporting what changed); anything still failing needs judgement and **STOPs**. With no auto-fix command defined, failure **STOPs** as before.
 5. **Commit & push** (skill) — commit whatever is still uncommitted; push.
 6. **Record cost** (skill) — append this run's cost to the per-feature ledger.
-7. **Total & PR** (skill) — total the whole feature across all three main skills and open the PR using the **fixed description template** (Closes line, What this implements, Validation, Deviations, cost table) under a title pinned to the issue title with a conventional-commit type prefix.
+7. **Total & PR** (skill) — total the whole feature across all three main skills, clear the hand-off fingerprint with the ledger, and open the PR using the **fixed description template** (Closes line, What this implements, Validation, Deviations, cost table) under a title pinned to the issue title with a conventional-commit type prefix.
 
 ## Orchestration
 
@@ -38,21 +38,24 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
      v
 +----------------------------------------------+
 | [skill] confirm dev validated impl; read the |
-|   issue; compute change = git diff <base>    |
+|   issue; compute change = git diff <base>;   |
+|   paf-fingerprint.py check vs hand-off       |
 +----------------------------------------------+
      |
-     v
-+----------------------------------------------+
-| [agent] senior-engineer-reviewer — SAFETY    |
-|   NET: high-level confirmation pass (framed  |
-|   at invocation) over the whole branch diff; |
-|   focus on the developer's hand-edits, don't |
-|   re-litigate the reviewed implementation    |
-+----------------------------------------------+
-     |--- error finding -> STOP (no fix loop): developer fixes
-     |
-     v  (warning surfaced, non-blocking / none)
-+----------------------------------------------+
+     |--- VERDICT=skip (content identical to the -----+
+     |    hand-off): report the skip + reason, loudly  |
+     v  (VERDICT=review / no record / error)          |
++----------------------------------------------+      |
+| [agent] senior-engineer-reviewer — SAFETY    |      |
+|   NET: high-level confirmation pass (framed  |      |
+|   at invocation) over the whole branch diff; |      |
+|   focus on the developer's hand-edits, don't |      |
+|   re-litigate the reviewed implementation    |      |
++----------------------------------------------+      |
+     |--- error finding -> STOP (no fix loop)         |
+     |                                                |
+     v  (warning surfaced, non-blocking / none)       |
++----------------------------------------------+  <---+
 | [agent] quality-assurer — final spec check   |
 +----------------------------------------------+
      |--- criteria unmet -> STOP
@@ -74,7 +77,8 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
      v
 +----------------------------------------------+
 | [skill] record check-out cost; aggregate the |
-|   whole feature (tokens + EUR); open PR —    |
+|   whole feature (tokens + EUR); clear the    |
+|   hand-off fingerprint; open PR —            |
 |   fixed body template, "<type>: <issue>"     |
 +----------------------------------------------+
 ```
@@ -83,10 +87,10 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 
 | Agent | Role in this skill |
 |---|---|
-| `senior-engineer-reviewer` | Safety-net review — a high-level confirmation pass over the diff, framed at invocation; `error` findings STOP the run. |
+| `senior-engineer-reviewer` | Safety-net review — a high-level confirmation pass over the diff, framed at invocation; `error` findings STOP the run. Not invoked when the hand-off fingerprint matches. |
 | `quality-assurer` | Final gate — confirms every acceptance criterion is met. |
 
-The agents above run in sequence. The deep review (`code-simplifier`, `security-engineer`, `test-coverage-reviewer`, and this same `senior-engineer-reviewer` at full depth) runs in `/paf:implement-issue`, not here. `senior-engineer-reviewer`'s **definition is unchanged** — the shallower framing comes from how `check-out` invokes it, since agents are caller-agnostic and a permanent "be shallow" instruction would damage its deep use in the deep review. **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses, and the reviewer may re-see the already-reviewed implementation rather than only the hand-edits, since the hand-edits cannot be isolated from the rest of the diff. Agents never touch git/`gh` — the skill owns all of it.
+The agents above run in sequence. The deep review (`code-simplifier`, `security-engineer`, `test-coverage-reviewer`, and this same `senior-engineer-reviewer` at full depth) runs in `/paf:implement-issue`, not here. `senior-engineer-reviewer`'s **definition is unchanged** — the shallower framing comes from how `check-out` invokes it, since agents are caller-agnostic and a permanent "be shallow" instruction would damage its deep use in the deep review. **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses; when it runs, the reviewer may re-see the already-reviewed implementation rather than only the hand-edits, since the hand-edits cannot be isolated from the rest of the diff (the fingerprint decides only *whether* it runs); and a hand-edit to a path marked `--assume-unchanged` or `--skip-worktree` is invisible to the fingerprint. Agents never touch git/`gh` — the skill owns all of it.
 
 ## Human interception points
 
@@ -153,13 +157,14 @@ This makes every PAF-opened MR/PR self-describing and consistent.
 
 ## Cost in the PR
 
-`check-out` marks its invocation start at step 1 and records its own run (that invocation's slice only) to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three main skills** — `create-issue`, `implement-issue`, `check-out` — and appends that **token-and-EUR cost** table **verbatim** as the **last section of the PR description** (see [MR/PR description and title](#mrpr-description-and-title) above). Because `check-out` prices only its own slice, running it in the same CLI session as `implement-issue` does not re-count `implement-issue`'s tokens. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost. The ledger is cleaned up as part of aggregation. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
+`check-out` marks its invocation start at step 1 and records its own run (that invocation's slice only) to the per-feature ledger, then runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `aggregate` mode (keyed by issue number) to total **all three main skills** — `create-issue`, `implement-issue`, `check-out` — and appends that **token-and-EUR cost** table **verbatim** as the **last section of the PR description** (see [MR/PR description and title](#mrpr-description-and-title) above). Because `check-out` prices only its own slice, running it in the same CLI session as `implement-issue` does not re-count `implement-issue`'s tokens. This gives the PR reviewer, who never sees the CLI session, the whole feature's cost. The ledger is cleaned up as part of aggregation, and the hand-off fingerprint ([`paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py)) is cleared alongside it. See [`docs/skills/create-issue.md`](create-issue.md) for the ledger mechanics.
 
 ## Related files
 
 - [`skills/paf-check-out/SKILL.md`](../../skills/paf-check-out/SKILL.md) — the operational definition.
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
 - [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost reporting.
+- [`skills/paf-shared/paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py) — the hand-off fingerprint that decides whether the safety-net review runs.
 - [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md), [`agents/quality-assurer.md`](../../agents/quality-assurer.md) — the agent definitions this skill uses.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```

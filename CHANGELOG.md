@@ -5,6 +5,23 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] - 2026-10-10
+
+### Added
+
+- `skills/paf-shared/paf-fingerprint.py` (`record` / `check` / `clear`) builds a hand-off content
+  fingerprint. It is one path-to-hash map over every tracked and untracked path that differs from a
+  pinned base commit, and committing does not change it. It is stored under `~/.claude/paf/`, never
+  in the project (#63).
+
+### Changed
+
+- `/paf:implement-issue` records the fingerprint at its hand-off. `/paf:check-out` recomputes it
+  before its safety-net review and skips the review only on an exact match, reporting the skip and
+  its reason. Any content change, committed or not, a missing or unreadable record, or any error
+  runs the review as before. The fingerprint is cleared with the cost ledger when the feature ships.
+  Re-run the installer to pick up the new helper (#63).
+
 ## [0.24.0] - 2026-10-09
 
 ### Changed
