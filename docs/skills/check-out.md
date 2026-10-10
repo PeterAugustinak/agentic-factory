@@ -28,7 +28,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 4. **Pre-merge validation** (skill) — the project's **full** test + lint suite. On failure, if the project instructions (`CLAUDE.md` or `AGENTS.md`) define an **optional auto-fix command**, the skill runs that command exactly as defined and re-validates **once**: passing means the failures were mechanically resolvable and the run continues (reporting what changed); anything still failing needs judgement and **STOPs**. With no auto-fix command defined, failure **STOPs** as before.
 5. **Commit & push** (skill) — commit whatever is still uncommitted; push.
 6. **Record cost** (skill) — append this run's cost to the per-feature ledger.
-7. **Total & PR** (skill) — total the whole feature across all three main skills, clear the hand-off fingerprint with the ledger, and open the PR using the **fixed description template** (Closes line, What this implements, Validation, Deviations, cost table) under a title pinned to the issue title with a conventional-commit type prefix.
+7. **Total & PR** (skill) — total the whole feature across all three main skills, clear the hand-off fingerprint with the ledger, and open the PR using the **fixed description template** (Closes line, What this implements, Validation, Deviations, cost table) under a title pinned to the issue title with a conventional-commit type prefix picked from the change.
 
 ## Orchestration
 
@@ -104,7 +104,6 @@ Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** —
 - the safety-net review returns an `error` finding;
 - `quality-assurer` finds unmet criteria;
 - pre-merge validation fails — after the auto-fix and its single re-validation, where the project defines one;
-- the MR/PR title's `<type>` cannot be resolved by any rule;
 - malformed/missing agent output.
 
 **Two-tier verification.** The scoped `implementation-verifier` runs **tests only** in `/paf:implement-issue`'s fix loops; the **full** test + lint suite runs here as pre-merge validation — the safety net that catches cross-module regressions a scoped run cannot see, and the tier the lint command belongs to. `check-out` runs no scoped verification of its own, because it authors no fixes of its own: its only mutation is the optional mechanical auto-fix at the gate, which the full re-validation already covers.
@@ -146,12 +145,7 @@ Closes #<issue-number>.
 - `Closes #<issue-number>` is **always** written, regardless of the base branch. (On both GitHub and GitLab, auto-closing the issue on merge only fires when the MR/PR targets the repository's default branch — but that is a platform behaviour, not something to conditionally implement: the line itself is unconditional.)
 - The issue title is attacker-influenceable text, so the skill never splices it raw into a double-quoted shell argument when calling `paf-vcs` — it binds the resolved title to a shell variable via a safely-quoted assignment first. See `skills/paf-check-out/SKILL.md` step 7 for the exact construction.
 
-The **title** is `<type>: <issue title>`, with `<type>` resolved in a fixed order:
-
-1. the issue title already begins with one of the **exact, lowercase** prefixes `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `test:`, `perf:`, `build:`, `ci:` → the type is already present: the issue title is used as the whole title, exactly as written, never with `<type>:` re-prepended. The vocabulary is closed and case-sensitive on purpose: a generic `<word>:` match would also catch `Bug: ` and preempt rule 2.
-2. the title begins with `Bug: ` → that prefix is stripped and `fix:` used.
-3. otherwise derived from the issue's labels — `bug`→`fix`, `enhancement`→`feat`, `documentation`→`docs` — with precedence `bug` > `enhancement` > `documentation` when an issue carries more than one.
-4. nothing resolves → the skill **STOPs and asks the developer**, per its strict-sourcing rule; it never invents a type.
+The **title** is `<type>: <issue title>`, with `<type>` picked by a single rule: from the change itself (the `git diff <base>` already in context), as the type that best describes its primary purpose, out of the **closed** vocabulary `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `perf`, `build`, `ci`. The skill never consults the issue's labels and never STOPs over the type — every change fits one of them. A leading prefix on the issue title — one of these types with an optional `(scope)` and/or `!` followed by `:`, or `Bug:`, matched case-insensitively — is dropped first, so the title never carries two (if nothing remains, `issue #<number>` is the description). `check-out` adds no labels to the MR/PR.
 
 This makes every PAF-opened MR/PR self-describing and consistent.
 

@@ -137,11 +137,7 @@ Rules for filling it in:
 - **No `🤖 Generated with [Claude Code]` trailer.**
 - **`Closes #<issue-number>` is always written, regardless of the base branch.** (On both GitHub and GitLab, auto-closing the issue on merge only fires when the MR/PR targets the repository's default branch — but that is a platform behaviour, not something to conditionally implement here: the line itself is unconditional.)
 
-**Title — fixed resolution order.** The title is `<type>: <issue title>`. Resolve `<type>` in this order:
-1. If the issue title already begins with one of these **exact, lowercase** prefixes — `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `test:`, `perf:`, `build:`, `ci:` — the type is already present: use the issue title **as the whole title, exactly as written** — do **not** re-prepend `<type>:` on top of it. This vocabulary is **closed and case-sensitive**: do not match a generic `<word>:`, which would also catch `Bug: ` and preempt rule 2.
-2. Otherwise, if the title begins with `Bug: `, strip that prefix and use `fix:`.
-3. Otherwise, derive from the issue's labels: `bug` → `fix`, `enhancement` → `feat`, `documentation` → `docs`. When the issue carries more than one, `bug` wins over `enhancement`, which wins over `documentation`.
-4. If none of the above resolves a type, **STOP and ask the developer** — never invent one (the strict project-context sourcing rule above).
+**Title — one rule.** The title is `<type>: <issue title>`. Pick `<type>` from the change itself — the `git diff <base>` already in context from step 1 — as the one that best describes its primary purpose, from this closed vocabulary only: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `perf`, `build`, `ci`. Never consult the issue's labels and never STOP over the type. First drop any leading prefix from the issue title so it never carries two — matched case-insensitively: one of these types with an optional `(scope)` and/or `!`, followed by `:`; or `Bug:`. If nothing remains, use `issue #<issue-number>` as the description. `check-out` adds no labels to the MR/PR.
 
 Capture the MR/PR **URL** from `paf-vcs`'s `URL=` output line and print it.
 
@@ -151,7 +147,6 @@ Capture the MR/PR **URL** from `paf-vcs`'s `URL=` output line and print it.
 - the safety-net review returns an `error` finding (step 2);
 - `quality-assurer` finds unmet criteria (step 3);
 - pre-merge validation fails — after the auto-fix and its single re-validation, when the project defines an auto-fix command (step 4);
-- the MR/PR title's `<type>` cannot be resolved by any rule (step 7);
 - malformed or missing agent output (any agent step).
 
 Nothing is pushed and no MR/PR is opened until every check passes.

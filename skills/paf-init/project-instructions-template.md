@@ -43,10 +43,9 @@ back out of it).
 The branch feature branches start from and that MRs/PRs target — `develop`, `main`, whatever your
 project uses. Used by `/paf:implement-issue` and `/paf:check-out`.
 
-### Labels and merge strategy
+### Merge strategy
 
-Any standard labels applied to issues and MRs/PRs, and how branches are merged (squash, merge
-commit, rebase).
+How branches are merged (squash, merge commit, rebase).
 
 ### Environment setup
 
@@ -94,6 +93,12 @@ itself and never makes a second attempt.
 Omit this area and nothing changes: a pre-merge failure STOPs the run, which is the default
 behaviour. Only define a command that is **behaviour-preserving** — a command that could change what
 the code *does* does not belong here.
+
+### Labels
+
+Any standard labels `/paf:create-issue` applies to the issues it posts. Omit this area and issues are
+posted without labels; a listed label that does not exist in the repository is skipped. PAF never
+labels MRs/PRs.
 
 ---
 
