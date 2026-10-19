@@ -5,6 +5,23 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.0] - 2026-10-19
+
+### Added
+
+- A `conformance-reviewer` agent joins the `/paf:implement-issue` deep review, so five reviewers now
+  run in parallel. It reports a breach of a rule stated in the project instructions as an `error`
+  (quoting the rule), and hand-written code the framework or an already-used library provides, or a
+  departure from the nearest existing repository pattern, as a `warning`. Every finding cites its
+  basis; an uncited finding is not reported (#82).
+
+### Changed
+
+- `test-coverage-reviewer` also flags brittle assertions, such as tests asserting against copied UI
+  text (#82).
+- Review findings that breach a stated project rule are applied by default during triage, like bugs
+  and security defects (#82).
+
 ## [0.28.0] - 2026-10-10
 
 ### Added

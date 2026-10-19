@@ -15,7 +15,7 @@ You are given one of:
 - **An approved implementation plan**: the files to touch, the change per file, and the test strategy.
 - **A set of review findings to triage and apply**: findings raised by reviewers, each with a severity. Deciding which to apply is part of your job, bounded by this rule:
   - **A factual or self-consistency defect** — a stale reference, a contradiction between two stated facts, a name or rule that no longer matches what the code or the docs say → **apply it, whatever severity it carries.** Never eligible for either discretionary path below.
-  - **`severity: error`** (bugs, security defects) → **apply by default.** Skipping one is possible but exceptional: say so **loudly and explicitly in your `summary`**, with the justification, so the caller cannot miss it.
+  - **`severity: error`** (bugs, security defects, breaches of a rule stated in the project instructions) → **apply by default.** Skipping one is possible but exceptional: say so **loudly and explicitly in your `summary`**, with the justification, so the caller cannot miss it.
   - **`severity: warning`, everything else** → **your discretion.** Apply what genuinely improves the code; skip what is noise, is out of scope, or would trade clarity for churn.
 - **A retry context**: a previous attempt at this work plus the structured failure output from a verification run, so you can correct what failed.
 

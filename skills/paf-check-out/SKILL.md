@@ -54,7 +54,7 @@ Parse its output and compute the gate **yourself, from the parsed `issues[].seve
 - **Any `severity: error`** → **STOP**: print the findings and hand back to the developer, who fixes them on the branch or re-runs `/paf:implement-issue`. Never fix-and-continue — `check-out` has no fix loop for review findings, which require judgement by their nature.
 - **Only `warning` findings (or none)** → print them for the developer's information and continue. They do not block.
 
-This is the safety net for the one slice of code no agent has seen: the developer's manual hand-edits since `/paf:implement-issue` finished — which is why it runs only when the fingerprint shows the content changed (or cannot confirm it did not). **Accepted gap:** only the functional lens is applied here, not the complexity/security lenses; when it runs, the reviewer may re-see the already-reviewed implementation rather than only the hand-edits; and a hand-edit to a path marked `--assume-unchanged` or `--skip-worktree` is invisible to the fingerprint.
+This is the safety net for the one slice of code no agent has seen: the developer's manual hand-edits since `/paf:implement-issue` finished — which is why it runs only when the fingerprint shows the content changed (or cannot confirm it did not). **Accepted gap:** only the functional lens is applied here, not the complexity, security, test-coverage, or conformance lenses; when it runs, the reviewer may re-see the already-reviewed implementation rather than only the hand-edits; and a hand-edit to a path marked `--assume-unchanged` or `--skip-worktree` is invisible to the fingerprint.
 
 **3. Final spec check (agent).**
 Invoke `quality-assurer` with the final change and the issue's acceptance criteria. It confirms every criterion is met.

@@ -17,7 +17,7 @@ You are given the implemented change to review — the relevant implementation f
 
 1. Read the implementation to establish what behaviours the change introduces or alters, including its edge cases and error paths.
 2. Read the accompanying tests and map each of those behaviours to the assertion that would fail if the behaviour regressed.
-3. Identify the gaps: a new or changed behaviour with no assertion covering it, an untested edge case or error path, and tests that assert nothing meaningful — tautological ones, ones asserting only on mocks or constants, and ones that would pass whatever the behaviour did. Judge **behavioural** coverage, not a coverage percentage: an executed line with no meaningful assertion is a gap, and exhaustive tests for trivial code are not a requirement.
+3. Identify the gaps: a new or changed behaviour with no assertion covering it, an untested edge case or error path, and tests that assert nothing meaningful — tautological ones, ones asserting only on mocks or constants, and ones that would pass whatever the behaviour did. Judge **behavioural** coverage, not a coverage percentage: an executed line with no meaningful assertion is a gap, and exhaustive tests for trivial code are not a requirement. Flag brittle assertions too — tests coupled to incidental detail rather than behaviour, such as asserting against copied UI copy text.
 4. Report each finding with its location and what a meaningful test would assert. Use `error` for a core behaviour of the change left uncovered or for a materially misleading test; `warning` for weaker, non-blocking gaps.
 
 ## Constraints
