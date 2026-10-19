@@ -96,9 +96,10 @@ Invoke **all** review agents concurrently — a single message carrying one expl
 - `senior-engineer-reviewer` (functional correctness),
 - `code-simplifier` (unnecessary complexity),
 - `security-engineer` (security),
-- `test-coverage-reviewer` (meaningful test coverage).
+- `test-coverage-reviewer` (meaningful test coverage),
+- `conformance-reviewer` (conformance to project rules, framework features, and repository patterns).
 
-**How to supply the change.** Do **not** embed the full `git diff <base>` in the prompts — four reviewers would pay for it four times, and its added and context lines are what a reviewer can `Read` from the working tree itself. Pass every reviewer the same compact **change manifest** instead:
+**How to supply the change.** Do **not** embed the full `git diff <base>` in the prompts — five reviewers would pay for it five times, and its added and context lines are what a reviewer can `Read` from the working tree itself. Pass every reviewer the same compact **change manifest** instead:
 - **Created files** — every file you created in step 7, by path, marked *created* (untracked, so absent from `git diff`); the reviewer reads them in full.
 - **Modified files** — the output of `git diff --no-color --no-ext-diff --no-textconv -U0 <base> | grep -v '^+' || true` (`<base>` a single ref, quoted): the zero-context diff minus its added lines. Empty output means no tracked file changed.
 
@@ -110,7 +111,7 @@ Wait for all of them, parse each output, and aggregate their `issues` into one f
 - **One or more findings** → continue to step 10.
 
 **10. Triage and apply the findings (agent).**
-Invoke `full-stack-dev` **once** with **all** aggregated findings, instructing it to decide which are worth applying and to apply them — this is a triage-and-apply step, not the application of a pre-approved list. Restate the guardrail in the invocation: `severity: error` findings (bugs, security) default to **applied** — skipping one requires saying so loudly, with justification, in its `summary`; a finding identifying a **factual or self-consistency defect** (a stale reference, a contradiction between two stated facts) is applied **whatever severity it carries** and is never eligible for the discretionary skip; the remaining `warning` findings are where it exercises discretion. Restate the **sweep** obligation too: any fact, rule, or name it changes must be updated in every place the repository states it, in the same change.
+Invoke `full-stack-dev` **once** with **all** aggregated findings, instructing it to decide which are worth applying and to apply them — this is a triage-and-apply step, not the application of a pre-approved list. Restate the guardrail in the invocation: `severity: error` findings (bugs, security, breaches of a rule stated in the project instructions) default to **applied** — skipping one requires saying so loudly, with justification, in its `summary`; a finding identifying a **factual or self-consistency defect** (a stale reference, a contradiction between two stated facts) is applied **whatever severity it carries** and is never eligible for the discretionary skip; the remaining `warning` findings are where it exercises discretion. Restate the **sweep** obligation too: any fact, rule, or name it changes must be updated in every place the repository states it, in the same change.
 
 The developer does **not** pre-select fixes here; their manual review after this skill is the curation and revert point. So **surface `full-stack-dev`'s applied-vs-skipped report verbatim** to the developer — it tells them what changed beyond the plan they approved, and is what they curate against.
 

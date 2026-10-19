@@ -27,7 +27,7 @@ Once an issue exists and its approach is sound enough to build:
 5. **Branch** (skill) — after approval, create `feature/<issue>-<short-description>` from the base branch.
 6. **Implement** (skill, same context) — apply the approved plan's exact edits on the branch, including every occurrence the plan's sweep enumerated. Because planning and building share the context, this is applying what's already decided — no re-exploration — with the same turn discipline (independent edits batched).
 7. **Verify** — `implementation-verifier` runs the project's **tests only**, scoped to the changed area — never the lint command and never the full pre-merge command, which belong to `/paf:check-out`'s gate. On failure the **same main-thread context that built the code** (now in edit mode) applies the fix (it still holds the plan and the edits — no re-exploration, and no cold builder agent) and re-verifies, up to a cap; if it still fails, the run stops and escalates.
-8. **Deep review in parallel** — `senior-engineer-reviewer`, `code-simplifier`, `security-engineer`, `test-coverage-reviewer` run concurrently over the change, supplied as a compact **change manifest** instead of the full diff in four prompts (created files, plus a zero-context diff without its added lines, whose ranges each reviewer `Read`s); the skill aggregates their findings. No findings takes the **skip path** straight to the hand-off.
+8. **Deep review in parallel** — `senior-engineer-reviewer`, `code-simplifier`, `security-engineer`, `test-coverage-reviewer`, `conformance-reviewer` run concurrently over the change, supplied as a compact **change manifest** instead of the full diff in five prompts (created files, plus a zero-context diff without its added lines, whose ranges each reviewer `Read`s); the skill aggregates their findings. No findings takes the **skip path** straight to the hand-off.
 9. **Triage & apply** — `full-stack-dev` receives **all** findings and decides which are worth applying, then applies them: `error` findings apply by default (a skip must be loud and justified), a **factual / self-consistency defect** applies whatever severity it carries (never skippable as discretionary), and the remaining `warning` findings are its discretion. It also **sweeps** — a fact, rule, or name it changes is updated everywhere the repo states it. The skill surfaces its applied-vs-skipped report to the developer — the developer doesn't pre-select fixes; their manual review is the curation point.
 10. **Re-verify** — `implementation-verifier` runs again, since step 9 may have changed the code and tests are the gate. On failure `full-stack-dev` fixes from its output and it re-verifies, up to a cap; the reviewers are **not** re-run.
 11. **Hand off** (skill) — leave the verified, reviewed changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`), and pin the hand-off: `paf-fingerprint.py record` stores the base commit sha and a content fingerprint of every changed path (tracked and untracked) under `~/.claude/paf/`, so `/paf:check-out` can skip its safety-net review when nothing changed since.
@@ -110,6 +110,7 @@ Planning and building run in the main thread via native plan mode rather than as
 |   - code-simplifier (complexity)             |
 |   - security-engineer (security)             |
 |   - test-coverage-reviewer (test coverage)   |
+|   - conformance-reviewer (conformance)       |
 |   (change manifest: created files +          |
 |    modified ranges & removed lines)          |
 +----------------------------------------------+
@@ -156,6 +157,7 @@ Planning and building run in the main thread via native plan mode rather than as
 | `code-simplifier` | Complexity / DRY / readability review (parallel). |
 | `security-engineer` | Security review (parallel). |
 | `test-coverage-reviewer` | Meaningful test-coverage review of the change's tests (parallel). |
+| `conformance-reviewer` | Conformance review — breaches of stated project rules, framework reinvention, divergence from repository patterns (parallel). |
 | `full-stack-dev` | Triages the aggregated review findings and applies the worthwhile ones; fixes any resulting verification failure (skipped if the review found nothing). |
 
 The reviewers run **concurrently**; the rest run in sequence. Planning and implementation are **not** delegated to agents — they run in the main thread via native plan mode (see "Why plan mode" above). None of the delegated agents sits on the plan→build boundary, so each keeps its own isolated context without cost. Agents never call `gh`/`glab`, change git state, or orchestrate each other — the skill owns all of that.
@@ -191,6 +193,6 @@ The skill marks its invocation start at step 1, and the final step runs [`skills
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
 - [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost reporting.
 - [`skills/paf-shared/paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py) — the hand-off fingerprint `/paf:check-out` compares against.
-- [`agents/issue-validator.md`](../../agents/issue-validator.md), [`agents/implementation-verifier.md`](../../agents/implementation-verifier.md), [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md), [`agents/code-simplifier.md`](../../agents/code-simplifier.md), [`agents/security-engineer.md`](../../agents/security-engineer.md), [`agents/test-coverage-reviewer.md`](../../agents/test-coverage-reviewer.md), [`agents/full-stack-dev.md`](../../agents/full-stack-dev.md) — the agent definitions this skill uses.
+- [`agents/issue-validator.md`](../../agents/issue-validator.md), [`agents/implementation-verifier.md`](../../agents/implementation-verifier.md), [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md), [`agents/code-simplifier.md`](../../agents/code-simplifier.md), [`agents/security-engineer.md`](../../agents/security-engineer.md), [`agents/test-coverage-reviewer.md`](../../agents/test-coverage-reviewer.md), [`agents/conformance-reviewer.md`](../../agents/conformance-reviewer.md), [`agents/full-stack-dev.md`](../../agents/full-stack-dev.md) — the agent definitions this skill uses.
 - [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
 ```
