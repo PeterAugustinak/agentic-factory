@@ -29,13 +29,16 @@ After **every** agent step, parse the agent's final message with the shared rule
 ## Steps
 
 **1. Confirm and gather (skill).**
-First, mark this invocation's start so the cost step (step 6) prices only this run, not the whole session:
+First, determine the issue number — from the branch name (`feature/<issue-number>-<...>`), or from `$ARGUMENTS` when given as an override. Then mark this invocation's start so the cost step (step 6) prices only this run, not the whole session — the issue number (or, without one, the branch) tags the marker, so if this run stops before step 6 its cost is still recovered into the feature's ledger:
 
 ```
-python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "${CLAUDE_SESSION_ID}" --skill check-out
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "${CLAUDE_SESSION_ID}" --skill check-out --issue "<issue-number>" \
+  --branch "$(git branch --show-current)"
 ```
 
-Then confirm with the developer that they have reviewed `/paf:implement-issue`'s implementation and are ready to finalise. Determine the issue number (branch name or `$ARGUMENTS`), read the issue for its acceptance criteria, and compute the change to review (`git diff <base>` per above).
+A feature need not have an issue. Pass `--issue` only when the issue number is a plain number (digits only); otherwise omit it — never splice a non-numeric value into the shell line — and the feature's cost is keyed by its branch instead. Omit `--issue` the same way in steps 6 and 7. A missing issue number never stops this skill's cost tracking.
+
+Then confirm with the developer that they have reviewed `/paf:implement-issue`'s implementation and are ready to finalise. Read the issue for its acceptance criteria, and compute the change to review (`git diff <base>` per above).
 
 Then — only after that confirmation, so the developer's editing is finished — compare the branch against `/paf:implement-issue`'s hand-off fingerprint:
 
@@ -79,15 +82,16 @@ Append `check-out`'s own cost to the per-feature ledger so the total below inclu
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
-  --session "${CLAUDE_SESSION_ID}" --skill check-out --issue "<issue-number>"
+  --session "${CLAUDE_SESSION_ID}" --skill check-out --issue "<issue-number>" \
+  --branch "$(git branch --show-current)"
 ```
 
 **7. Total the feature and open the MR/PR (skill).**
-Aggregate the whole feature's cost across all three main skills and clean up the ledger:
+Aggregate the whole feature's cost across all three main skills and clean up the ledger. `aggregate` first records every run of this feature that stopped without recording its cost (an open marker for this project and feature, in any session) as its own `<skill>-stopped` row, so the total includes it:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" aggregate \
-  --issue "<issue-number>" --cleanup
+  --issue "<issue-number>" --branch "$(git branch --show-current)" --cleanup
 ```
 
 and remove the feature's hand-off fingerprint on the same lifecycle:

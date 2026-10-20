@@ -30,15 +30,37 @@ priced by prompt length (`prompt_tiers` in pricing.json) bills each request at
 the tier its prompt length — input + cache reads + cache writes — selects. The
 ledger lives under the user's ~/.claude namespace, never in the project.
 
-Usage:
-  paf-report-cost.py mark      --session <id> --skill <name>
-  paf-report-cost.py record    --session <id> --skill <name> --issue <n> [--project <slug>] [--since <iso>]
-  paf-report-cost.py aggregate --issue <n> [--project <slug>] [--cleanup]
+Stopped runs are recovered, not lost. A skill that STOPs never reaches its
+`record` step, so its marker stays open. The marker therefore carries its own
+attribution (session, skill, project, issue, start), and every `mark` and
+`record` appends its timestamp to a per-session boundary log. An open marker is
+closed into a `<skill>-stopped` ledger row (a `_SAFE` name — `aggregate`
+re-validates every row) by the next `mark` of the same skill in the same session,
+and by `aggregate` for every open marker of that project + issue in any session.
+The stopped slice runs from the marker's start to the first later boundary in
+its session — the next PAF skill's mark or record — so it never overlaps a run
+recorded after it; with no later boundary it ends at the close time, which is
+then appended as a boundary so a still-running run of that session that records
+later starts there. A marker with no feature key (create-issue before posting,
+or a legacy bare-timestamp marker) cannot be attributed to a ledger and is
+discarded.
 
-`mark` records this invocation's start time so `record` can slice to it.
+The feature key. A feature is keyed by its issue number when it has one, and by
+its branch name otherwise — not every feature has an issue, and a missing or
+malformed issue number never stops a command: it falls back to the branch, and
+with neither the run is reported but not added to any ledger.
+
+Usage:
+  paf-report-cost.py mark      --session <id> --skill <name> [--issue <n>] [--branch <name>] [--project <slug>]
+  paf-report-cost.py record    --session <id> --skill <name> [--issue <n>] [--branch <name>] [--project <slug>] [--since <iso>]
+  paf-report-cost.py aggregate [--issue <n>] [--branch <name>] [--project <slug>] [--cleanup]
+
+`mark` records this invocation's start (closing the same skill's open marker of
+this session first) so `record` can slice to it.
 `record` prices this run's slice and appends a ledger entry.
-`aggregate` prints the feature total (per-skill breakdown) for the PR body and,
-with --cleanup, deletes the ledger file afterwards.
+`aggregate` closes the feature's open markers, prints the feature total
+(per-skill breakdown) for the PR body and, with --cleanup, deletes the ledger
+file afterwards.
 """
 
 import argparse
@@ -75,12 +97,65 @@ _SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
 _SNAPSHOT_SUFFIX = re.compile(r"-\d{8}$")
 
 
+def _is_number(value) -> bool:
+    """An ASCII-digit string (str.isdigit alone also accepts non-ASCII digits)."""
+    return isinstance(value, str) and value.isascii() and value.isdigit()
+
+
+def _is_safe(value) -> bool:
+    """A `_SAFE` name that is not '.' or '..', which would escape the ledger directory."""
+    return isinstance(value, str) and bool(_SAFE.match(value)) and value not in (".", "..")
+
+
 def _validate(name: str, value: str, digits_only: bool = False) -> None:
     if value is None:
         return
-    ok = value.isdigit() if digits_only else bool(_SAFE.match(value))
+    ok = _is_number(value) if digits_only else _is_safe(value)
     if not ok:
         sys.exit(f"ERROR: invalid --{name} value {value!r}")
+
+
+# A branch name usable as a feature key: the characters a PR heading code span
+# and a ledger filename can carry safely, with no '.'/'..' path segment.
+_BRANCH = re.compile(r"^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$")
+
+
+def _is_branch(value) -> bool:
+    return (isinstance(value, str) and bool(_BRANCH.match(value))
+            and not any(seg in (".", "..") for seg in value.split("/")))
+
+
+def feature_key(issue, branch):
+    """The ledger key of a feature: its issue number when it has a valid one,
+    else `branch-<name>` (with '/' encoded, so the key stays one filename), else
+    None. Pure — callers decide whether to warn."""
+    if _is_number(issue):
+        return issue
+    if _is_branch(branch):
+        return "branch-" + branch.replace("/", "%2F")
+    return None
+
+
+def feature_label(key: str) -> str:
+    """How a feature key reads in the PR cost heading: `#87` or a code-spanned branch."""
+    if _is_number(key):
+        return f"#{key}"
+    return f"`{key[len('branch-'):].replace('%2F', '/')}`"
+
+
+def resolve_key(args):
+    """The feature key from a command's --issue/--branch, warning (never
+    exiting) about a value that cannot be used."""
+    if args.issue is not None and not _is_number(args.issue):
+        print(f"WARNING: ignoring invalid --issue value {args.issue!r} (not an issue number).")
+    if args.branch is not None and not _is_branch(args.branch) and not _is_number(args.issue):
+        print(f"WARNING: ignoring unusable --branch value {args.branch!r}.")
+    return feature_key(args.issue, args.branch)
+
+
+def utc_now() -> datetime:
+    """The current time, timezone-aware UTC — the single clock every command reads."""
+    return datetime.now(timezone.utc)
 
 
 def project_slug() -> str:
@@ -105,21 +180,30 @@ def load_config() -> dict:
     return {"models": models, "usd_to_eur": cfg["usd_to_eur"]}
 
 
-def find_transcripts(session_id: str) -> list[Path]:
+def transcript_paths(session_id: str) -> list[Path]:
     """Return the session's transcripts: the main one PLUS every subagent
-    transcript. Claude Code stores a spawned subagent's messages in a SEPARATE
-    file under <project>/<session-id>/subagents/... — not in the main transcript
-    — so pricing only the main file would miss all subagent (reviewer, builder,
-    verifier, ...) token usage, which typically dominates a skill run."""
+    transcript — or an empty list when the session has none. Claude Code stores a
+    spawned subagent's messages in a SEPARATE file under
+    <project>/<session-id>/subagents/... — not in the main transcript — so pricing
+    only the main file would miss all subagent (reviewer, builder, verifier, ...)
+    token usage, which typically dominates a skill run."""
     mains = glob.glob(str(Path.home() / ".claude" / "projects" / "*" / f"{session_id}.jsonl"))
     if not mains:
-        sys.exit(f"ERROR: no transcript found for session {session_id}")
+        return []
     # If the same session id somehow appears twice, the largest file is the real run.
     main = max(mains, key=lambda p: os.path.getsize(p))
     project = os.path.dirname(main)
     # Subagent transcripts (recursively, in case of nested subagents).
     subs = glob.glob(os.path.join(project, session_id, "**", "*.jsonl"), recursive=True)
     return [Path(main)] + [Path(s) for s in subs]
+
+
+def find_transcripts(session_id: str) -> list[Path]:
+    """`transcript_paths`, exiting when the session has no transcript."""
+    paths = transcript_paths(session_id)
+    if not paths:
+        sys.exit(f"ERROR: no transcript found for session {session_id}")
+    return paths
 
 
 def parse_ts(value):
@@ -224,10 +308,12 @@ def tier_rates(entry: dict, prompt_tokens: int) -> dict:
     return tiers[-1]
 
 
-def cost_from_transcripts(paths: list[Path], pricing: dict, since=None) -> dict:
+def cost_from_transcripts(paths: list[Path], pricing: dict, since=None, until=None) -> dict:
     """Sum tokens across the main transcript AND every subagent transcript,
     and price them. When `since` is set, only messages timestamped at or after
-    it are counted — the slice belonging to a single skill invocation. Model ids
+    it are counted — the slice belonging to a single skill invocation; when
+    `until` is set, only messages timestamped before it — the end of a stopped
+    run's slice, so the slice is the half-open `[since, until)`. Model ids
     are canonicalised first (see `canonical_model`), so a dated snapshot and its
     alias price identically. A model still absent from `pricing` is priced at
     the latest known rate of its own family (recorded in `fallback_models`);
@@ -257,9 +343,11 @@ def cost_from_transcripts(paths: list[Path], pricing: dict, since=None) -> dict:
                 except json.JSONDecodeError:
                     continue
                 ts = parse_ts(rec.get("timestamp"))
-                # Slice to this invocation: skip anything before the mark (and any
-                # line we cannot place on the timeline).
+                # Slice to this invocation: skip anything before the mark or at/after
+                # the slice end (and any line we cannot place on the timeline).
                 if since is not None and (ts is None or ts < since):
+                    continue
+                if until is not None and (ts is None or ts >= until):
                     continue
                 msg = rec.get("message") or {}
                 usage = msg.get("usage")
@@ -322,42 +410,177 @@ def cost_from_transcripts(paths: list[Path], pricing: dict, since=None) -> dict:
     }
 
 
-def ledger_path(project: str, issue: str) -> Path:
-    return LEDGER_ROOT / project / f"{issue}.jsonl"
+def ledger_path(project: str, key: str) -> Path:
+    return LEDGER_ROOT / project / f"{key}.jsonl"
 
 
 def mark_path(session: str, skill: str) -> Path:
     return MARK_ROOT / f"{session}-{skill}.start"
 
 
+def boundary_path(session: str) -> Path:
+    """The session's boundary log — one ISO timestamp per `mark`/`record` (and
+    per close of a marker with no later boundary). Not a `*.start` file, so the
+    marker sweeps never pick it up."""
+    return MARK_ROOT / f"{session}.boundaries"
+
+
+def append_boundary(session: str, ts: datetime) -> None:
+    path = boundary_path(session)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as fh:
+        fh.write(ts.isoformat() + "\n")
+
+
+def read_boundaries(session: str) -> list[datetime]:
+    """The session's boundary timestamps, sorted; unparseable lines are skipped."""
+    path = boundary_path(session)
+    if not path.exists():
+        return []
+    stamps = (parse_ts(line.strip()) for line in path.read_text().splitlines())
+    # A tz-less stamp cannot be ordered against the aware ones: drop it.
+    return sorted(ts for ts in stamps if ts is not None and ts.tzinfo is not None)
+
+
+def read_marker(path: Path) -> dict:
+    """A marker's fields. A legacy marker holds only a bare ISO timestamp — it
+    yields `start` alone, with no attribution."""
+    text = path.read_text().strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = None
+    if not isinstance(data, dict):
+        data = {"start": text}
+    return {
+        "session": data.get("session"),
+        "skill": data.get("skill"),
+        "project": data.get("project"),
+        "issue": data.get("issue"),
+        "branch": data.get("branch"),
+        "start": parse_ts(data.get("start")),
+    }
+
+
+def append_ledger(project: str, key: str, skill: str, result: dict, config: dict, ts: datetime) -> float:
+    """Append one priced run to the ledger of feature `key`; return its EUR cost."""
+    cost_eur = round(result["total_cost_usd"] * config["usd_to_eur"], 4)
+    entry = {
+        "skill": skill,
+        "feature": key,
+        "total_cost_eur": cost_eur,
+        "total_cost_usd": result["total_cost_usd"],
+        "tokens": result["tokens"],
+        "timestamp": ts.isoformat(),
+    }
+    path = ledger_path(project, key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as fh:
+        fh.write(json.dumps(entry) + "\n")
+    return cost_eur
+
+
+def close_marker(path: Path, config: dict, now: datetime) -> None:
+    """Record an open marker — a run that stopped without `record` — as a
+    `<skill>-stopped` ledger row, then remove it. Never exits: a marker that
+    cannot be priced is reported and discarded."""
+    m = read_marker(path)
+    # Re-validated like the write path, since the values become ledger paths and
+    # PR-table rows — but discarded rather than exited on, so a bad marker never
+    # aborts the command that found it.
+    key = feature_key(m["issue"], m["branch"])
+    attributable = (
+        m["start"] is not None and m["start"].tzinfo is not None
+        and key is not None
+        and all(_is_safe(m[k]) for k in ("session", "skill", "project"))
+    )
+    if not attributable:
+        print(f"NOTE: open marker {path.name} carries no valid attribution (issue or branch, session, skill, project or start missing or malformed) — its stopped run's cost cannot be attributed; discarded.")
+        path.unlink()
+        return
+
+    # End the slice at the next PAF boundary in that session, so it never
+    # overlaps a run recorded after it. With none, end it now and log the close
+    # as a boundary: a still-running run of that session that records later
+    # then starts here instead of re-pricing this slice.
+    later = [ts for ts in read_boundaries(m["session"]) if ts > m["start"]]
+    until = later[0] if later else now
+
+    paths = transcript_paths(m["session"])
+    if not paths:
+        if not later:
+            append_boundary(m["session"], now)
+        print(f"WARNING: no transcript for session {m['session']} — the stopped {m['skill']} run's cost cannot be recovered; marker discarded.")
+        path.unlink()
+        return
+    result = cost_from_transcripts(paths, config["models"], since=m["start"], until=until)
+    skill = f"{m['skill']}-stopped"
+    cost_eur = append_ledger(m["project"], key, skill, result, config, now)
+    # Logged only once the row is written, so a failure above leaves the marker
+    # and the boundary log as they were and a retry slices the same way.
+    if not later:
+        append_boundary(m["session"], now)
+    path.unlink()
+    print(f"Recovered stopped run: {skill} for feature {feature_label(key)} — €{cost_eur:.2f}")
+
+
 def cmd_mark(args) -> None:
     _validate("session", args.session)
     _validate("skill", args.skill)
-    now = datetime.now(timezone.utc).isoformat()
+    key = resolve_key(args)
+    if args.project is not None:
+        _validate("project", args.project)
+    now = utc_now()
+    append_boundary(args.session, now)
     path = mark_path(args.session, args.skill)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(now)
-    print(f"Marked {args.skill} invocation start at {now}")
+    # An open marker here is an earlier run of this skill in this session that
+    # stopped without recording: recover it before it is overwritten. Its slice
+    # ends at the first boundary after it — at the latest, the one just logged.
+    if path.exists():
+        try:
+            close_marker(path, load_config(), now)
+        except (OSError, ValueError, KeyError, TypeError, SystemExit) as exc:
+            # Best effort: an unreadable marker must not stop this run's mark.
+            print(f"WARNING: could not recover open marker {path.name}: {exc}")
+    marker = {
+        "session": args.session,
+        "skill": args.skill,
+        "project": args.project or project_slug(),
+        "issue": args.issue if _is_number(args.issue) else None,
+        "branch": args.branch if _is_branch(args.branch) else None,
+        "start": now.isoformat(),
+    }
+    path.write_text(json.dumps(marker))
+    print(f"Marked {args.skill} invocation start at {now.isoformat()}")
+    if key is None:
+        print(f"NOTE: no issue number or branch given — if this {args.skill} run stops, its cost cannot be attributed to a feature.")
 
 
 def cmd_record(args) -> None:
     _validate("session", args.session)
     _validate("skill", args.skill)
-    _validate("issue", args.issue, digits_only=True)
+    key = resolve_key(args)
     if args.project is not None:
         _validate("project", args.project)
     project = args.project or project_slug()
     config = load_config()
 
     # Slice to this invocation: an explicit --since wins; otherwise use the
-    # marker `mark` wrote at the skill's first step. With neither, the whole
-    # transcript is priced (fallback for a standalone/manual run).
+    # marker `mark` wrote at the skill's first step; otherwise the session's last
+    # boundary (the previous PAF run's end, or the close time of this run's
+    # marker by another session's `aggregate`). With none, the whole transcript
+    # is priced (fallback for a standalone/manual run).
     since = None
     marker = mark_path(args.session, args.skill)
     if args.since:
         since = parse_ts(args.since)
     elif marker.exists():
-        since = parse_ts(marker.read_text().strip())
+        since = read_marker(marker)["start"]
+    else:
+        boundaries = read_boundaries(args.session)
+        if boundaries:
+            since = boundaries[-1]
+            print(f"NOTE: no invocation-start marker for '{args.skill}' — pricing from the session's last boundary ({since.isoformat()}). Ensure step 1 ran `mark`.")
 
     if since is None:
         print(
@@ -367,20 +590,13 @@ def cmd_record(args) -> None:
         )
 
     result = cost_from_transcripts(find_transcripts(args.session), config["models"], since=since)
-    cost_eur = round(result["total_cost_usd"] * config["usd_to_eur"], 4)
-
-    entry = {
-        "skill": args.skill,
-        "issue": args.issue,
-        "total_cost_eur": cost_eur,
-        "total_cost_usd": result["total_cost_usd"],
-        "tokens": result["tokens"],
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    path = ledger_path(project, args.issue)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a") as fh:
-        fh.write(json.dumps(entry) + "\n")
+    now = utc_now()
+    if key is None:
+        # Reported below, but with no feature key there is no ledger to add it to.
+        cost_eur = round(result["total_cost_usd"] * config["usd_to_eur"], 4)
+    else:
+        cost_eur = append_ledger(project, key, args.skill, result, config, now)
+    append_boundary(args.session, now)
 
     # This invocation is priced and recorded — clear its marker.
     if marker.exists():
@@ -406,16 +622,44 @@ def cmd_record(args) -> None:
             f"WARNING: no pricing and no same-family fallback for {result['unknown_models']} — "
             f"their tokens were excluded. Add them to {PRICING_PATH} (dateless keys)."
         )
+    if key is None:
+        print("NOTE: no issue number or branch given — this cost was not added to any feature ledger.")
+
+
+def close_feature_markers(project: str, key: str) -> None:
+    """Close every open marker of this project + feature, in any session, into a
+    `<skill>-stopped` row. check-out's own marker is never among them: its step-6
+    `record` already removed it before `aggregate` runs (and if that record
+    failed, recovering it as `check-out-stopped` is the right outcome)."""
+    if not MARK_ROOT.exists():
+        return
+    config = None
+    now = utc_now()
+    for path in sorted(MARK_ROOT.glob("*.start")):
+        try:
+            m = read_marker(path)
+            if m["project"] != project or feature_key(m["issue"], m["branch"]) != key:
+                continue
+            if config is None:
+                config = load_config()
+            close_marker(path, config, now)
+        except (OSError, ValueError, KeyError, TypeError, SystemExit) as exc:
+            # Best effort: one unreadable marker must not abort the PR step.
+            print(f"WARNING: could not close open marker {path.name}: {exc}")
 
 
 def cmd_aggregate(args) -> None:
-    _validate("issue", args.issue, digits_only=True)
+    key = resolve_key(args)
     if args.project is not None:
         _validate("project", args.project)
+    if key is None:
+        print("No issue number or branch given — no feature cost ledger to aggregate.")
+        return
     project = args.project or project_slug()
-    path = ledger_path(project, args.issue)
+    close_feature_markers(project, key)
+    path = ledger_path(project, key)
     if not path.exists():
-        print(f"No cost ledger found for issue {args.issue} (nothing to aggregate).")
+        print(f"No cost ledger found for feature {feature_label(key)} (nothing to aggregate).")
         return
 
     entries = []
@@ -432,7 +676,7 @@ def cmd_aggregate(args) -> None:
     # "2.9k" total); that is deliberate, so the total stays the real total.
     totals = dict.fromkeys(DISPLAY_FIELDS, 0)
 
-    lines = [f"## Factory run cost — feature #{args.issue}", ""]
+    lines = [f"## Factory run cost — feature {feature_label(key)}", ""]
     lines.append("| Skill | In | Out | Cached | Total | Cost (EUR) |")
     lines.append("|---|---:|---:|---:|---:|---:|")
     for e in entries:
@@ -457,21 +701,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="PAF per-invocation cost reporting.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    mk = sub.add_parser("mark", help="record this invocation's start time for later slicing")
+    mk = sub.add_parser("mark", help="record this invocation's start for later slicing (recovering a stopped run)")
     mk.add_argument("--session", required=True)
     mk.add_argument("--skill", required=True)
+    mk.add_argument("--issue", help="the feature's issue number, so a stopped run can be attributed")
+    mk.add_argument("--branch", help="the feature branch — the feature key when there is no issue number")
+    mk.add_argument("--project")
     mk.set_defaults(func=cmd_mark)
 
     rec = sub.add_parser("record", help="price this run's slice and append to the ledger")
     rec.add_argument("--session", required=True)
     rec.add_argument("--skill", required=True)
-    rec.add_argument("--issue", required=True)
+    rec.add_argument("--issue")
+    rec.add_argument("--branch", help="the feature key when there is no issue number")
     rec.add_argument("--project")
     rec.add_argument("--since", help="ISO 8601 slice start (overrides the mark marker)")
     rec.set_defaults(func=cmd_record)
 
-    agg = sub.add_parser("aggregate", help="sum the feature's ledger for the PR body")
-    agg.add_argument("--issue", required=True)
+    agg = sub.add_parser("aggregate", help="close the feature's open markers and sum its ledger for the PR body")
+    agg.add_argument("--issue")
+    agg.add_argument("--branch", help="the feature key when there is no issue number")
     agg.add_argument("--project")
     agg.add_argument("--cleanup", action="store_true")
     agg.set_defaults(func=cmd_aggregate)
