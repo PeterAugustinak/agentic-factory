@@ -479,6 +479,26 @@ class CostFromTranscriptsTests(unittest.TestCase):
         result = cost.cost_from_transcripts([path], PRICING, since=since)
         self.assertEqual(result["tokens"]["input"], 0)
 
+    def test_until_excludes_messages_at_or_after_it(self):
+        # The slice is half-open: a message stamped exactly at `until` belongs to
+        # the run that starts there, not to the stopped run that ends there.
+        path = self.write("main.jsonl", [
+            record("2026-07-25T09:00:00Z", "claude-sonnet-5", mid="inside", input_tokens=1),
+            record("2026-07-25T10:00:00Z", "claude-sonnet-5", mid="at", input_tokens=10),
+            record("2026-07-25T11:00:00Z", "claude-sonnet-5", mid="after", input_tokens=100),
+        ])
+        until = cost.parse_ts("2026-07-25T10:00:00Z")
+        result = cost.cost_from_transcripts([path], PRICING, until=until)
+        self.assertEqual(result["tokens"]["input"], 1)
+
+    def test_until_drops_untimestamped_lines(self):
+        path = self.write("main.jsonl", [
+            {"message": {"id": "no-ts", "model": "claude-sonnet-5", "usage": {"input_tokens": 1_000_000}}},
+        ])
+        until = cost.parse_ts("2026-07-25T10:00:00Z")
+        result = cost.cost_from_transcripts([path], PRICING, until=until)
+        self.assertEqual(result["tokens"]["input"], 0)
+
     def test_skips_synthetic_models(self):
         path = self.write("main.jsonl", [
             record("2026-07-25T10:00:00Z", "<synthetic>", mid="x", input_tokens=1_000_000),
@@ -679,7 +699,9 @@ class CliTestCase(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def run_command(self, func, **kwargs):
-        """Call a cmd_* function and return everything it printed."""
+        """Call a cmd_* function and return everything it printed. `--branch`
+        defaults to absent, as on a command line that omits it."""
+        kwargs.setdefault("branch", None)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             func(argparse.Namespace(**kwargs))
@@ -871,6 +893,258 @@ class ShippedPricingRecordOutputTests(CliTestCase):
         ])
         self.assertIn("NOTE: claude-sonnet-6 is not in pricing.json", out)
         self.assertIn("latest known sonnet rate (claude-sonnet-5-5)", out)
+
+
+class StoppedRunTests(CliTestCase):
+    """A run that STOPs never calls `record`; its open marker is recovered as a
+    `<skill>-stopped` row by the next same-skill `mark` or by `aggregate`.
+
+    The clock (`utc_now`) and the transcript lookup (`transcript_paths`) are
+    patched, so every boundary lands at a chosen time and each session's
+    transcript is a fixture. Message input-token counts are distinct powers of
+    ten, so which messages a slice priced is readable straight off its total.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.transcripts = {}
+        self.now = None
+        for name, value in (
+            ("utc_now", lambda: self.now),
+            ("transcript_paths", lambda session: self.transcripts.get(session, [])),
+        ):
+            patcher = mock.patch.object(cost, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def transcript(self, session, *messages):
+        """Write `session`'s transcript: (timestamp, input_tokens) pairs."""
+        path = self.dir / f"{session}.jsonl"
+        with open(path, "w") as fh:
+            for i, (ts, inp) in enumerate(messages):
+                fh.write(json.dumps(record(ts, "claude-sonnet-5", mid=f"{session}-{i}", input_tokens=inp)) + "\n")
+        self.transcripts[session] = [path]
+
+    def at(self, ts):
+        self.now = cost.parse_ts(ts)
+
+    def mark(self, ts, session="sess1", skill="implement-issue", issue=CliTestCase.ISSUE,
+             project=CliTestCase.PROJECT, branch=None):
+        self.at(ts)
+        return self.run_command(cost.cmd_mark, session=session, skill=skill, issue=issue,
+                                branch=branch, project=project)
+
+    def record_run(self, ts, session="sess1", skill="implement-issue", issue=CliTestCase.ISSUE,
+                   branch=None):
+        self.at(ts)
+        return self.run_command(cost.cmd_record, session=session, skill=skill, issue=issue,
+                                branch=branch, project=self.PROJECT, since=None)
+
+    def aggregate_at(self, ts, issue=CliTestCase.ISSUE, branch=None):
+        self.at(ts)
+        return self.run_command(cost.cmd_aggregate, issue=issue, branch=branch,
+                                project=self.PROJECT, cleanup=False)
+
+    def rows(self, key=CliTestCase.ISSUE):
+        """The ledger of feature `key` as (skill, input tokens) pairs, in write order."""
+        path = cost.ledger_path(self.PROJECT, key)
+        if not path.exists():
+            return []
+        entries = [json.loads(line) for line in path.read_text().splitlines() if line]
+        return [(e["skill"], e["tokens"]["input"]) for e in entries]
+
+    def test_mark_stores_session_skill_project_issue_and_start(self):
+        self.mark("2026-07-25T10:00:00+00:00")
+        marker = json.loads(cost.mark_path("sess1", "implement-issue").read_text())
+        self.assertEqual(marker, {
+            "session": "sess1", "skill": "implement-issue", "project": self.PROJECT,
+            "issue": self.ISSUE, "branch": None, "start": "2026-07-25T10:00:00+00:00",
+        })
+
+    def test_mark_and_record_each_append_a_boundary(self):
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1))
+        self.mark("2026-07-25T10:00:00Z")
+        self.record_run("2026-07-25T10:02:00Z")
+        self.assertEqual(cost.read_boundaries("sess1"), [
+            cost.parse_ts("2026-07-25T10:00:00Z"), cost.parse_ts("2026-07-25T10:02:00Z"),
+        ])
+
+    def test_a_stop_then_remark_records_a_stopped_row(self):
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1), ("2026-07-25T10:03:00Z", 10))
+        self.mark("2026-07-25T10:00:00Z")
+        out = self.mark("2026-07-25T10:02:00Z")  # the first run stopped; this is the re-run
+        self.assertEqual(self.rows(), [("implement-issue-stopped", 1)])
+        self.assertIn("Recovered stopped run: implement-issue-stopped", out)
+        # The re-run's own marker replaces the recovered one.
+        marker = cost.read_marker(cost.mark_path("sess1", "implement-issue"))
+        self.assertEqual(marker["start"], cost.parse_ts("2026-07-25T10:02:00Z"))
+
+    def test_the_stopped_row_passes_safe_and_aggregates(self):
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1))
+        self.mark("2026-07-25T10:00:00Z")
+        self.mark("2026-07-25T10:02:00Z", skill="check-out")
+        self.record_run("2026-07-25T10:03:00Z", skill="check-out")
+        self.assertTrue(cost._SAFE.match("implement-issue-stopped"))
+        out = self.aggregate_at("2026-07-25T10:04:00Z")
+        self.assertIn("| implement-issue-stopped |", out)
+
+    def test_stopped_implement_issue_then_check_out_in_one_session_is_disjoint(self):
+        # implement-issue stops; check-out runs in the same session and records;
+        # its aggregate recovers implement-issue, sliced only to the first later
+        # boundary (check-out's mark), and never yields a check-out-stopped row.
+        self.transcript(
+            "sess1",
+            ("2026-07-25T10:01:00Z", 1),     # stopped implement-issue
+            ("2026-07-25T10:03:00Z", 10),    # check-out
+        )
+        self.mark("2026-07-25T10:00:00Z")
+        self.mark("2026-07-25T10:02:00Z", skill="check-out")
+        self.record_run("2026-07-25T10:04:00Z", skill="check-out")
+        out = self.aggregate_at("2026-07-25T10:05:00Z")
+        self.assertEqual(self.rows(), [("check-out", 10), ("implement-issue-stopped", 1)])
+        self.assertNotIn("check-out-stopped", out)
+        self.assertFalse(cost.mark_path("sess1", "implement-issue").exists())
+
+    def test_a_normal_mark_and_record_is_not_double_counted(self):
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1))
+        self.mark("2026-07-25T10:00:00Z")
+        self.record_run("2026-07-25T10:02:00Z")
+        out = self.mark("2026-07-25T10:03:00Z")  # a later re-run finds no open marker
+        self.assertEqual(self.rows(), [("implement-issue", 1)])
+        self.assertNotIn("Recovered", out)
+
+    def test_another_projects_marker_with_the_same_issue_is_ignored(self):
+        self.transcript("sess2", ("2026-07-25T10:01:00Z", 1))
+        self.mark("2026-07-25T10:00:00Z", session="sess2", project="other-project")
+        out = self.aggregate_at("2026-07-25T10:02:00Z")
+        self.assertIn("No cost ledger found", out)
+        self.assertTrue(cost.mark_path("sess2", "implement-issue").exists())
+
+    def test_another_sessions_marker_ends_at_the_close_and_a_later_record_starts_there(self):
+        # An open marker in another session with no later boundary is priced up
+        # to the close and the close is logged as its boundary — so if that run
+        # was still going and records later, it does not re-price the slice.
+        self.transcript("sess2", ("2026-07-25T10:01:00Z", 1), ("2026-07-25T10:05:00Z", 10))
+        self.mark("2026-07-25T10:00:00Z", session="sess2")
+        self.aggregate_at("2026-07-25T10:02:00Z")
+        self.assertEqual(self.rows(), [("implement-issue-stopped", 1)])
+        self.assertIn(cost.parse_ts("2026-07-25T10:02:00Z"), cost.read_boundaries("sess2"))
+        out = self.record_run("2026-07-25T10:06:00Z", session="sess2")
+        self.assertEqual(self.rows(), [("implement-issue-stopped", 1), ("implement-issue", 10)])
+        self.assertNotIn("WHOLE session", out)
+
+    def test_a_marker_without_an_issue_is_discarded_on_remark(self):
+        # create-issue marks before the issue exists: a stopped create-issue
+        # has no ledger to land in.
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1))
+        self.mark("2026-07-25T10:00:00Z", skill="create-issue", issue=None)
+        out = self.mark("2026-07-25T10:02:00Z", skill="create-issue", issue=None)
+        self.assertIn("cannot be attributed", out)
+        self.assertEqual(list(cost.LEDGER_ROOT.glob("*/*.jsonl")), [])
+
+    def test_unsafe_or_non_ascii_attribution_is_discarded(self):
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1))
+        for field, bad in (("project", ".."), ("skill", "../x"), ("issue", "\u0667")):
+            with self.subTest(field=field):
+                path = cost.mark_path("sess1", "implement-issue")
+                path.unlink(missing_ok=True)
+                self.mark("2026-07-25T10:00:00Z")
+                data = json.loads(path.read_text())
+                data[field] = bad
+                path.write_text(json.dumps(data))
+                out = self.mark("2026-07-25T10:02:00Z")
+                self.assertIn("cannot be attributed", out)
+                self.assertEqual(list(cost.LEDGER_ROOT.glob("*/*.jsonl")), [])
+                self.assertEqual(json.loads(path.read_text())["start"], "2026-07-25T10:02:00+00:00")
+
+    def test_mark_tolerates_a_non_numeric_issue(self):
+        # A feature need not have an issue: an unusable --issue is ignored with a
+        # warning, never an exit, and the marker falls back to the branch.
+        for bad in ("#87", "87 --fast", "", "\u0667"):
+            with self.subTest(issue=bad):
+                out = self.mark("2026-07-25T10:00:00Z", issue=bad, branch="feature/x")
+                self.assertIn("ignoring invalid --issue", out)
+                marker = cost.read_marker(cost.mark_path("sess1", "implement-issue"))
+                self.assertIsNone(marker["issue"])
+                self.assertEqual(marker["branch"], "feature/x")
+
+    def test_mark_without_any_feature_key_still_marks(self):
+        out = self.mark("2026-07-25T10:00:00Z", issue=None)
+        self.assertTrue(cost.mark_path("sess1", "implement-issue").exists())
+        self.assertIn("cannot be attributed", out)
+
+    def test_a_feature_without_an_issue_is_keyed_by_its_branch(self):
+        # A branch-only feature: a stopped implement-issue on the branch, then
+        # check-out — both keyed by the branch, with the same disjoint slicing.
+        branch = "feature/paf-init-fixes"
+        key = cost.feature_key(None, branch)
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1), ("2026-07-25T10:03:00Z", 10))
+        self.mark("2026-07-25T10:00:00Z", issue=None, branch=branch)
+        self.mark("2026-07-25T10:02:00Z", skill="check-out", issue=None, branch=branch)
+        self.record_run("2026-07-25T10:04:00Z", skill="check-out", issue=None, branch=branch)
+        out = self.aggregate_at("2026-07-25T10:05:00Z", issue=None, branch=branch)
+        self.assertEqual(self.rows(key), [("check-out", 10), ("implement-issue-stopped", 1)])
+        self.assertIn("## Factory run cost — feature `feature/paf-init-fixes`", out)
+        # One filename, inside the project's ledger directory.
+        self.assertEqual(cost.ledger_path(self.PROJECT, key).parent, cost.LEDGER_ROOT / self.PROJECT)
+
+    def test_an_issue_wins_over_the_branch(self):
+        # Issue-keyed features stay keyed by issue even when the branch is passed
+        # too, so create-issue (no branch) and check-out (both) share one ledger.
+        self.assertEqual(cost.feature_key("56", "feature/56-x"), "56")
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1))
+        self.mark("2026-07-25T10:00:00Z", skill="check-out", branch="feature/56-x")
+        self.record_run("2026-07-25T10:02:00Z", skill="check-out", branch="feature/56-x")
+        self.assertEqual(self.rows(), [("check-out", 1)])
+
+    def test_unusable_branches_give_no_key(self):
+        for bad in ("../x", "a/../b", "/x", "x/", "a b", "x`y", "x|y", ".", ""):
+            with self.subTest(branch=bad):
+                self.assertIsNone(cost.feature_key(None, bad))
+
+    def test_record_without_any_feature_key_reports_but_writes_no_ledger(self):
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1))
+        self.mark("2026-07-25T10:00:00Z", issue=None)
+        out = self.record_run("2026-07-25T10:02:00Z", issue=None)
+        self.assertIn("Cost: €", out)
+        self.assertIn("not added to any feature ledger", out)
+        self.assertEqual(list(cost.LEDGER_ROOT.glob("*/*.jsonl")), [])
+
+    def test_aggregate_without_any_feature_key_does_not_fail(self):
+        out = self.aggregate_at("2026-07-25T10:00:00Z", issue=None)
+        self.assertIn("no feature cost ledger to aggregate", out)
+
+    def test_a_naive_boundary_line_is_ignored(self):
+        cost.boundary_path("sess1").parent.mkdir(parents=True, exist_ok=True)
+        cost.boundary_path("sess1").write_text("2026-07-25T10:00:00\n2026-07-25T10:01:00+00:00\n")
+        self.assertEqual(cost.read_boundaries("sess1"), [cost.parse_ts("2026-07-25T10:01:00Z")])
+
+    def test_record_notes_the_boundary_fallback(self):
+        self.transcript("sess1", ("2026-07-25T10:01:00Z", 1))
+        self.mark("2026-07-25T10:00:00Z", skill="check-out")
+        out = self.record_run("2026-07-25T10:02:00Z")
+        self.assertIn("last boundary", out)
+
+    def test_a_legacy_bare_timestamp_marker(self):
+        self.transcript("sess1", ("2026-07-25T09:59:00Z", 100), ("2026-07-25T10:01:00Z", 1))
+        legacy = cost.mark_path("sess1", "implement-issue")
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        with self.subTest("record still slices from it"):
+            legacy.write_text("2026-07-25T10:00:00+00:00")
+            self.record_run("2026-07-25T10:02:00Z")
+            self.assertEqual(self.rows(), [("implement-issue", 1)])
+        with self.subTest("a re-mark discards it unattributed"):
+            legacy.write_text("2026-07-25T10:00:00+00:00")
+            out = self.mark("2026-07-25T10:03:00Z")
+            self.assertIn("cannot be attributed", out)
+            self.assertEqual(self.rows(), [("implement-issue", 1)])
+
+    def test_a_missing_transcript_does_not_abort_aggregate(self):
+        self.mark("2026-07-25T10:00:00Z", session="gone")
+        out = self.aggregate_at("2026-07-25T10:01:00Z")
+        self.assertIn("WARNING: no transcript for session gone", out)
+        self.assertIn("No cost ledger found", out)
+        self.assertFalse(cost.mark_path("gone", "implement-issue").exists())
 
 if __name__ == "__main__":
     unittest.main()

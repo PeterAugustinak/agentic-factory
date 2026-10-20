@@ -34,11 +34,13 @@ After **every** agent step, parse that agent's final message with the shared rul
 ## Steps
 
 **1. Read the issue (skill).**
-First, mark this invocation's start so the cost step (step 13) prices only this run, not the whole session:
+First, mark this invocation's start so the cost step (step 13) prices only this run, not the whole session — the issue number tags the marker, so if this run stops before step 13 its cost is still recovered into the feature's ledger:
 
 ```
-python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "${CLAUDE_SESSION_ID}" --skill implement-issue
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "${CLAUDE_SESSION_ID}" --skill implement-issue --issue "<issue-number>"
 ```
+
+`<issue-number>` is the number from `$ARGUMENTS`, only when it is a plain number (digits only, e.g. `87`); otherwise omit `--issue` — never splice a non-numeric argument into the shell line. A missing issue number never stops cost tracking: the run is still marked, it just cannot be attributed if it stops before step 13.
 
 Then fetch the issue: `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs view-issue $ARGUMENTS` on the repo auto-detected from the git `origin` remote. Keep its title, body, and proposed approach — they feed the validator and the plan.
 
@@ -139,10 +141,11 @@ Run the shared cost helper:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
-  --session "${CLAUDE_SESSION_ID}" --skill implement-issue --issue "<issue-number>"
+  --session "${CLAUDE_SESSION_ID}" --skill implement-issue --issue "<issue-number>" \
+  --branch "$(git branch --show-current)"
 ```
 
-It prices only this invocation's slice of the session transcript (from the step-1 mark onward), and appends an entry to the per-feature cost ledger keyed by the issue number (the same ledger `/paf:create-issue` wrote to and `/paf:check-out` will total). Print a short summary and remind the developer to review the branch, then run `/paf:check-out`.
+(Omit `--issue` exactly as in step 1.) It prices only this invocation's slice of the session transcript (from the step-1 mark onward), and appends an entry to the per-feature cost ledger keyed by the issue number — or by the feature branch when there is no issue number — the same ledger `/paf:create-issue` wrote to and `/paf:check-out` will total. Print a short summary and remind the developer to review the branch, then run `/paf:check-out`.
 
 ## Escalation
 

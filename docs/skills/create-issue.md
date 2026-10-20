@@ -109,7 +109,11 @@ The skill marks its invocation start at step 1, and the final step runs [`skills
 
 - prices only this invocation's slice of the session transcript — from the step-1 mark onward, main-thread + any agent usage — using [`pricing.json`](../../skills/paf-shared/pricing.json), converts the total to **EUR**, and prints the token breakdown (in / out / cached / total) alongside it. Model ids are canonicalised first — a trailing `-YYYYMMDD` snapshot date is stripped, since pricing is per model and not per snapshot, which is why the price table's keys must be dateless. A model still missing from the table after that is priced at the latest known same-family rate, with a note to add it, rather than dropped;
 - appends an entry to the per-feature ledger at `~/.claude/paf/costs/<project>/<issue>.jsonl` (user scope — no footprint in the target repository);
-- keyed by the **issue number**, so `/paf:implement-issue` and `/paf:check-out` add to the same ledger and `/paf:check-out` reports the **total** feature cost in the PR.
+- keyed by the **issue number** (a feature without one is keyed by its branch, below), so `/paf:implement-issue` and `/paf:check-out` add to the same ledger and `/paf:check-out` reports the **total** feature cost in the PR.
+
+A feature without an issue is keyed by its branch name instead of an issue number; a missing or malformed issue number never stops cost tracking.
+
+A run that stops before its cost step is not lost: the start marker records the session, skill, project, and feature key (issue number, or branch), and every mark and record logs a per-session boundary. The next `mark` of the same skill in the same session, and `/paf:check-out`'s `aggregate` (for every open marker of that project and feature, in any session), record an open marker as its own `<skill>-stopped` row, priced from its start to the next PAF boundary in its session, so it never double-counts a later run. **Limitation:** `create-issue` marks before the issue exists, so a `create-issue` run that stops before posting cannot be attributed to any ledger, and its cost is dropped.
 
 Because the run is sliced from the mark, discussion that happened *before* `/paf:create-issue` was invoked is not counted — the cost reflects the issue-drafting work itself, not the preceding idea conversation.
 
