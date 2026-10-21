@@ -33,14 +33,11 @@ Invoke after install: `/skill-name`
 
 ## Versioning and the changelog
 
-Bumping `VERSION` and writing the `CHANGELOG.md` entry is a **manual, per-PR discipline**. It is
+Bumping `VERSION` and writing the `CHANGELOG.md` entry is a **manual release step**. It is
 deliberately not automated inside `check-out`: that skill is project-agnostic, whereas this
 versioning scheme is PAF-specific, so building it in would break `check-out` on every other project.
 
-While PAF is pre-1.0, **every PR carries its own version**: bump `VERSION` per the rules in the
-[README](../README.md) and add a dated `## [x.y.z] - YYYY-MM-DD` section to `CHANGELOG.md`
-describing the change.
-
-From `1.0.0` onward this switches to **one version per release**: feature PRs into `develop` add
-their entries under `## [Unreleased]`, and the release PR from `develop` to `master` bumps `VERSION`
-and converts that section into a dated one — so several PRs share a version.
+There is **one version per release**, not per PR. Feature PRs do not touch `VERSION` or
+`CHANGELOG.md`. At release, every PR merged since the last version goes into a single dated
+`## [x.y.z] - YYYY-MM-DD` section, and `VERSION` is bumped once, by the highest bump any of those
+PRs requires under the rules in the [README](../README.md).

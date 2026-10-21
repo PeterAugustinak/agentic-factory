@@ -28,7 +28,7 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 4. **Pre-merge validation** (skill) — the project's **full** test + lint suite. On failure, if the project instructions (`CLAUDE.md` or `AGENTS.md`) define an **optional auto-fix command**, the skill runs that command exactly as defined and re-validates **once**: passing means the failures were mechanically resolvable and the run continues (reporting what changed); anything still failing needs judgement and **STOPs**. With no auto-fix command defined, failure **STOPs** as before.
 5. **Commit & push** (skill) — commit whatever is still uncommitted; push.
 6. **Record cost** (skill) — append this run's cost to the per-feature ledger.
-7. **Total & PR** (skill) — total the whole feature across all three main skills, clear the hand-off fingerprint with the ledger, and open the PR using the **fixed description template** (Closes line, What this implements, Validation, Deviations, cost table) under a title pinned to the issue title with a conventional-commit type prefix picked from the change.
+7. **Total & PR** (skill) — total the whole feature across all three main skills, clear the hand-off fingerprint with the ledger, and open the PR using the **fixed description template** (Closes line, What this implements, Validation, Deviations, cost table) — written to a temporary file, with the cost table redirected into it from the cost helper and the file posted as-is — under a title pinned to the issue title with a conventional-commit type prefix picked from the change.
 
 ## Orchestration
 
@@ -79,7 +79,8 @@ The issue number is normally derived from the branch name (`feature/<issue>-<…
 | [skill] record check-out cost; aggregate the |
 |   whole feature (tokens + EUR); clear the    |
 |   hand-off fingerprint; open PR —            |
-|   fixed body template, "<type>: <issue>"     |
+|   fixed body template written to a file,     |
+|   cost table redirected in; "<type>: <issue>"|
 +----------------------------------------------+
 ```
 
@@ -104,7 +105,8 @@ Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** —
 - the safety-net review returns an `error` finding;
 - `quality-assurer` finds unmet criteria;
 - pre-merge validation fails — after the auto-fix and its single re-validation, where the project defines one;
-- malformed/missing agent output.
+- malformed/missing agent output;
+- writing the description file, appending the cost section to it, or opening the MR/PR fails (the directory is kept and the file's path printed).
 
 **Two-tier verification.** The scoped `implementation-verifier` runs **tests only** in `/paf:implement-issue`'s fix loops; the **full** test + lint suite runs here as pre-merge validation — the safety net that catches cross-module regressions a scoped run cannot see, and the tier the lint command belongs to. `check-out` runs no scoped verification of its own, because it authors no fixes of its own: its only mutation is the optional mechanical auto-fix at the gate, which the full re-validation already covers.
 
@@ -138,7 +140,7 @@ Closes #<issue-number>.
 | ... | ... | ... | ... | ... | ... |
 ```
 
-- The **cost section** is appended **verbatim** from `paf-report-cost.py aggregate` (for a feature without an issue, its heading names the branch instead of `#<issue-number>`) — heading and table as printed, never authored or reformatted by the model.
+- The **cost section** is appended **verbatim** from `paf-report-cost.py aggregate` (for a feature without an issue, its heading names the branch instead of `#<issue-number>`) — heading and table as printed, never authored or reformatted by the model. The skill writes the rest of the description to a file, redirects `aggregate`'s output onto its end, and posts that file, so the model never retypes the table.
 - **Validation** carries the pre-merge command exactly as the project instructions define it (the same command step 4 ran, never hardcoded) plus the result summary from its actual output. It says nothing about the factory's internal agent gates.
 - **Deviations** is anchored strictly: only what the issue *explicitly states* — in its Approach, Scope of changes, or acceptance criteria — and the implementation does differently, phrased "what the issue said → what was built", with no hedging or speculation. When nothing anchors, the section is **omitted entirely** — there is no "None." placeholder.
 - The body must **not** contain rationale or a "why" section, a changed-files list or per-file narration, trade-off discussion, agent-review findings or statistics, or version-bump notes — a reviewer who wants that intent detail finds it in the linked issue, which is what the `Closes` line points at. There is no `🤖 Generated with [Claude Code]` trailer.

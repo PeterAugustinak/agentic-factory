@@ -5,6 +5,40 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.0] - 2026-10-21
+
+Graded MINOR rather than PATCH, although all three changes are bug fixes: #87 changes the interface
+between the skills and `paf-report-cost.py`. `mark` takes `--issue` and `--branch`, and ledgers of
+features without an issue are keyed by branch.
+
+### Fixed
+
+- The cost of a skill run that stops before its cost step is no longer lost. Its start marker
+  carries its own attribution (session, skill, project, issue or branch), and an open marker is
+  recorded as a `<skill>-stopped` ledger row, either by the next run of the same skill in the same
+  session or by `/paf:check-out`'s `aggregate`. Each slice ends at the next PAF boundary in its
+  session, so no run is counted twice. A missing issue number never stops a run (#87).
+- `/paf:create-issue` edits a validator warning that corrects a checkable fact (a path, name, count,
+  command, or description of current behaviour) into the draft body in place, instead of appending it
+  as a note the body contradicts. Corrections are kept on an invocation-wide list and re-applied
+  after every regeneration. The review gate lists each one as `Corrected: X → Y (validator)`. Other
+  warnings stay `Validator note:` lines under References (#88).
+- `/paf:create-issue` posts the approved issue body from a file instead of retyping it. Every draft
+  shown at the review gate is written to a file in a private temporary directory
+  (`tempfile.mkdtemp`), and each revision overwrites it. The `PAF` marker is appended with a shell
+  append and the file is posted as-is, so the posted body matches the approved one byte for byte.
+  `/paf:check-out` posts the MR/PR description from a file the same way, with the `aggregate` cost
+  table redirected onto its end, so the cost section is never retyped. A failed redirect never lets
+  `--cleanup` delete the ledger (#89).
+
+### Changed
+
+- `docs/CONTRIBUTING.md` describes versioning as one version per release rather than one per PR:
+  feature PRs leave `VERSION` and `CHANGELOG.md` alone, and a release covers every PR merged since
+  the last version.
+
+Re-run the installer to pick up these changes.
+
 ## [0.29.0] - 2026-10-19
 
 ### Added
