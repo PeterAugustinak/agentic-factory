@@ -3,7 +3,7 @@ name: "paf:check-out"
 description: Confirm, validate, and open an MR/PR for developer-validated work on the current feature branch — with the whole feature's cost in the MR/PR. Invoke with /paf:check-out after reviewing /paf:implement-issue's output.
 disable-model-invocation: true
 argument-hint: "[optional issue-number]"
-allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git *), Bash(python3 *)
+allowed-tools: Read, Write, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git *), Bash(python3 *)
 ---
 
 # check-out
@@ -87,11 +87,13 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
 ```
 
 **7. Total the feature and open the MR/PR (skill).**
-Aggregate the whole feature's cost across all three main skills and clean up the ledger. `aggregate` first records every run of this feature that stopped without recording its cost (an open marker for this project and feature, in any session) as its own `<skill>-stopped` row, so the total includes it:
+The description is posted from a file, and its cost section goes into that file straight from the script's output — never retyped by you, so it stays verbatim. Create a private temporary directory — `python3 -c 'import tempfile; print(tempfile.mkdtemp(prefix="paf-"))'` — and `Write` the filled-in description (below) to `<dir>/pr-description.md`, **without** its cost section.
+
+Then aggregate the whole feature's cost across all three main skills, appending it to that file, and clean up the ledger. `aggregate` first records every run of this feature that stopped without recording its cost (an open marker for this project and feature, in any session) as its own `<skill>-stopped` row, so the total includes it. The shell opens the redirect target before it runs the command, so if the file cannot be opened, `aggregate` never runs and its `--cleanup` cannot delete a ledger whose total went nowhere:
 
 ```
-python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" aggregate \
-  --issue "<issue-number>" --branch "$(git branch --show-current)" --cleanup
+{ printf '\n'; python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" aggregate \
+  --issue "<issue-number>" --branch "$(git branch --show-current)" --cleanup; } >> "<dir>/pr-description.md"
 ```
 
 and remove the feature's hand-off fingerprint on the same lifecycle:
@@ -100,16 +102,16 @@ and remove the feature's hand-off fingerprint on the same lifecycle:
 python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-fingerprint.py" clear --issue "<issue-number>"
 ```
 
-Then open the MR/PR against the base branch from the project instructions, passing the description on stdin (source branch is inferred by the adapter). The issue title is attacker-influenceable text (anyone who can file an issue controls it) — never paste it directly into a double-quoted command-line argument, where a title containing `"`, a backtick, `$(...)`, `;`, or `&&` could break out and run arbitrary shell code with your git/gh/glab credentials. Instead, first bind the resolved title to a shell variable via a **single-quoted** assignment — escaping any single quote in the title as `'\''` (the standard technique for embedding arbitrary text inside a single-quoted shell string) — then pass the variable, never the raw text, as `--title`:
+Then open the MR/PR against the base branch from the project instructions, feeding it the description file (source branch is inferred by the adapter). The issue title is attacker-influenceable text (anyone who can file an issue controls it) — never paste it directly into a double-quoted command-line argument, where a title containing `"`, a backtick, `$(...)`, `;`, or `&&` could break out and run arbitrary shell code with your git/gh/glab credentials. Instead, first bind the resolved title to a shell variable via a **single-quoted** assignment — escaping any single quote in the title as `'\''` (the standard technique for embedding arbitrary text inside a single-quoted shell string) — then pass the variable, never the raw text, as `--title`:
 
 ```
 title='<type>: <issue title>'
-${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs create-change-request --base <base-branch> --title "$title" <<'EOF'
-<the filled-in description below>
-EOF
+${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs create-change-request --base <base-branch> --title "$title" < "<dir>/pr-description.md"
 ```
 
-**Description — fixed template.** The description is **exactly** this skeleton, filled in — nothing else, in this order:
+Once the MR/PR is open, remove the directory (`rm -r "<dir>"`). If opening it fails, keep the directory and print the file's path. `--cleanup` already deleted the ledger, so that file holds the only copy of the total.
+
+**Description — fixed template.** The description, once `aggregate` has appended its cost section, is **exactly** this skeleton, filled in — nothing else, in this order:
 
 ```
 Closes #<issue-number>.
@@ -134,7 +136,7 @@ Closes #<issue-number>.
 ```
 
 Rules for filling it in:
-- **Cost section** — appended **verbatim** from the `paf-report-cost.py aggregate` output above (its heading and table, as printed). Never authored or reformatted by you. It gives the reviewer — who has no access to this CLI session — the whole feature's cost.
+- **Cost section** — appended **verbatim** by redirecting the `paf-report-cost.py aggregate` output above into the description file (its heading and table, as printed). Never typed, authored, or reformatted by you. It gives the reviewer — who has no access to this CLI session — the whole feature's cost.
 - **Validation section** — carries the pre-merge validation command **exactly as the project instructions define it** (the same command step 4 ran; never hardcoded, never one remembered from another project) plus the result summary from its **actual** output. Says nothing about the factory's internal agent gates (the reviews, the spec check).
 - **Deviations section** — inferred from the issue body and the `git diff <base>` already in context from step 1, under a strict anchoring rule: report **only** what the issue *explicitly states* — in its Approach, Scope of changes, or acceptance criteria — and the implementation does differently, phrased "what the issue said → what was built". No hedging, no speculation. When nothing anchors, **omit the whole section** — no "None." placeholder.
 - **Never include** — rationale or a "why" section, a changed-files list or per-file narration, trade-off discussion, agent-review findings or statistics, or version-bump notes. A reviewer who wants that level of intent detail finds it in the linked issue.
@@ -151,6 +153,7 @@ Capture the MR/PR **URL** from `paf-vcs`'s `URL=` output line and print it.
 - the safety-net review returns an `error` finding (step 2);
 - `quality-assurer` finds unmet criteria (step 3);
 - pre-merge validation fails — after the auto-fix and its single re-validation, when the project defines an auto-fix command (step 4);
-- malformed or missing agent output (any agent step).
+- malformed or missing agent output (any agent step);
+- writing the description file, appending the cost section to it, or opening the MR/PR fails (step 7) — keep the directory and print the description file's path.
 
 Nothing is pushed and no MR/PR is opened until every check passes.
