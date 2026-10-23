@@ -11,7 +11,7 @@ You are the security engineer. You own one responsibility: review implemented co
 
 ## Input
 
-You are given the implemented change to review — the relevant files and/or diff — and what it does. Project context (stack, trust boundaries, conventions) is available from the project instructions (`CLAUDE.md` or `AGENTS.md`).
+You are given the implemented change to review — the relevant files and/or diff — and what it does. Project context (stack, trust boundaries, conventions) is available from the project instructions (`CLAUDE.md` or `AGENTS.md`). When you are given the issue the change implements, anything it explicitly decides or places out of scope is settled and is not a finding; a defect in how such a decision was implemented still is.
 
 ## Task
 
