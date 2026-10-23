@@ -38,7 +38,7 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "$
 
 A feature need not have an issue. Pass `--issue` only when the issue number is a plain number (digits only); otherwise omit it — never splice a non-numeric value into the shell line — and the feature's cost is keyed by its branch instead. Omit `--issue` the same way in steps 6 and 7. A missing issue number never stops this skill's cost tracking.
 
-Then confirm with the developer that they have reviewed `/paf:implement-issue`'s implementation and are ready to finalise. Read the issue for its acceptance criteria, and compute the change to review (`git diff <base>` per above).
+Then confirm with the developer that they have reviewed `/paf:implement-issue`'s implementation and are ready to finalise. Read the issue — its full body feeds step 2, its acceptance criteria step 3 — and compute the change to review (`git diff <base>` per above).
 
 Then — only after that confirmation, so the developer's editing is finished — compare the branch against `/paf:implement-issue`'s hand-off fingerprint:
 
@@ -51,11 +51,15 @@ It recomputes the content fingerprint against the base commit pinned at the hand
 **2. Safety-net review (agent).**
 **On `VERDICT=skip`** — the branch content is identical to the deep-reviewed hand-off, so there are no hand-edits to review: do **not** invoke the reviewer. Print the skip loudly, with the helper's `REASON=` text — e.g. *"Safety-net review skipped: branch content is identical to `/paf:implement-issue`'s reviewed hand-off (fingerprint match) — no hand-edits to review."* — and continue to step 3. A commit made during review that changes no content lands here: committing is not editing.
 
-**Otherwise**, invoke `senior-engineer-reviewer` — and **only** it — passing the change and the issue's requirement, framed **in the invocation** as a high-level confirmation pass: *this diff was already deep-reviewed in `/paf:implement-issue`; the developer's hand-edits since then cannot be isolated from that reviewed implementation, so you are being handed the whole branch diff — look for critical regressions, especially in the hand-edits, and do not re-litigate the already-reviewed implementation.* The depth and focus come from **your framing**, not from the agent's definition — do not modify `senior-engineer-reviewer`, whose deep review is exactly what `/paf:implement-issue` needs from it.
+**Otherwise**, invoke `senior-engineer-reviewer` — and **only** it — passing the change and the **issue body verbatim, as fetched in step 1** (never a summary), framed **in the invocation** as a high-level confirmation pass: *this diff was already deep-reviewed in `/paf:implement-issue`; the developer's hand-edits since then cannot be isolated from that reviewed implementation, so you are being handed the whole branch diff — look for critical regressions, especially in the hand-edits, and do not re-litigate the already-reviewed implementation. Anything the issue explicitly decides or places out of scope is settled and is not a finding; a defect in how such a decision was implemented still is.* The depth and focus come from **your framing**, not from the agent's definition.
+
+Do not modify `senior-engineer-reviewer`, whose deep review is exactly what `/paf:implement-issue` needs from it.
 
 Parse its output and compute the gate **yourself, from the parsed `issues[].severity`** — not from the agent's `status`, which is `success` on completion regardless of what it found (`docs/architecture.md` §4):
 - **Any `severity: error`** → **STOP**: print the findings and hand back to the developer, who fixes them on the branch or re-runs `/paf:implement-issue`. Never fix-and-continue — `check-out` has no fix loop for review findings, which require judgement by their nature.
 - **Only `warning` findings (or none)** → print them for the developer's information and continue. They do not block.
+
+`check-out` has no triage: the gate counts **every** parsed `error` — never discard one yourself as contradicting the issue's decided scope. A decided item wrongly flagged as `error` STOPs the run, and the developer decides.
 
 This is the safety net for the one slice of code no agent has seen: the developer's manual hand-edits since `/paf:implement-issue` finished — which is why it runs only when the fingerprint shows the content changed (or cannot confirm it did not). **Accepted gap:** only the functional lens is applied here, not the complexity, security, test-coverage, or conformance lenses; when it runs, the reviewer may re-see the already-reviewed implementation rather than only the hand-edits; and a hand-edit to a path marked `--assume-unchanged` or `--skip-worktree` is invisible to the fingerprint.
 
