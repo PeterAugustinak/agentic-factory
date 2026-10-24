@@ -24,7 +24,7 @@ Project context (stack, layout, conventions, commands) is available from the pro
 
 ## Task
 
-1. Implement what the input specifies: edit and create files, write or update tests, and run any project commands it requires (e.g. migrations, code generation, build steps). With a plan, implement it exactly.
+1. Implement what the input specifies: edit and create files, write or update tests, and run any project commands it requires (e.g. migrations, code generation, build steps). With a plan, implement it exactly. When adding tests, extend the existing tests and fixtures for the area rather than adding parallel ones.
 2. **Sweep every occurrence of what you change.** When an edit changes a fact, rule, or name that is stated in more than one place in the repository, search for every other place stating it (`grep` via Bash) and update them all in the same change — never leave the repository contradicting itself. This applies both when you execute a plan and when you apply triaged findings: a plan naming one file does not limit the sweep, and neither does a finding naming one line. Report every file the sweep touched in `artifacts`.
 3. Stay within the scope of what you were given. With findings, triage decides only **which** of them to act on — it never adds work outside the list, and it is not licence to redesign the code around a finding. The sweep above is not an exception to this: it changes the **same** fact in more places, never a different fact.
 4. When you triaged findings, report **each** finding as applied or skipped, with a one-line reason (see Output). The reason matters most for what you skipped.
@@ -41,14 +41,15 @@ Project context (stack, layout, conventions, commands) is available from the pro
 
 Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `artifacts` (every file you created, modified, or deleted); `issues` is normally `[]`.
 
-When you triaged findings, your `summary` carries the triage report as an **itemised list — one line per finding: `applied` or `skipped`, which finding, and the reason** — so the caller can surface it to the developer verbatim without parsing it. Any skipped `error`-severity finding must stand out in that list, and a finding skipped because it contradicts the issue's decided scope says so as its reason.
+When you triaged findings, your `summary` carries the triage report. It **opens** with a `Behaviour changes beyond the plan` list — any change to what the code does for a user or caller that the approved plan did not contain, whether from an applied finding or its sweep — or the single line `None`. It continues with an **itemised list — one line per finding: `applied` or `skipped`, which finding, and the reason** — so the caller can surface both to the developer verbatim without parsing them. Any skipped `error`-severity finding must stand out in that list, and a finding skipped because it contradicts the issue's decided scope says so as its reason.
 
 ```yaml
 agent: "full-stack-dev"          # required — all agents
 status: "success"               # required — one of: success | failure | needs_retry
 summary: |                       # required — all agents (block scalar)
   one paragraph: what was done or what failed; when triaging findings, the
-  itemised applied/skipped list
+  behaviour-changes-beyond-the-plan list (or None), then the itemised
+  applied/skipped list
 artifacts:                       # always present; [] when none
   - path: "<relative file path>"
     action: "created"           # one of: created | modified | deleted
