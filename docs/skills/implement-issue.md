@@ -28,9 +28,9 @@ Once an issue exists and its approach is sound enough to build:
 6. **Implement** (skill, same context) — apply the approved plan's exact edits on the branch, including every occurrence the plan's sweep enumerated. Because planning and building share the context, this is applying what's already decided — no re-exploration — with the same turn discipline (independent edits batched).
 7. **Verify** — `implementation-verifier` runs the project's **tests only**, scoped to the changed area — never the lint command and never the full pre-merge command, which belong to `/paf:check-out`'s gate. On failure the **same main-thread context that built the code** (now in edit mode) applies the fix (it still holds the plan and the edits — no re-exploration, and no cold builder agent) and re-verifies, up to a cap; if it still fails, the run stops and escalates.
 8. **Deep review in parallel** — `senior-engineer-reviewer`, `code-simplifier`, `security-engineer`, `test-coverage-reviewer`, `conformance-reviewer` run concurrently over the change, supplied as a compact **change manifest** instead of the full diff in five prompts (created files, plus a zero-context diff without its added lines, whose ranges each reviewer `Read`s), plus the issue body verbatim; anything the issue explicitly decides or places out of scope is not a finding (a defect in how a decision was implemented still is). The skill aggregates their findings. No findings takes the **skip path** straight to the hand-off.
-9. **Triage & apply** — `full-stack-dev` receives **all** findings and decides which are worth applying, then applies them: a finding contradicting the issue's explicit decisions or out-of-scope items is skipped whatever its severity (named as such), `error` findings apply by default (a skip must be loud and justified), a **factual / self-consistency defect** applies whatever severity it carries (never skippable as discretionary), and the remaining `warning` findings are its discretion. It also **sweeps** — a fact, rule, or name it changes is updated everywhere the repo states it. The skill surfaces its applied-vs-skipped report to the developer — the developer doesn't pre-select fixes; their manual review is the curation point.
-10. **Re-verify** — `implementation-verifier` runs again, since step 9 may have changed the code and tests are the gate. On failure `full-stack-dev` fixes from its output and it re-verifies, up to a cap; the reviewers are **not** re-run.
-11. **Hand off** (skill) — leave the verified, reviewed changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`), and pin the hand-off: `paf-fingerprint.py record` stores the base commit sha and a content fingerprint of every changed path (tracked and untracked) under `~/.claude/paf/`, so `/paf:check-out` can skip its safety-net review when nothing changed since.
+9. **Triage & apply** — `full-stack-dev` receives **all** findings (plus the issue body and the approved plan, the baseline for the behaviour-changes list) and decides which are worth applying, then applies them: a finding contradicting the issue's explicit decisions or out-of-scope items is skipped whatever its severity (named as such), `error` findings apply by default (a skip must be loud and justified), a **factual / self-consistency defect** applies whatever severity it carries (never skippable as discretionary), and the remaining `warning` findings are its discretion. It also **sweeps** — a fact, rule, or name it changes is updated everywhere the repo states it — and extends the existing tests and fixtures for the area rather than adding parallel ones. Its report opens with a **behaviour changes beyond the plan** list (any change to what the code does for a user or caller that the approved plan did not contain), or `None`, followed by the applied-vs-skipped list; the skill surfaces both at the hand-off — the developer doesn't pre-select fixes; their manual review is the curation point.
+10. **Re-verify** — `implementation-verifier` runs again, since step 9 may have changed the code and tests are the gate. On failure `full-stack-dev` fixes from its output (reporting any behaviour change it makes, appended to the hand-off list) and it re-verifies, up to a cap; the reviewers are **not** re-run.
+11. **Hand off** (skill) — leave the verified, reviewed changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`); when triage ran, print its behaviour-changes-beyond-the-plan list **first and prominently**, then its applied-vs-skipped report verbatim (nothing on the skip path); and pin the hand-off: `paf-fingerprint.py record` stores the base commit sha and a content fingerprint of every changed path (tracked and untracked) under `~/.claude/paf/`, so `/paf:check-out` can skip its safety-net review when nothing changed since.
 12. **Cost** (skill) — append this invocation's cost to the per-feature cost ledger.
 
 ### Why plan mode
@@ -125,7 +125,8 @@ Planning and building run in the main thread via native plan mode rather than as
 |   error -> apply (loud, justified skip);     |          |
 |   factual/consistency defect -> apply at     |          |
 |   any severity; other warning -> discretion. |          |
-|   Report applied vs skipped -> developer     |          |
+|   Report: behaviour changes beyond plan      |          |
+|   (or None), then applied vs skipped         |          |
 +----------------------------------------------+          |
      |                                                    |
      v                                                    |
@@ -140,6 +141,8 @@ Planning and building run in the main thread via native plan mode rather than as
 +----------------------------------------------+       <--+
 | [skill] leave changes UNCOMMITTED on branch  |
 |   for review (no commit / push / MR/PR);     |
+|   print behaviour changes first, then the    |
+|   applied-vs-skipped report (if triage ran); |
 |   record hand-off fingerprint (pinned base)  |
 +----------------------------------------------+
      |
