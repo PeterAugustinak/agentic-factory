@@ -43,13 +43,15 @@ whatever environment this describes, so if tests only pass inside docker, say so
 
 The **exact command**, not a description. Agents run it verbatim. This is the command
 `implementation-verifier` scopes to the changed area for fast in-loop verification inside
-`/paf:implement-issue`'s fix loops — it runs **tests only** there, never the lint command below.
+`/paf:implement-issue`'s fix loops — it runs the tests there, plus the optional UI check command
+below when a change touches UI, and never the lint command below.
 
 ### Code standards / lint command
 
 The **exact command** that checks code standards — linter, formatter check, type checker, syntax
 gate. It belongs to the pre-merge tier: it runs as part of `/paf:check-out`'s full pre-merge
-validation, **not** in `/paf:implement-issue`'s in-loop verification, which is scoped tests only.
+validation, **not** in `/paf:implement-issue`'s in-loop verification, which runs only scoped tests
+and the optional UI check.
 
 ### Full pre-merge validation command
 
@@ -79,6 +81,13 @@ itself and never makes a second attempt.
 Omit this area and nothing changes: a pre-merge failure STOPs the run, which is the default
 behaviour. Only define a command that is **behaviour-preserving** — a command that could change what
 the code *does* does not belong here.
+
+### UI check command
+
+The **exact command** that checks how your UI renders — typically your own Playwright or Cypress
+suite. PAF runs it verbatim, after the tests, whenever a change touches templates, stylesheets or
+browser-side JavaScript/TypeScript. Omit it and no UI check runs; a UI change is then reported as
+`UI not verified: no UI check command defined` in the hand-off and the MR/PR description.
 
 ### Labels
 
@@ -120,4 +129,7 @@ docker compose exec web ruff check .
 
 # Auto-fix (optional — mechanical fixes only)
 docker compose exec web ruff check --fix .
+
+# UI check (optional — run when a change touches UI)
+docker compose exec web npx playwright test
 ```

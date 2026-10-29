@@ -17,7 +17,7 @@ You run in the main thread and invoke **no agents**. The environment check is a 
 - Project context comes from the project instructions (`CLAUDE.md` or `AGENTS.md`, whichever Claude Code loaded). Here that context is also the **subject** of the check.
 - The content checklist is `${CLAUDE_SKILL_DIR}/project-instructions-template.md`.
 
-**Strict project-context sourcing.** Every project-specific value (base branch, labels (optional), environment, test / lint / pre-merge commands) comes **only** from *this* project's instructions and repository. Never substitute one, especially a filename or command, from your memory, another project, or a prior session. Recalled memories are unrelated background and may name files that do not exist here. If a value cannot be detected from this repository, **ask the developer**. Do not invent or borrow one.
+**Strict project-context sourcing.** Every project-specific value (base branch, labels (optional), environment, test / lint / pre-merge commands, UI check command (optional)) comes **only** from *this* project's instructions and repository. Never substitute one, especially a filename or command, from your memory, another project, or a prior session. Recalled memories are unrelated background and may name files that do not exist here. If a value cannot be detected from this repository, **ask the developer**. Do not invent or borrow one.
 
 ## Steps
 
@@ -37,7 +37,7 @@ The script also rejects such a value with a usage error. It prints one `CHECK <n
   - the base branch is named.
 
   Keep the project's own structure and wording. Layout never matters.
-- Optional areas (the auto-fix command, labels) are never reported as missing.
+- Optional areas (the auto-fix command, the UI check command, labels) are never reported as missing.
 
 For each gap, write one finding: the area, what is missing or unusable, and the **exact text** to add. Also report these as findings:
 - an `instructions` `warn` (an `AGENTS.md` listed in `AGENTS_HIDDEN` that Claude Code does not load);

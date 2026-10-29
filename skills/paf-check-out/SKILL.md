@@ -17,9 +17,9 @@ You are the orchestrator running in the main thread. You chain the safety-net an
 ## Input
 
 - Operates on the **current feature branch**. Derive the issue number from the branch name (`feature/<issue-number>-<...>`); `$ARGUMENTS` overrides it. Read the issue with `paf-vcs` — its acceptance criteria are the spec `quality-assurer` checks against.
-- Project context from the project instructions (`CLAUDE.md` or `AGENTS.md`, whichever Claude Code loaded): the MR/PR base branch (e.g. `develop`), the full pre-merge validation command, the **optional** auto-fix command (step 4; many projects define none, which is not an error). The repo and provider are auto-detected from the git `origin` remote.
+- Project context from the project instructions (`CLAUDE.md` or `AGENTS.md`, whichever Claude Code loaded): the MR/PR base branch (e.g. `develop`), the full pre-merge validation command, the **optional** auto-fix command (step 4; many projects define none, which is not an error), and whether the project defines the **optional** UI check command (read only to decide the description's Validation line, step 7; `check-out` never runs it). The repo and provider are auto-detected from the git `origin` remote.
 
-**Strict project-context sourcing.** Every project-specific value (repo, base branch, pre-merge validation command, auto-fix command) comes **only** from *this* project's instructions and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
+**Strict project-context sourcing.** Every project-specific value (repo, base branch, pre-merge validation command, auto-fix command, UI check command) comes **only** from *this* project's instructions and repository. Never substitute one — especially a filename or command — from your memory, another project, or a prior session; recalled memories are unrelated background and may name files that do not exist here. If a value a step needs is not defined in this project, **STOP and ask the developer** — do not invent or borrow one.
 - **Robust to either state.** `/paf:implement-issue` leaves the work uncommitted, but the developer may have committed it during review. Compute the change to review as the branch's full diff against the base (`git diff <base>`), which covers committed **and** uncommitted changes, so this skill works either way.
 
 ## Parsing agent output
@@ -128,6 +128,9 @@ Closes #<issue-number>.
 
 `<pre-merge command>` — passed (<result summary from its actual output>).
 
+[only if the diff touches UI and no UI check command is defined:]
+UI not verified: no UI check command defined
+
 ## Deviations from the issue
 
 <one line per deviation>
@@ -141,7 +144,7 @@ Closes #<issue-number>.
 
 Rules for filling it in:
 - **Cost section** — appended **verbatim** by redirecting the `paf-report-cost.py aggregate` output above into the description file (its heading and table, as printed). Never typed, authored, or reformatted by you. It gives the reviewer — who has no access to this CLI session — the whole feature's cost.
-- **Validation section** — carries the pre-merge validation command **exactly as the project instructions define it** (the same command step 4 ran; never hardcoded, never one remembered from another project) plus the result summary from its **actual** output. Says nothing about the factory's internal agent gates (the reviews, the spec check).
+- **Validation section** — carries the pre-merge validation command **exactly as the project instructions define it** (the same command step 4 ran; never hardcoded, never one remembered from another project) plus the result summary from its **actual** output. The `UI not verified: no UI check command defined` line is written **only** when the `git diff <base>` from step 1 touches UI (a template, a stylesheet, or browser-side JavaScript/TypeScript) and the project instructions define no UI check command; otherwise it is omitted. Says nothing about the factory's internal agent gates (the reviews, the spec check).
 - **Deviations section** — inferred from the issue body and the `git diff <base>` already in context from step 1, under a strict anchoring rule: report **only** what the issue *explicitly states* — in its Approach, Scope of changes, or acceptance criteria — and the implementation does differently, phrased "what the issue said → what was built". No hedging, no speculation. When nothing anchors, **omit the whole section** — no "None." placeholder.
 - **Never include** — rationale or a "why" section, a changed-files list or per-file narration, trade-off discussion, agent-review findings or statistics, or version-bump notes. A reviewer who wants that level of intent detail finds it in the linked issue.
 - **No `🤖 Generated with [Claude Code]` trailer.**
