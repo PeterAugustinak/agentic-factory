@@ -5,6 +5,39 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.31.0] - 2026-10-29
+
+### Added
+
+- An optional **UI check command** in the project instructions, next to the auto-fix command.
+  `implementation-verifier` runs it verbatim after the tests when a change touches templates,
+  stylesheets or browser-side JavaScript/TypeScript, inside `/paf:implement-issue`'s verify loops
+  and under the same retry cap. A UI-touching change with no UI check command defined is never
+  passed off as verified: the `/paf:implement-issue` hand-off and the `/paf:check-out` MR/PR
+  description carry `UI not verified: no UI check command defined`. `/paf:init` treats the command
+  as optional (#83).
+
+### Changed
+
+- The deep reviewers, `full-stack-dev`'s triage and `/paf:check-out`'s safety-net review receive the
+  issue body verbatim. Anything the issue explicitly decides or places out of scope is not a
+  finding, and triage skips a finding that contradicts it whatever its severity. A defect in how a
+  decision was implemented is still a finding. `check-out` has no triage, so a decided item wrongly
+  flagged as `error` still stops the run (#84).
+- `/paf:create-issue` passes `issue-writer` anything the developer did not say or confirm in a
+  separate `Orchestrator proposals (unconfirmed)` block, and lists those proposals above the draft
+  at the review gate, so approving the issue approves each one knowingly. Silence on a proposal is
+  never acceptance (#85).
+- `issue-validator` treats a third-party provider's prerequisites for production use (app
+  verification or review, required policies, domain ownership, quotas) as caveats of the
+  integration, checked as a feasibility condition (#86).
+- `full-stack-dev`'s triage report opens with a `Behaviour changes beyond the plan` list, or
+  `None`, measured against the approved plan that `/paf:implement-issue` now passes it. The hand-off
+  prints that list first, then the applied-vs-skipped report. When adding tests, `full-stack-dev`
+  extends the existing tests and fixtures for the area rather than adding parallel ones (#90).
+
+Re-run the installer to pick up these changes.
+
 ## [0.30.0] - 2026-10-21
 
 Graded MINOR rather than PATCH, although all three changes are bug fixes: #87 changes the interface
