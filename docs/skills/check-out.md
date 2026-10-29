@@ -108,7 +108,7 @@ Per `architecture.md` §5, `check-out` has **no auto-retry and no fix loop** —
 - malformed/missing agent output;
 - writing the description file, appending the cost section to it, or opening the MR/PR fails (the directory is kept and the file's path printed).
 
-**Two-tier verification.** The scoped `implementation-verifier` runs **tests only** in `/paf:implement-issue`'s fix loops; the **full** test + lint suite runs here as pre-merge validation — the safety net that catches cross-module regressions a scoped run cannot see, and the tier the lint command belongs to. `check-out` runs no scoped verification of its own, because it authors no fixes of its own: its only mutation is the optional mechanical auto-fix at the gate, which the full re-validation already covers.
+**Two-tier verification.** The scoped `implementation-verifier` runs the tests — plus the project's UI check command for a UI change — in `/paf:implement-issue`'s fix loops; the **full** test + lint suite runs here as pre-merge validation — the safety net that catches cross-module regressions a scoped run cannot see, and the tier the lint command belongs to. `check-out` runs no scoped verification of its own, because it authors no fixes of its own: its only mutation is the optional mechanical auto-fix at the gate, which the full re-validation already covers.
 
 ## Git handling and clean-tree robustness
 
@@ -129,6 +129,9 @@ Closes #<issue-number>.
 
 `<pre-merge command>` — passed (<result summary from its actual output>).
 
+[only if the diff touches UI and no UI check command is defined:]
+UI not verified: no UI check command defined
+
 ## Deviations from the issue
 
 <one line per deviation>
@@ -141,7 +144,7 @@ Closes #<issue-number>.
 ```
 
 - The **cost section** is appended **verbatim** from `paf-report-cost.py aggregate` (for a feature without an issue, its heading names the branch instead of `#<issue-number>`) — heading and table as printed, never authored or reformatted by the model. The skill writes the rest of the description to a file, redirects `aggregate`'s output onto its end, and posts that file, so the model never retypes the table.
-- **Validation** carries the pre-merge command exactly as the project instructions define it (the same command step 4 ran, never hardcoded) plus the result summary from its actual output. It says nothing about the factory's internal agent gates.
+- **Validation** carries the pre-merge command exactly as the project instructions define it (the same command step 4 ran, never hardcoded) plus the result summary from its actual output. The `UI not verified: no UI check command defined` line appears **only** when the branch's diff touches UI (templates, stylesheets, browser-side JS/TS) and the project instructions define no UI check command. It says nothing about the factory's internal agent gates.
 - **Deviations** is anchored strictly: only what the issue *explicitly states* — in its Approach, Scope of changes, or acceptance criteria — and the implementation does differently, phrased "what the issue said → what was built", with no hedging or speculation. When nothing anchors, the section is **omitted entirely** — there is no "None." placeholder.
 - The body must **not** contain rationale or a "why" section, a changed-files list or per-file narration, trade-off discussion, agent-review findings or statistics, or version-bump notes — a reviewer who wants that intent detail finds it in the linked issue, which is what the `Closes` line points at. There is no `🤖 Generated with [Claude Code]` trailer.
 - `Closes #<issue-number>` is **always** written, regardless of the base branch. (On both GitHub and GitLab, auto-closing the issue on merge only fires when the MR/PR targets the repository's default branch — but that is a platform behaviour, not something to conditionally implement: the line itself is unconditional.)

@@ -26,11 +26,11 @@ Once an issue exists and its approach is sound enough to build:
 4. **Plan-review gate** (`ExitPlanMode`) — the developer approves the plan or requests changes (revise in plan mode and re-present). Nothing is built before approval.
 5. **Branch** (skill) — after approval, create `feature/<issue>-<short-description>` from the base branch.
 6. **Implement** (skill, same context) — apply the approved plan's exact edits on the branch, including every occurrence the plan's sweep enumerated. Because planning and building share the context, this is applying what's already decided — no re-exploration — with the same turn discipline (independent edits batched).
-7. **Verify** — `implementation-verifier` runs the project's **tests only**, scoped to the changed area — never the lint command and never the full pre-merge command, which belong to `/paf:check-out`'s gate. On failure the **same main-thread context that built the code** (now in edit mode) applies the fix (it still holds the plan and the edits — no re-exploration, and no cold builder agent) and re-verifies, up to a cap; if it still fails, the run stops and escalates.
+7. **Verify** — `implementation-verifier` runs the project's tests, scoped to the changed area, then — when the change touches UI (templates, stylesheets, browser-side JS/TS) and the project defines one — its **UI check command** verbatim; never the lint command and never the full pre-merge command, which belong to `/paf:check-out`'s gate. On failure the **same main-thread context that built the code** (now in edit mode) applies the fix (it still holds the plan and the edits — no re-exploration, and no cold builder agent) and re-verifies, up to a cap; if it still fails, the run stops and escalates.
 8. **Deep review in parallel** — `senior-engineer-reviewer`, `code-simplifier`, `security-engineer`, `test-coverage-reviewer`, `conformance-reviewer` run concurrently over the change, supplied as a compact **change manifest** instead of the full diff in five prompts (created files, plus a zero-context diff without its added lines, whose ranges each reviewer `Read`s), plus the issue body verbatim; anything the issue explicitly decides or places out of scope is not a finding (a defect in how a decision was implemented still is). The skill aggregates their findings. No findings takes the **skip path** straight to the hand-off.
 9. **Triage & apply** — `full-stack-dev` receives **all** findings (plus the issue body and the approved plan, the baseline for the behaviour-changes list) and decides which are worth applying, then applies them: a finding contradicting the issue's explicit decisions or out-of-scope items is skipped whatever its severity (named as such), `error` findings apply by default (a skip must be loud and justified), a **factual / self-consistency defect** applies whatever severity it carries (never skippable as discretionary), and the remaining `warning` findings are its discretion. It also **sweeps** — a fact, rule, or name it changes is updated everywhere the repo states it — and extends the existing tests and fixtures for the area rather than adding parallel ones. Its report opens with a **behaviour changes beyond the plan** list (any change to what the code does for a user or caller that the approved plan did not contain), or `None`, followed by the applied-vs-skipped list; the skill surfaces both at the hand-off — the developer doesn't pre-select fixes; their manual review is the curation point.
-10. **Re-verify** — `implementation-verifier` runs again, since step 9 may have changed the code and tests are the gate. On failure `full-stack-dev` fixes from its output (reporting any behaviour change it makes, appended to the hand-off list) and it re-verifies, up to a cap; the reviewers are **not** re-run.
-11. **Hand off** (skill) — leave the verified, reviewed changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`); when triage ran, print its behaviour-changes-beyond-the-plan list **first and prominently**, then its applied-vs-skipped report verbatim (nothing on the skip path); and pin the hand-off: `paf-fingerprint.py record` stores the base commit sha and a content fingerprint of every changed path (tracked and untracked) under `~/.claude/paf/`, so `/paf:check-out` can skip its safety-net review when nothing changed since.
+10. **Re-verify** — `implementation-verifier` runs again, since step 9 may have changed the code and the tests (plus the UI check, when it applies) are the gate. On failure `full-stack-dev` fixes from its output (reporting any behaviour change it makes, appended to the hand-off list) and it re-verifies, up to a cap; the reviewers are **not** re-run.
+11. **Hand off** (skill) — leave the verified, reviewed changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`); when the change touches UI and the project defines no UI check command, print `UI not verified: no UI check command defined` first, so an unrendered UI is never passed off as verified; when triage ran, print its behaviour-changes-beyond-the-plan list **prominently**, ahead of everything but that line, then its applied-vs-skipped report verbatim (nothing on the skip path); and pin the hand-off: `paf-fingerprint.py record` stores the base commit sha and a content fingerprint of every changed path (tracked and untracked) under `~/.claude/paf/`, so `/paf:check-out` can skip its safety-net review when nothing changed since.
 12. **Cost** (skill) — append this invocation's cost to the per-feature cost ledger.
 
 ### Why plan mode
@@ -98,7 +98,8 @@ Planning and building run in the main thread via native plan mode rather than as
      v
 +----------------------------------------------+
 | [agent] implementation-verifier              | <-+
-|   run scoped tests only (no lint)            |   |
+|   run scoped tests (no lint), then the UI    |   |
+|   check if the change touches UI             |   |
 +----------------------------------------------+   |
      +--- fail, retry<2: main-thread fix + reverify+
      |--- fail, retries exhausted -> STOP: escalate failure report
@@ -141,7 +142,9 @@ Planning and building run in the main thread via native plan mode rather than as
 +----------------------------------------------+       <--+
 | [skill] leave changes UNCOMMITTED on branch  |
 |   for review (no commit / push / MR/PR);     |
-|   print behaviour changes first, then the    |
+|   print "UI not verified" first (UI change,  |
+|   no UI check command defined);              |
+|   then behaviour changes, then the           |
 |   applied-vs-skipped report (if triage ran); |
 |   record hand-off fingerprint (pinned base)  |
 +----------------------------------------------+
@@ -158,7 +161,7 @@ Planning and building run in the main thread via native plan mode rather than as
 | Agent | Role in this skill |
 |---|---|
 | `issue-validator` | Verifies the issue's approach against authoritative docs and the repository; findings gate the run. |
-| `implementation-verifier` | Runs the scoped **tests only** (no lint, no full pre-merge command) and reports pass/fail — after the build, and again after the review fixes. |
+| `implementation-verifier` | Runs the scoped tests, plus the project's UI check command when the change touches UI (no lint, no full pre-merge command), and reports pass/fail — after the build, and again after the review fixes. |
 | `senior-engineer-reviewer` | Functional-correctness review of the implemented change (parallel). |
 | `code-simplifier` | Complexity / DRY / readability review (parallel). |
 | `security-engineer` | Security review (parallel). |
@@ -181,7 +184,7 @@ Per `architecture.md` §5 there are **two** fix loops, each capped the same way:
 - **Review-fix loop (`full-stack-dev`).** After the review fixes are applied, `implementation-verifier` re-runs; on failure `full-stack-dev` fixes from its output and it re-verifies, at most **twice**. The reviewers run **exactly once** per invocation and are never re-run — the second look at the code is the developer's manual review plus `/paf:check-out`'s safety-net review, which runs whenever the branch's content changed after the hand-off.
 - **No self-validation.** Whoever applied a fix never validates it — `implementation-verifier` re-runs as a separate agent each time.
 - **STOP conditions** (each halts and escalates to the developer, who fixes the cause and re-runs): a validator blocker the developer **declines** at the gate (a PAF-validated issue skips validation; an approved blocker is folded into the plan instead); verification still failing after either retry cap; malformed/missing agent output from any agent.
-- **Scoped verification.** `implementation-verifier` runs a **targeted subset** of the **test** suite (the changed area), keeping both loops fast; the **full** test + lint suite runs later at `/paf:check-out`.
+- **Scoped verification.** `implementation-verifier` runs a **targeted subset** of the **test** suite (the changed area), plus the project's UI check command when the change touches UI, keeping both loops fast; the **full** test + lint suite runs later at `/paf:check-out`.
 
 ## Git handling
 
