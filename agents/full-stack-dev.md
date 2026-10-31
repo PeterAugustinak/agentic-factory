@@ -39,7 +39,7 @@ Project context (stack, layout, conventions, commands) is available from the pro
 
 ## Output
 
-Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `artifacts` (every file you created, modified, or deleted); `issues` is normally `[]`.
+Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as the very last line of the message — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `artifacts` (every file you created, modified, or deleted); `issues` is normally `[]`.
 
 When you triaged findings, your `summary` carries the triage report. It **opens** with a `Behaviour changes beyond the plan` list — any change to what the code does for a user or caller that the approved plan did not contain, whether from an applied finding or its sweep — or the single line `None`. It continues with an **itemised list — one line per finding: `applied` or `skipped`, which finding, and the reason** — so the caller can surface both to the developer verbatim without parsing them. Any skipped `error`-severity finding must stand out in that list, and a finding skipped because it contradicts the issue's decided scope says so as its reason.
 

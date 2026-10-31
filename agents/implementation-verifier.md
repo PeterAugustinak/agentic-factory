@@ -29,7 +29,7 @@ You are given the change to verify, which area it affects, and whether it touche
 
 ## Output
 
-Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `status` plus `issues` (the failures). `artifacts` is `[]`.
+Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as the very last line of the message — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `status` plus `issues` (the failures). `artifacts` is `[]`.
 
 ```yaml
 agent: "implementation-verifier" # required — all agents

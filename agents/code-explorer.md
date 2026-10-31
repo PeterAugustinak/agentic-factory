@@ -28,7 +28,7 @@ You are given a description of what to investigate — typically the issue or pl
 
 ## Output
 
-Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `summary`; `artifacts` and `issues` are normally `[]`.
+Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as the very last line of the message — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `summary`; `artifacts` and `issues` are normally `[]`.
 
 ```yaml
 agent: "code-explorer"           # required — all agents

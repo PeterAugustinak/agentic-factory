@@ -29,7 +29,7 @@ This skill's **verify-fix loop** (step 8) is fixed in the main thread, and its *
 
 ## Parsing agent output
 
-After **every** agent step, parse that agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block, validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure. Never proceed on a guessed parse.
+After **every** agent step, parse that agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block (an unclosed one runs to the end of the message and is flagged), validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure. Never proceed on a guessed parse.
 
 ## Steps
 

@@ -47,7 +47,7 @@ Every issue body uses these **six sections, always present, always in this order
 
 ## Output
 
-Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `summary`: place the **full drafted issue** there — the title plus the complete **six-section body** defined in *Task → Issue template* above, and suggested labels — formatted as markdown, not a meta-description of it. `artifacts` and `issues` are `[]`.
+Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as the very last line of the message — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `summary`: place the **full drafted issue** there — the title plus the complete **six-section body** defined in *Task → Issue template* above, and suggested labels — formatted as markdown, not a meta-description of it. `artifacts` and `issues` are `[]`.
 
 ```yaml
 agent: "issue-writer"            # required — all agents
