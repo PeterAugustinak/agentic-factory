@@ -24,7 +24,7 @@ You are the orchestrator running in the main thread. You chain the safety-net an
 
 ## Parsing agent output
 
-After **every** agent step, parse the agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block, validate keys and enums, and **STOP + escalate** (quoting the raw output) on any failure.
+After **every** agent step, parse the agent's final message with the shared rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md`: extract the **last** fenced ` ```yaml ` block (an unclosed one runs to the end of the message and is flagged), validate keys and enums, and **STOP + escalate** (quoting the raw output) on any failure.
 
 ## Steps
 

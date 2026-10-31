@@ -185,7 +185,7 @@ Claude Code has **no native typed return channel** for subagents — a subagent 
 
 Therefore:
 
-- Every agent's system prompt instructs it that **its final message must be exactly one fenced ` ```yaml ` block conforming to the contract below — no prose before or after.**
+- Every agent's system prompt instructs it that **its final message must be exactly one fenced ` ```yaml ` block conforming to the contract below, closed by a ` ``` ` line as the very last line — no prose before or after.**
 - The **skill (main thread)** extracts the **last** fenced `yaml` block from the returned message and parses it: reading `status` to drive control flow, and passing `summary` / `issues` forward to the next agent.
 - The contract is "machine-checkable" because **the skill parses and validates it** — not because the harness enforces a schema. There is no native validation. If an agent returns malformed or missing YAML, the skill fails loudly and escalates to the developer (see [Section 5](#5-loop-cap-escalation-and-cost-reporting)).
 
@@ -304,11 +304,12 @@ This two-tier split is the reason both points exist: fast scoped feedback during
 
 Contract parsing must be defensive — the whole pipeline depends on it. The skill must:
 
-1. Extract the **last** fenced ` ```yaml ` block from the agent's final message.
+1. Extract the **last** fenced ` ```yaml ` block from the agent's final message. A block with no closing fence runs to the end of the message, which is what CommonMark specifies for an unclosed fence,(19) so it is extracted and validated, not treated as missing.
 2. Parse it, and **validate** that all required keys are present and that enum fields hold allowed values (`status` ∈ {success, failure, needs_retry}; `severity` ∈ {error, warning}; `action` ∈ {created, modified, deleted}).
 3. On any missing block, parse error, missing key, or invalid enum value → **STOP and escalate to the developer, including the agent's raw output** in the report so the failure is diagnosable.
+4. If the block had no closing fence and passed validation, continue, but tell the developer the report may be truncated and repeat that in the run's final report.
 
-The skill never proceeds on a partial or guessed parse.
+The skill never proceeds on a partial or guessed parse. An unclosed fence is not a guess at the block's boundary, since the spec defines it, and stopping on one threw away complete reports. **Accepted residual risk:** the closing fence is the only sign a report was not cut off. `issues` is the last key, so a cut before it fails on a missing key and a cut inside a quoted value fails to parse, but a cut between two `issues` entries validates with findings lost. Rule 4 surfaces that case to the developer rather than closing it.
 
 ### Cost reporting
 
@@ -381,3 +382,4 @@ All architecture decisions are grounded in the official Claude Code documentatio
 16. Permissions — Redirections (`>`/`>>`/`<` targets are checked like direct writes/reads against the working directories) and Extend permissions with hooks (a `PreToolUse` `allow` skips the prompt; deny and ask rules still apply). https://code.claude.com/docs/en/permissions#redirections
 17. Skills — available string substitutions (`${CLAUDE_SESSION_ID}`, `${CLAUDE_SKILL_DIR}`, …; no scratchpad path). https://code.claude.com/docs/en/skills
 18. Python standard library — `tempfile.mkdtemp` (secure, creator-only temporary directory on every platform). https://docs.python.org/3/library/tempfile.html#tempfile.mkdtemp
+19. CommonMark Spec 0.31.2 — Fenced code blocks (an unclosed fence runs to the end of the containing block or document). https://spec.commonmark.org/0.31.2/#fenced-code-blocks

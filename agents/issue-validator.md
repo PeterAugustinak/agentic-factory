@@ -36,7 +36,7 @@ You are given the proposed issue or approach to validate. Project context (stack
 
 ## Output
 
-Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `issues` (your findings, each with a severity); use `summary` for the overall verdict. `status` is `success` when you have completed validation, regardless of what you found. `artifacts` is `[]`.
+Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as the very last line of the message — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `issues` (your findings, each with a severity); use `summary` for the overall verdict. `status` is `success` when you have completed validation, regardless of what you found. `artifacts` is `[]`.
 
 Keep every finding's `message` to a **single concise line** — the defect, and for an `error` the source that proves it — not a multi-sentence paragraph. `summary` is a **brief verdict only**: do **not** enumerate or narrate the claims you confirmed. Confirmed claims are not findings — they add no signal to whoever reads your output.
 

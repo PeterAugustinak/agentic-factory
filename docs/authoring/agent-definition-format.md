@@ -62,7 +62,7 @@ This is the **canonical copy** of the output contract. It is identical to `archi
 
 Every agent body's **`## Output`** section contains exactly this instruction and block (with `agent:` set to the file's own name):
 
-> Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below — no prose before or after it. Every field is always present; collections are `[]` when not applicable.
+> Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as the very last line of the message — no prose before or after it. Every field is always present; collections are `[]` when not applicable.
 >
 > ```yaml
 > agent: "<agent-name>"            # required — all agents

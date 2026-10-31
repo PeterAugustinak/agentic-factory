@@ -52,7 +52,7 @@ PAF skill bodies are **imperative and step-numbered** — the architecture requi
    - **skill step** — external I/O the main thread performs (`gh`, git, running tests, appending to the cost ledger). All I/O is skill-owned (`architecture.md` §2).
    - **agent step** — an explicit, **by-name** invocation of a specialist agent (`@agent-<name>` / Agent tool), passing the required context and then parsing the returned output contract.(9)
    - **human gate** — a pause for developer input (plan-approval, or `AskUserQuestion`).
-4. **Output-contract handling** — after every agent step, extract the **last** ` ```yaml ` block, validate it against the schema and enums (`architecture.md` §4), and **STOP and escalate** on any malformed/missing output.
+4. **Output-contract handling** — after every agent step, extract the **last** ` ```yaml ` block (an unclosed one runs to the end of the message and is flagged), validate it against the schema and enums (`architecture.md` §4), and **STOP and escalate** on any malformed/missing output.
 5. **Loop & escalation** — retry caps and STOP behaviour exactly as `architecture.md` §5 fixes them.
 6. **Cost** — mark the invocation's start at step 1, then append this run's per-invocation cost to the per-feature ledger, and (at end of run) report the total (`architecture.md` §5). Every skill has this step unless `architecture.md` §5 lists it as exempt.
 
