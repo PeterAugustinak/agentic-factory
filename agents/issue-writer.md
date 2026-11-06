@@ -49,6 +49,8 @@ Keep the human part concise: no code snippets, no file-path lists, each section 
 5. `### Pitfalls` — verified traps an implementer would otherwise hit.
 6. `### References` — sources, with links.
 
+A rule (must / must not) goes in Constraints, never in Pitfalls; Pitfalls are non-obvious facts that would otherwise mislead an implementer.
+
 If every subsection would be empty, the section holds the single line `None.`
 
 **Markdown** — use only CommonMark headings, lists, fenced code blocks, and inline emphasis, code, and links: they render the same on GitHub and GitLab. No raw HTML or XML tags of any kind (`<details>` included) — both providers sanitize raw HTML against their own allowlists.
