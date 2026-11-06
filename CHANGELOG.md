@@ -5,6 +5,39 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.32.0] - 2026-11-06
+
+### Changed
+
+- Issues from `/paf:create-issue` have two parts: a short human part (Problem, Goal, Approach,
+  Acceptance criteria) and a `## For implementation agent` section with the technical context
+  (Context, Decisions, Constraints, Scope of changes, Pitfalls, References). The skill asks the
+  developer about every open decision before drafting, the validator checks factual claims only,
+  and an issue that passes validation is posted directly, with no review gate. A blocker that
+  survives two correction rounds stops the run and nothing is posted (#101).
+- The `## For implementation agent` heading replaces the trailing `PAF` marker as the signal that
+  lets `/paf:implement-issue` skip re-validation. Older issues ending in `PAF` are re-validated
+  once (#101).
+- `/paf:implement-issue` plans from the issue's agent section, opens the plan it presents for
+  approval with a short human summary, and takes what is decided or out of scope from Decisions and
+  Constraints, alongside the binding Approach and Acceptance criteria. Reviewers get the diff's
+  removed lines verbatim, never summarized (#103).
+- `full-stack-dev`'s triage fixes defects only: a warning whose fix would add behaviour beyond the
+  approved plan is skipped (#103).
+- The `/paf:implement-issue` hand-off is short: Result, Next, What was done and How to test, plus
+  one line each, only when they apply, for UI not verified, behaviour changes beyond the plan and
+  skipped errors. Applied fixes and skipped warnings are not listed (#103).
+- `docs/skills/create-issue.md` and `docs/skills/implement-issue.md` are rewritten to be short and
+  skimmable (#101, #103).
+
+### Fixed
+
+- An agent report whose closing fence is missing no longer stops the run. Agents are told to close
+  the block; the parser treats an unclosed block as running to the end of the message, validates
+  it as usual, and flags it as possibly truncated.
+
+Re-run the installer to pick up these changes.
+
 ## [0.31.0] - 2026-10-29
 
 ### Added
