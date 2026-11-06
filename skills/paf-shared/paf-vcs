@@ -86,7 +86,8 @@ read_stdin() {
 # and print machine-parseable identifier lines followed by the raw output.
 # `tail -1` takes the last matching URL, which for `gh`/`glab` create output is
 # the created resource; a body that itself embeds an issue/PR-shaped URL is a
-# theoretical decoy, but issue/PR bodies are human-approved before posting.
+# theoretical decoy; an issue body is not human-reviewed before posting
+# (create-issue has no review gate), so treat the match as best-effort.
 # The `|| true` guards keep an empty grep match (no URL) from aborting the
 # script under `set -e` before the graceful error below can run.
 extract_identifier() {

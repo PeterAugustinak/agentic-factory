@@ -44,11 +44,11 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "$
 
 Then fetch the issue: `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs view-issue $ARGUMENTS` on the repo auto-detected from the git `origin` remote. Keep its title, body, and proposed approach — they feed the validator and the plan.
 
-**Source-aware validation.** Check whether the fetched issue's **final line is exactly `PAF`** — the marker `create-issue` appends to every issue it posts. Anchor on the last line only, never on the word appearing elsewhere (issue prose is full of "PAF"). Its presence means this issue was already validated by PAF and approved by the developer.
-- **Marker present** → **skip steps 2–3 entirely** and go straight to plan mode (step 4). Re-validating a PAF-authored issue is redundant and — because same-definition agents are non-deterministic — risks "blocking" an issue `create-issue` already approved.
-- **Marker absent** (a hand-written issue, or one created outside PAF) → run steps 2–3 as below; the validator is the only validation such an issue gets.
+**Source-aware validation.** Check whether the fetched issue body contains a line reading exactly `## For implementation agent` — the agent-section heading `create-issue` writes into every issue it posts (the cross-skill contract, `docs/architecture.md` §5). Match the whole line exactly, never a looser variant. Its presence means this issue was already validated by PAF.
+- **Heading present** → **skip steps 2–3 entirely** and go straight to plan mode (step 4). Re-validating a PAF-authored issue is redundant and — because same-definition agents are non-deterministic — risks "blocking" an issue `create-issue` already validated.
+- **Heading absent** (a hand-written issue, or one created outside PAF) → run steps 2–3 as below; the validator is the only validation such an issue gets.
 
-**2. Validate the approach (agent).** *(Only when the issue is unmarked — a marked issue skipped to step 4.)*
+**2. Validate the approach (agent).** *(Only when the issue has no agent-section heading — one with it skipped to step 4.)*
 Invoke `issue-validator` explicitly, passing the issue and its proposed approach. It verifies technical validity against authoritative docs and the repository, and returns findings (each `severity: error` = blocker, `warning` = minor). It does not post anything.
 
 **3. Handle validator findings (skill).**

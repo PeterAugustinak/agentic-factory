@@ -21,7 +21,7 @@ Once an issue exists and its approach is sound enough to build:
 `implement-issue` is an orchestrator running in the main thread. It validates the approach with an agent, then **plans and implements in one shared context using native plan mode**, verifies with an agent, and finally deep-reviews the change with the review agents and has the findings triaged and applied. It owns all VCS and git I/O (via the `paf-vcs` adapter — `gh` on GitHub projects, `glab` on GitLab projects), enforces the plan-review gate, and applies the loop caps and escalation policy.
 
 1. **Read the issue** (skill) via `paf-vcs`.
-2. **Validate the approach — only when the issue is not already PAF-validated.** The skill checks whether the issue's **final line is exactly `PAF`** — the visible marker `create-issue` adds to every issue it posts (anchored on the last line, since "PAF" is everywhere in issue prose): **present** → skip validation and go straight to the plan (re-validating a PAF issue is redundant and risks a non-deterministic false blocker); **absent** (hand-written, or created outside PAF) → `issue-validator` checks technical validity against authoritative docs and the repository. The skill posts **only the actual findings** — one line each, none when there are none. A **blocker** (`severity: error`) is no longer an automatic stop: the skill tells the developer and asks (`AskUserQuestion`) whether to fold it into the plan and continue, or stop (no answer ⇒ stop). Minor findings (`warning`) are carried into the plan. The validator never blocks on an incomplete scope list — the real files are decided when planning.
+2. **Validate the approach — only when the issue is not already PAF-validated.** The skill checks whether the issue has a line reading exactly `## For implementation agent` — the agent-section heading `create-issue` writes into every issue it posts (the cross-skill contract, [`architecture.md` §5](../architecture.md#issue-validator-escalation)): **present** → skip validation and go straight to the plan (re-validating a PAF issue is redundant and risks a non-deterministic false blocker); **absent** (hand-written, or created outside PAF) → `issue-validator` checks technical validity against authoritative docs and the repository. The skill posts **only the actual findings** — one line each, none when there are none. A **blocker** (`severity: error`) is no longer an automatic stop: the skill tells the developer and asks (`AskUserQuestion`) whether to fold it into the plan and continue, or stop (no answer ⇒ stop). Minor findings (`warning`) are carried into the plan. The validator never blocks on an incomplete scope list — the real files are decided when planning.
 3. **Plan** (skill, main thread) — `EnterPlanMode`: in one read-only context, explore the codebase and produce a **concrete** plan (exact files and edits, test strategy), folding in any minor findings. The plan also **sweeps**: a fact, rule, or name it changes is located in every place the repo states it and all are folded in, so building can't leave the repo self-contradicting — the same obligation the builder agent carries at step 9, applied here because the main thread authors the plan's edits. Exploration is turn-efficient: independent reads are batched into one turn and files already in context are not re-read, but no read the plan needs is skipped. Nothing is written yet.
 4. **Plan-review gate** (`ExitPlanMode`) — the developer approves the plan or requests changes (revise in plan mode and re-present). Nothing is built before approval.
 5. **Branch** (skill) — after approval, create `feature/<issue>-<short-description>` from the base branch.
@@ -49,9 +49,9 @@ Planning and building run in the main thread via native plan mode rather than as
 | [skill] read the issue via paf-vcs            |
 +----------------------------------------------+
      |
-     |--- final line == "PAF" (marker present) -----------------------+
-     |     (already validated + approved in create-issue -> skip)      |
-     v  (marker absent: hand-written / created outside PAF)            |
+     |--- has "## For implementation agent" (heading present) --------+
+     |     (already validated in create-issue -> skip)                 |
+     v  (heading absent: hand-written / created outside PAF)           |
 +----------------------------------------------+                       |
 | [agent] issue-validator                      |                       |
 |   verify vs docs + repo -> findings          |                       |
@@ -174,7 +174,7 @@ The reviewers run **concurrently**; the rest run in sequence. Planning and imple
 ## Human interception points
 
 - **Plan-review gate** (`ExitPlanMode`) — the mandatory in-skill gate; the developer approves the concrete plan (or loops it back for revision in plan mode) before any code is written.
-- **Validator blocker gate** (`AskUserQuestion`) — for an unmarked (non-PAF-validated) issue, an `error` finding prompts the developer to fold it into the plan and continue, or stop. A PAF-validated issue skips validation, so this cannot fire.
+- **Validator blocker gate** (`AskUserQuestion`) — for an issue without the agent-section heading (not PAF-validated), an `error` finding prompts the developer to fold it into the plan and continue, or stop. A PAF-validated issue skips validation, so this cannot fire.
 - **Skill boundary** — after the skill finishes, the developer reviews the branch's uncommitted changes (interception 2 in `architecture.md` §2) and then runs `/paf:check-out`.
 
 ## Loop cap and escalation
