@@ -1,207 +1,64 @@
 # implement-issue
 
-Human-facing documentation for the `implement-issue` skill. The operational definition is [`skills/paf-implement-issue/SKILL.md`](../../skills/paf-implement-issue/SKILL.md); this file explains how the skill works and is not loaded by Claude at run time.
+Human-facing documentation for the `implement-issue` skill. The operational definition is [`skills/paf-implement-issue/SKILL.md`](../../skills/paf-implement-issue/SKILL.md); this file is not loaded by Claude at run time.
 
 ## Purpose
 
-Take an approved issue from *validated approach* to *implemented, verified, reviewed code on a feature branch*. `implement-issue` is the **second** skill — it runs after `/paf:create-issue` and before `/paf:check-out`. Its output is verified, deep-reviewed, **uncommitted** work on a feature branch that the developer reviews, then finishes with `/paf:check-out`.
+Turn an issue into implemented, verified, deep-reviewed code on a feature branch, left **uncommitted** for you to review. It is the **second** skill in the factory: it runs after `/paf:create-issue`, and `/paf:check-out` ships what it leaves.
 
-The deep review lives here, before the hand-off, rather than in `/paf:check-out`: reviewed *after* the developer's manual review, its fixes changed code the developer had already signed off and forced them to re-review it. See [`architecture.md` §2](../architecture.md#2-skill-to-agent-orchestration).
+## How to invoke
 
-## When and how to invoke
-
-Once an issue exists and its approach is sound enough to build:
-
-```
-/paf:implement-issue <issue-number>
-```
+Run `/paf:implement-issue <issue-number>`.
 
 ## How it works
 
-`implement-issue` is an orchestrator running in the main thread. It validates the approach with an agent, then **plans and implements in one shared context using native plan mode**, verifies with an agent, and finally deep-reviews the change with the review agents and has the findings triaged and applied. It owns all VCS and git I/O (via the `paf-vcs` adapter — `gh` on GitHub projects, `glab` on GitLab projects), enforces the plan-review gate, and applies the loop caps and escalation policy.
-
-1. **Read the issue** (skill) via `paf-vcs`.
-2. **Validate the approach — only when the issue is not already PAF-validated.** The skill checks whether the issue has a line reading exactly `## For implementation agent` — the agent-section heading `create-issue` writes into every issue it posts (the cross-skill contract, [`architecture.md` §5](../architecture.md#issue-validator-escalation)): **present** → skip validation and go straight to the plan (re-validating a PAF issue is redundant and risks a non-deterministic false blocker); **absent** (hand-written, or created outside PAF) → `issue-validator` checks technical validity against authoritative docs and the repository. The skill posts **only the actual findings** — one line each, none when there are none. A **blocker** (`severity: error`) is no longer an automatic stop: the skill tells the developer and asks (`AskUserQuestion`) whether to fold it into the plan and continue, or stop (no answer ⇒ stop). Minor findings (`warning`) are carried into the plan. The validator never blocks on an incomplete scope list — the real files are decided when planning.
-3. **Plan** (skill, main thread) — `EnterPlanMode`: in one read-only context, explore the codebase and produce a **concrete** plan (exact files and edits, test strategy), folding in any minor findings. The plan also **sweeps**: a fact, rule, or name it changes is located in every place the repo states it and all are folded in, so building can't leave the repo self-contradicting — the same obligation the builder agent carries at step 9, applied here because the main thread authors the plan's edits. Exploration is turn-efficient: independent reads are batched into one turn and files already in context are not re-read, but no read the plan needs is skipped. Nothing is written yet.
-4. **Plan-review gate** (`ExitPlanMode`) — the developer approves the plan or requests changes (revise in plan mode and re-present). Nothing is built before approval.
-5. **Branch** (skill) — after approval, create `feature/<issue>-<short-description>` from the base branch.
-6. **Implement** (skill, same context) — apply the approved plan's exact edits on the branch, including every occurrence the plan's sweep enumerated. Because planning and building share the context, this is applying what's already decided — no re-exploration — with the same turn discipline (independent edits batched).
-7. **Verify** — `implementation-verifier` runs the project's tests, scoped to the changed area, then — when the change touches UI (templates, stylesheets, browser-side JS/TS) and the project defines one — its **UI check command** verbatim; never the lint command and never the full pre-merge command, which belong to `/paf:check-out`'s gate. On failure the **same main-thread context that built the code** (now in edit mode) applies the fix (it still holds the plan and the edits — no re-exploration, and no cold builder agent) and re-verifies, up to a cap; if it still fails, the run stops and escalates.
-8. **Deep review in parallel** — `senior-engineer-reviewer`, `code-simplifier`, `security-engineer`, `test-coverage-reviewer`, `conformance-reviewer` run concurrently over the change, supplied as a compact **change manifest** instead of the full diff in five prompts (created files, plus a zero-context diff without its added lines, whose ranges each reviewer `Read`s), plus the issue body verbatim; anything the issue explicitly decides or places out of scope is not a finding (a defect in how a decision was implemented still is). The skill aggregates their findings. No findings takes the **skip path** straight to the hand-off.
-9. **Triage & apply** — `full-stack-dev` receives **all** findings (plus the issue body and the approved plan, the baseline for the behaviour-changes list) and decides which are worth applying, then applies them: a finding contradicting the issue's explicit decisions or out-of-scope items is skipped whatever its severity (named as such), `error` findings apply by default (a skip must be loud and justified), a **factual / self-consistency defect** applies whatever severity it carries (never skippable as discretionary), and the remaining `warning` findings are its discretion. It also **sweeps** — a fact, rule, or name it changes is updated everywhere the repo states it — and extends the existing tests and fixtures for the area rather than adding parallel ones. Its report opens with a **behaviour changes beyond the plan** list (any change to what the code does for a user or caller that the approved plan did not contain), or `None`, followed by the applied-vs-skipped list; the skill surfaces both at the hand-off — the developer doesn't pre-select fixes; their manual review is the curation point.
-10. **Re-verify** — `implementation-verifier` runs again, since step 9 may have changed the code and the tests (plus the UI check, when it applies) are the gate. On failure `full-stack-dev` fixes from its output (reporting any behaviour change it makes, appended to the hand-off list) and it re-verifies, up to a cap; the reviewers are **not** re-run.
-11. **Hand off** (skill) — leave the verified, reviewed changes **uncommitted** on the branch so the developer reviews them as working-tree changes (no commit, no push, no MR/PR — that's `/paf:check-out`); when the change touches UI and the project defines no UI check command, print `UI not verified: no UI check command defined` first, so an unrendered UI is never passed off as verified; when triage ran, print its behaviour-changes-beyond-the-plan list **prominently**, ahead of everything but that line, then its applied-vs-skipped report verbatim (nothing on the skip path); and pin the hand-off: `paf-fingerprint.py record` stores the base commit sha and a content fingerprint of every changed path (tracked and untracked) under `~/.claude/paf/`, so `/paf:check-out` can skip its safety-net review when nothing changed since.
-12. **Cost** (skill) — append this invocation's cost to the per-feature cost ledger.
-
-### Why plan mode
-
-Planning and building run in the main thread via native plan mode rather than as a separate `implementation-planner` agent handing off to a separate `full-stack-dev` agent. Two subagents don't share context, so the builder would start **cold** and re-derive what the planner already worked out — exploring the repo twice. Plan mode keeps exploration, the concrete plan, and execution in **one context**, so an approved plan applies in seconds; `EnterPlanMode`/`ExitPlanMode` are main-thread-only, so this lives in the skill's main thread. Full rationale: [`architecture.md` §2](../architecture.md#2-skill-to-agent-orchestration).
-
-**Two fix loops, two owners — one rule.** The verify-fix loop (step 7) is fixed **in the main thread**; the review-fix loop (steps 9–10) is delegated to `full-stack-dev`. That is the same rule applied twice, not an inconsistency. Step 7 repairs the build itself, and this context still holds the plan and the exact edits — a cold builder agent would re-derive them, which is precisely what plan mode exists to avoid. Applying a *discrete list of review findings* is different: each finding names its own location and remedy, so there is nothing to re-derive and no cold-context penalty — and delegating it puts those writes back under the hook's agent-scoped path containment, which main-thread writes don't get. Keep work in-context when losing the context would cost re-derivation; delegate it when it wouldn't.
-
-## Orchestration
+1. **Read.** The skill fetches the issue via `paf-vcs`.
+2. **Validate.** Only for an issue without the `## For implementation agent` line: `issue-validator` checks it, and the skill posts its findings and asks you whether a blocker is folded into the plan or stops the run.
+3. **Plan.** In plan mode the skill starts from the agent section's Context and Scope of changes, verifies them against the code, and sweeps every place a changed fact is stated.
+4. **Approve.** The plan opens with a short summary (what changes, where, any risk or deviation), with the exact edits below it. You approve it or ask for changes.
+5. **Branch.** The skill creates `feature/<issue>-<short-description>` from the base branch.
+6. **Build.** The skill applies the approved edits in the same context, with no re-exploration.
+7. **Verify.** `implementation-verifier` runs the scoped tests, plus the UI check command for a UI change. A failure is fixed in the main thread, at most twice.
+8. **Review.** Five reviewers run in parallel. Each gets the issue verbatim and a change manifest whose removed lines are passed exactly as printed, never summarized. What the issue decides or puts out of scope (its Decisions and Constraints) is not a finding.
+9. **Triage.** `full-stack-dev` decides which findings to apply and applies them. It fixes defects only; a warning that would add behaviour beyond the plan is skipped.
+10. **Re-verify.** `implementation-verifier` runs again; `full-stack-dev` fixes a failure, at most twice. The reviewers are never re-run.
+11. **Hand off.** The changes stay uncommitted. The skill prints Result and Next first, then What was done and How to test, plus one line each, only when they apply: UI not verified, behaviour changes beyond the plan, and each skipped error. Nothing else. It records a fingerprint so `/paf:check-out` can skip its safety-net review when nothing changed.
+12. **Cost.** The run's cost goes into the feature's cost ledger.
 
 ```text
-/paf:implement-issue <issue-number>
-     |
-     v
-+----------------------------------------------+
-| [skill] read the issue via paf-vcs            |
-+----------------------------------------------+
-     |
-     |--- has "## For implementation agent" (heading present) --------+
-     |     (already validated in create-issue -> skip)                 |
-     v  (heading absent: hand-written / created outside PAF)           |
-+----------------------------------------------+                       |
-| [agent] issue-validator                      |                       |
-|   verify vs docs + repo -> findings          |                       |
-+----------------------------------------------+                       |
-     |                                                                 |
-     v                                                                 |
-+----------------------------------------------+                       |
-| [skill] post findings comment on the issue   |                       |
-+----------------------------------------------+                       |
-     |                                                                 |
-     |--- severity: error (blocker) -->                                |
-     |    +----------------------------------------------+             |
-     |    | [human gate] AskUserQuestion: fold blocker   |             |
-     |    |   into the plan and continue?                |             |
-     |    +----------------------------------------------+             |
-     |         |--- decline / no answer --> STOP: developer updates    |
-     |         |                            issue & re-runs            |
-     |         +--- approve (blocker folded into the plan) ---+        |
-     |                                                        |        |
-     v  (warning / none -> carried into the plan)            |        |
-+----------------------------------------------+  <----------+  <-----+
-| [skill] EnterPlanMode: explore + write a     | <-+
-|   CONCRETE plan (one read-only context)      |   |
-+----------------------------------------------+   |
-     |                                             |
-     v                                             |
-+----------------------------------------------+   |
-| [human gate] ExitPlanMode: developer reviews |   |
-|   + approves the plan                        |   |
-+----------------------------------------------+   |
-     +--- changes requested (revise in plan mode) -+
-     |
-     v  (approved -> same context, edit mode)
-+----------------------------------------------+
-| [skill] create feature/<issue>-<desc> branch |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [skill] apply the approved plan's exact      |
-|   edits on the branch (no re-exploration)    |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [agent] implementation-verifier              | <-+
-|   run scoped tests (no lint), then the UI    |   |
-|   check if the change touches UI             |   |
-+----------------------------------------------+   |
-     +--- fail, retry<2: main-thread fix + reverify+
-     |--- fail, retries exhausted -> STOP: escalate failure report
-     |
-     v  (pass)
-+----------------------------------------------+
-| [agent] deep review — run in parallel:       |
-|   - senior-engineer-reviewer (functional)    |
-|   - code-simplifier (complexity)             |
-|   - security-engineer (security)             |
-|   - test-coverage-reviewer (test coverage)   |
-|   - conformance-reviewer (conformance)       |
-|   (change manifest: created files +          |
-|    modified ranges & removed lines)          |
-|   (+ issue body verbatim; decided or out-of- |
-|    scope items are not findings)             |
-+----------------------------------------------+
-     +--- no findings ------------------------------------+
-     |                                                    |
-     v  (findings)                                        |
-+----------------------------------------------+          |
-| [agent] full-stack-dev — TRIAGE + apply:     |          |
-|   contradicts issue's decided scope -> skip; |          |
-|   error -> apply (loud, justified skip);     |          |
-|   factual/consistency defect -> apply at     |          |
-|   any severity; other warning -> discretion. |          |
-|   Report: behaviour changes beyond plan      |          |
-|   (or None), then applied vs skipped         |          |
-+----------------------------------------------+          |
-     |                                                    |
-     v                                                    |
-+----------------------------------------------+          |
-| [agent] implementation-verifier (re-verify)  | <-+      |
-+----------------------------------------------+   |      |
-     +--- fail, retry<2: full-stack-dev fix -------+      |
-     |--- fail, retries exhausted -> STOP: escalate       |
-     |    (reviewers are never re-run)                    |
-     |                                                    |
-     v  (pass)                                            |
-+----------------------------------------------+       <--+
-| [skill] leave changes UNCOMMITTED on branch  |
-|   for review (no commit / push / MR/PR);     |
-|   print "UI not verified" first (UI change,  |
-|   no UI check command defined);              |
-|   then behaviour changes, then the           |
-|   applied-vs-skipped report (if triage ran); |
-|   record hand-off fingerprint (pinned base)  |
-+----------------------------------------------+
-     |
-     v
-+----------------------------------------------+
-| [skill] report per-invocation cost + tokens; |
-|         append to per-feature cost ledger    |
-+----------------------------------------------+
+/paf:implement-issue <n>
+        |
+        v
+  [skill] read issue --- no agent section --> [agent] issue-validator --> blocker? ask you
+        |
+        v
+  [skill + human] plan mode --> ExitPlanMode (summary first) --> branch --> build
+        |
+        v
+  [agent] implementation-verifier ---- fail --> main-thread fix (max 2) --> STOP
+        |
+        v
+  [agents] 5 reviewers in parallel --> [agent] full-stack-dev triage --> re-verify (max 2)
+        |
+        v
+  [skill] short hand-off (uncommitted) --> fingerprint --> cost
 ```
-
-## Agents used
-
-| Agent | Role in this skill |
-|---|---|
-| `issue-validator` | Verifies the issue's approach against authoritative docs and the repository; findings gate the run. |
-| `implementation-verifier` | Runs the scoped tests, plus the project's UI check command when the change touches UI (no lint, no full pre-merge command), and reports pass/fail — after the build, and again after the review fixes. |
-| `senior-engineer-reviewer` | Functional-correctness review of the implemented change (parallel). |
-| `code-simplifier` | Complexity / DRY / readability review (parallel). |
-| `security-engineer` | Security review (parallel). |
-| `test-coverage-reviewer` | Meaningful test-coverage review of the change's tests (parallel). |
-| `conformance-reviewer` | Conformance review — breaches of stated project rules, framework reinvention, divergence from repository patterns (parallel). |
-| `full-stack-dev` | Triages the aggregated review findings and applies the worthwhile ones; fixes any resulting verification failure (skipped if the review found nothing). |
-
-The reviewers run **concurrently**; the rest run in sequence. Planning and implementation are **not** delegated to agents — they run in the main thread via native plan mode (see "Why plan mode" above). None of the delegated agents sits on the plan→build boundary, so each keeps its own isolated context without cost. Agents never call `gh`/`glab`, change git state, or orchestrate each other — the skill owns all of that.
 
 ## Human interception points
 
-- **Plan-review gate** (`ExitPlanMode`) — the mandatory in-skill gate; the developer approves the concrete plan (or loops it back for revision in plan mode) before any code is written.
-- **Validator blocker gate** (`AskUserQuestion`) — for an issue without the agent-section heading (not PAF-validated), an `error` finding prompts the developer to fold it into the plan and continue, or stop. A PAF-validated issue skips validation, so this cannot fire.
-- **Skill boundary** — after the skill finishes, the developer reviews the branch's uncommitted changes (interception 2 in `architecture.md` §2) and then runs `/paf:check-out`.
+- **Validator blocker** (`AskUserQuestion`): only for an issue without the agent section.
+- **Plan approval** (`ExitPlanMode`): nothing is written before you approve.
+- **Skill boundary**: you review the uncommitted diff, which is the record of every applied fix, and then run `/paf:check-out`.
 
-## Loop cap and escalation
-
-Per `architecture.md` §5 there are **two** fix loops, each capped the same way:
-- **Verify-fix loop (main thread).** On verification failure, the **same main-thread context that built the code** (now in edit mode) applies the fix (informed by the failure output) and re-verifies, at most **twice** — never a cold builder agent, which would re-derive the change.
-- **Review-fix loop (`full-stack-dev`).** After the review fixes are applied, `implementation-verifier` re-runs; on failure `full-stack-dev` fixes from its output and it re-verifies, at most **twice**. The reviewers run **exactly once** per invocation and are never re-run — the second look at the code is the developer's manual review plus `/paf:check-out`'s safety-net review, which runs whenever the branch's content changed after the hand-off.
-- **No self-validation.** Whoever applied a fix never validates it — `implementation-verifier` re-runs as a separate agent each time.
-- **STOP conditions** (each halts and escalates to the developer, who fixes the cause and re-runs): a validator blocker the developer **declines** at the gate (a PAF-validated issue skips validation; an approved blocker is folded into the plan instead); verification still failing after either retry cap; malformed/missing agent output from any agent.
-- **Scoped verification.** `implementation-verifier` runs a **targeted subset** of the **test** suite (the changed area), plus the project's UI check command when the change touches UI, keeping both loops fast; the **full** test + lint suite runs later at `/paf:check-out`.
-
-## Git handling
-
-The skill owns git state (`architecture.md` §2). After the plan is approved it creates the `feature/<issue>-<short-description>` branch from the base branch (project instructions) and implements on it, but **leaves the changes uncommitted**. This is deliberate: uncommitted working-tree changes are the clearest review surface — the developer sees every added/modified file highlighted in the IDE, with per-file diffs, instead of having to diff `HEAD` against the base.
-
-`/paf:check-out` then commits the implementation plus the review fixes, pushes the branch, and opens the MR/PR. The intended flow is tight — implement → review → check-out — so the uncommitted window is short.
+When verification still fails after its cap, the run stops and prints the same hand-off with `Result: failure` and the blocker under Next. Design rationale (why plan mode, the two fix owners, the loop caps): [`architecture.md` §2](../architecture.md#2-skill-to-agent-orchestration) and [§5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
 
 ## Cost reporting
 
-The skill marks its invocation start at step 1, and the final step runs [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) in `record` mode, keyed by the **issue number** (or by the feature branch when there is none) — the same per-feature ledger `/paf:create-issue` wrote to and `/paf:check-out` will total for the MR/PR. Only this invocation's slice of the transcript (from the step-1 mark onward) is priced, so running `implement-issue` and `check-out` in one CLI session does not double-count. The step-1 mark carries the issue number (omitted, never stopped on, when `$ARGUMENTS` is not a plain number), so a run that stops before its cost step is still recovered — as an `implement-issue-stopped` row, by the next `implement-issue` run in the session or by `/paf:check-out`. Cost is converted to **EUR** and printed with the run's token breakdown (in / out / cached / total). See [`docs/skills/create-issue.md`](create-issue.md) for the ledger details.
+The run is priced from its start mark onward and appended to the per-feature ledger that `/paf:check-out` totals. A run that stops early is still recovered into the ledger as an `implement-issue-stopped` row. Details: [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
 
 ## Related files
 
-- [`skills/paf-implement-issue/SKILL.md`](../../skills/paf-implement-issue/SKILL.md) — the operational definition.
-- [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md) — agent output parsing rules.
-- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py) / [`pricing.json`](../../skills/paf-shared/pricing.json) — cost reporting.
-- [`skills/paf-shared/paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py) — the hand-off fingerprint `/paf:check-out` compares against.
-- [`agents/issue-validator.md`](../../agents/issue-validator.md), [`agents/implementation-verifier.md`](../../agents/implementation-verifier.md), [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md), [`agents/code-simplifier.md`](../../agents/code-simplifier.md), [`agents/security-engineer.md`](../../agents/security-engineer.md), [`agents/test-coverage-reviewer.md`](../../agents/test-coverage-reviewer.md), [`agents/conformance-reviewer.md`](../../agents/conformance-reviewer.md), [`agents/full-stack-dev.md`](../../agents/full-stack-dev.md) — the agent definitions this skill uses.
-- [`docs/architecture.md`](../architecture.md) — the factory-wide design this skill follows.
-```
+- [`agents/`](../../agents/): `issue-validator`, `implementation-verifier`, the five reviewers, and `full-stack-dev`.
+- [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md): how agent output is parsed.
+- [`skills/paf-shared/paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py): the hand-off fingerprint.
+- [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py): cost reporting.
