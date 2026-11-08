@@ -20,7 +20,7 @@ This installs the skills, agents, and hook into your Claude Code config (`~/.cla
 
 - `/paf:init` — check and fix a repository's readiness for PAF. Using PAF in a repo for the first time? Run `/paf:init` there first.
 - `/paf:create-issue` — turn a discussed idea into a structured issue
-- `/paf:implement-issue` — validate, plan, implement, verify, and review against an approved issue
+- `/paf:implement-issue` — validate, plan, implement, verify, review, and check the acceptance criteria of an approved issue
 - `/paf:check-out` — validate and open an MR/PR for reviewed work
 
 To remove PAF (skills, agents, hook, and the hook entry in `settings.json` — nothing else):
