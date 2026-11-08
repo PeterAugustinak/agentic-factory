@@ -13,13 +13,13 @@ Run `/paf:check-out [optional issue-number]` on the feature branch once you have
 ## How it works
 
 1. **Gather.** The skill reads the issue, computes the change as the branch's diff against the base (committed or not), and compares the branch with `/paf:implement-issue`'s hand-off fingerprint.
-2. **Safety net.** Only when the content changed since the hand-off (or the fingerprint cannot confirm it did not): `senior-engineer-reviewer` runs as a high-level pass over the whole diff, looking for regressions in your hand-edits. It gets the issue verbatim; what its Decisions and Constraints, with the binding Approach and Acceptance criteria, decide or put out of scope is not a finding. An `error` stops the run. On a fingerprint match it is skipped, silently.
-3. **Spec check.** `quality-assurer` confirms every acceptance criterion; an unmet one stops the run.
+2. **Safety net.** Only when the content changed since the hand-off (or the fingerprint cannot confirm it did not): `senior-engineer-reviewer` runs as a high-level pass over the whole diff, looking for regressions in your hand-edits. It is asked to report only critical regressions, as errors, and no warnings. It gets the issue verbatim; what its Decisions and Constraints, with the binding Approach and Acceptance criteria, decide or put out of scope is not a finding (for an issue without the agent section, whatever its body states). An `error` stops the run. On a fingerprint match it is skipped, silently.
+3. **Spec check.** `quality-assurer` confirms every acceptance criterion; an unmet one stops the run. For an issue with no acceptance criteria (a missing or empty section), it checks against the issue body instead, silently.
 4. **Pre-merge.** The project's full pre-merge command runs. On failure, the project's optional auto-fix command runs once and the check re-runs once; anything still failing stops the run.
 5. **Commit & push.** Whatever is still uncommitted is committed; the branch is pushed.
 6. **Cost.** The run's cost goes into the feature's cost ledger.
 7. **MR/PR.** The skill totals the feature's cost and opens the MR/PR from a fixed description template, written to a temporary file so the cost table stays verbatim. Its Deviations section names only what the issue's Approach, Decisions, Constraints, or acceptance criteria state and the code does differently.
-8. **Output.** On success: `Result: success`, the MR/PR link, and one line per deviation from the standard run, only when it applies (the safety-net review ran, its warnings, the pre-merge auto-fix ran and what it changed). On any stop: `Result: failure`, `Blocker:`, `Next:`, then the failing findings verbatim. Nothing else.
+8. **Output.** On success: `Result: success`, the MR/PR link, and one line per deviation from the standard run, only when it applies (the safety-net review ran, the pre-merge auto-fix ran and what it changed). On any stop: `Result: failure`, `Blocker:`, `Next:`, then the failing findings verbatim, one per line. A blank line separates every field. Nothing else.
 
 ```text
 /paf:check-out

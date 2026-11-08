@@ -12,7 +12,7 @@ Run `/paf:implement-issue <issue-number>`.
 
 ## How it works
 
-1. **Read.** The skill fetches the issue via `paf-vcs`.
+1. **Read.** The skill fetches the issue via `paf-vcs`. An issue with no acceptance criteria (a missing or empty section) stops the run at once with `Result: failure`.
 2. **Validate.** Only for an issue without the `## For implementation agent` line: `issue-validator` checks it, and the skill posts its findings and asks you whether a factual blocker is folded into the plan or stops the run. An uncovered behaviour case always stops it.
 3. **Plan.** In plan mode the skill starts from the agent section's Context and Scope of changes as a hint (the real code wins where they differ, unreported), and sweeps every place a changed fact is stated. It never decides an open point: one stops the run with `Result: failure`.
 4. **Approve.** The plan opens with a short summary (what changes and where), with the exact edits below it. You approve it or ask for changes.
@@ -30,8 +30,10 @@ Run `/paf:implement-issue <issue-number>`.
 /paf:implement-issue <n>
         |
         v
-  [skill] read issue --- no agent section --> [agent] issue-validator --> factual blocker? ask you
-        |                                                                uncovered case? STOP
+  [skill] read issue --- no acceptance criteria --> STOP
+        |
+        |--- no agent section --> [agent] issue-validator --> factual blocker? ask you
+        |                                                      uncovered case? STOP
         v
   [skill + human] plan mode (open point? STOP) --> ExitPlanMode (summary first) --> branch --> build
         |
@@ -54,7 +56,7 @@ Run `/paf:implement-issue <issue-number>`.
 - **Plan approval** (`ExitPlanMode`): nothing is written before you approve.
 - **Skill boundary**: you review the uncommitted diff, which is the record of every applied fix, and then run `/paf:check-out`.
 
-When verification, or the acceptance check, still fails after its cap, the run stops and prints the same hand-off with `Result: failure` and the blocker under Next. An open point found while planning stops the same way. Design rationale (why plan mode, the two fix owners, the loop caps): [`architecture.md` §2](../architecture.md#2-skill-to-agent-orchestration) and [§5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
+When verification, or the acceptance check, still fails after its cap, the run stops and prints the same hand-off with `Result: failure` and the blocker under Next. An issue with no acceptance criteria, or an open point found while planning, stops the same way. Design rationale (why plan mode, the two fix owners, the loop caps): [`architecture.md` §2](../architecture.md#2-skill-to-agent-orchestration) and [§5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
 
 ## Cost reporting
 
