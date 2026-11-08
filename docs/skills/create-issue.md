@@ -19,8 +19,8 @@ Discuss the idea in the conversation first (freely, or with `/grill-me`), then r
 
 1. **Ask.** If the idea is unclear, the skill asks a few questions. It then asks you about every decision it would otherwise make itself, so the issue holds only what you confirmed.
 2. **Draft.** `issue-writer` drafts the issue. If it finds a decision nobody made, the skill asks you and redrafts.
-3. **Validate.** `issue-validator` checks the factual claims against official docs and the repository.
-4. **Fix.** The skill fixes blockers in a redraft and re-checks only what changed, at most twice. If a blocker remains after that, the run **stops and posts nothing**. Each warning is then either corrected in place or added as a `Validator note:` under References.
+3. **Validate.** `issue-validator` checks the factual claims against official docs and the repository, and that every behaviour case a Decision or acceptance criterion touches is covered.
+4. **Fix.** An uncovered case is a blocker: the skill first asks you how to settle it. The skill fixes blockers in a redraft and re-checks only what changed, at most twice. If a blocker remains after that, the run **stops and posts nothing**. Each warning is then either corrected in place or added as a `Validator note:` under References.
 5. **Post.** The skill posts the issue directly, with **no review gate**, and prints its URL.
 6. **Cost.** The run's cost goes into the feature's cost ledger.
 
@@ -42,7 +42,7 @@ idea discussed --> /paf:create-issue
 
 ## Human interception points
 
-- **Questions before drafting** (and between drafts): clarity questions and every open decision.
+- **Questions before drafting** (and between drafts): clarity questions, every open decision, and how to settle each uncovered case the validator finds.
 - **Skill boundary**: you review the posted issue, then decide when to run `/paf:implement-issue`.
 
 `/paf:implement-issue` sees the `## For implementation agent` heading and skips re-validation. Issues without it (hand-written ones) are validated there. Design rationale: [`architecture.md` → issue-validator escalation](../architecture.md#issue-validator-escalation).
