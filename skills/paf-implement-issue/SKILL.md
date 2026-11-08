@@ -44,6 +44,8 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" mark --session "$
 
 Then fetch the issue: `${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs view-issue $ARGUMENTS` on the repo auto-detected from the git `origin` remote. Keep its title, body, and proposed approach — they feed the validator and the plan.
 
+**Acceptance criteria required.** If the fetched body has no line reading exactly `## Acceptance criteria`, or has an `## Acceptance criteria` heading with no criteria under it (only blank lines before the next `#` or `##` heading, or the end of the body), **STOP** at once — before validating or planning — and print the hand-off in its step-12 shape with `Result: failure`, `How to test: none — nothing was built`, and `Next` saying to add acceptance criteria to the issue (e.g. via `/paf:create-issue`) and re-run `/paf:implement-issue`. There is nothing to check the work against, so the issue is not ready. No fingerprint is recorded.
+
 **Source-aware validation.** Check whether the fetched issue body contains a line reading exactly `## For implementation agent` — the agent-section heading `create-issue` writes into every issue it posts (the cross-skill contract, `docs/architecture.md` §5). Match the whole line exactly, never a looser variant. Its presence means this issue was already validated by PAF.
 - **Heading present** → **skip steps 2–3 entirely** and go straight to plan mode (step 4). Re-validating a PAF-authored issue is redundant and — because same-definition agents are non-deterministic — risks "blocking" an issue `create-issue` already validated.
 - **Heading absent** (a hand-written issue, or one created outside PAF) → run steps 2–3 as below; the validator is the only validation such an issue gets.
@@ -199,6 +201,7 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
 ## Escalation
 
 Any of these **stops the run** with a clear message to the developer, who fixes the cause and re-runs `/paf:implement-issue`:
+- an issue with no acceptance criteria — a missing or empty `## Acceptance criteria` section (step 1);
 - a factual validator blocker the developer **declines** to carry forward at the step-3 gate (a PAF-validated issue skips validation entirely; an approved factual blocker is folded into the plan instead of stopping);
 - a completeness (`Uncovered:`) validator blocker on an issue without the agent section (step 3) — always, with no option to continue;
 - an open point found while planning (step 4) — the plan never decides one;
