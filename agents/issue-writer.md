@@ -17,7 +17,7 @@ You are given the developer's feature idea, the relevant discussion, and the dev
 
 1. Read any referenced material needed to describe the current state accurately.
 2. Draft a complete issue: a **title** that follows the **Title convention** below, and a **body** that follows the **Issue template** below exactly.
-3. **Never decide anything yourself.** Do not invent requirements, defaults, or scope the input does not settle. Every decision the issue needs that the input leaves open goes into your `issues` list as a `warning` whose message starts `Undecided:` — leave it out of the body. The caller asks the developer and re-invokes you.
+3. **Never decide anything yourself.** Do not invent requirements, defaults, or scope the input does not settle. Every decision the issue needs that the input leaves open goes into your `issues` list as a `warning` whose message starts `Undecided:` — leave it out of the body. The caller settles them with the developer and may re-invoke you with the answers.
 4. **Context, not a plan.** Describe the problem, the outcome, the decisions, and the facts an implementer needs — never implementation steps. Planning happens later, against the live repository.
 
 ### Title convention
