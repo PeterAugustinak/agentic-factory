@@ -13,6 +13,7 @@ import argparse
 import contextlib
 import io
 import json
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -702,6 +703,7 @@ class CliTestCase(unittest.TestCase):
         """Call a cmd_* function and return everything it printed. `--branch`
         defaults to absent, as on a command line that omits it."""
         kwargs.setdefault("branch", None)
+        kwargs.setdefault("issues", None)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             func(argparse.Namespace(**kwargs))
@@ -1145,6 +1147,163 @@ class StoppedRunTests(CliTestCase):
         self.assertIn("WARNING: no transcript for session gone", out)
         self.assertIn("No cost ledger found", out)
         self.assertFalse(cost.mark_path("gone", "implement-issue").exists())
+
+class SplitEquallyTests(unittest.TestCase):
+    def test_remainder_goes_to_the_first_share(self):
+        self.assertEqual(cost.split_equally(10, 3), [4, 3, 3])
+
+    def test_even_split_has_no_remainder(self):
+        self.assertEqual(cost.split_equally(9, 3), [3, 3, 3])
+
+    def test_fewer_units_than_shares(self):
+        self.assertEqual(cost.split_equally(2, 3), [2, 0, 0])
+
+    def test_one_share_is_the_whole(self):
+        self.assertEqual(cost.split_equally(1234, 1), [1234])
+        self.assertEqual(cost.split_equally(0.3551, 1, 10_000), [0.3551])
+
+    def test_scaled_shares_add_up_in_units(self):
+        shares = cost.split_equally(0.001, 3, 10_000)
+        self.assertEqual([round(s * 10_000) for s in shares], [4, 3, 3])
+
+
+class RecordSplitTests(CliTestCase):
+    """`record --issues`: one create-issue run that posted several issues."""
+
+    SINCE = "2026-07-25T00:00:00Z"
+    # claude-haiku-4-5 at $1/MTok in, $5/MTok out: 2_000 in + 2 out = $0.00201,
+    # stored as $0.002 (4 dp) -> 20 units of 1e-4; EUR (0.5) = €0.001 -> 10 units.
+    TRANSCRIPT = [
+        record("2026-07-25T10:00:00Z", "claude-haiku-4-5", mid="m1",
+               input_tokens=2_000, output_tokens=2),
+    ]
+
+    def record_split(self, issues, issue=None):
+        path = self.dir / "transcript.jsonl"
+        with open(path, "w") as fh:
+            for rec in self.TRANSCRIPT:
+                fh.write(json.dumps(rec) + "\n")
+        with mock.patch.object(cost, "find_transcripts", lambda _session: [path]):
+            return self.run_command(
+                cost.cmd_record, session="sess1", skill="create-issue", issue=issue,
+                issues=issues, project=self.PROJECT, since=self.SINCE,
+            )
+
+    def entries(self, key):
+        path = cost.ledger_path(self.PROJECT, key)
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+    def test_writes_one_row_per_issue(self):
+        self.record_split("57,58,59")
+        for key in ("57", "58", "59"):
+            rows = self.entries(key)
+            self.assertEqual(len(rows), 1, key)
+            self.assertEqual(rows[0]["skill"], "create-issue")
+            self.assertEqual(rows[0]["feature"], key)
+
+    def test_token_shares_are_equal_with_the_remainder_on_the_first(self):
+        self.record_split("57,58,59")
+        toks = [self.entries(k)[0]["tokens"] for k in ("57", "58", "59")]
+        self.assertEqual([t["input"] for t in toks], [668, 666, 666])
+        self.assertEqual([t["output"] for t in toks], [2, 0, 0])
+        for field in cost.TOKEN_FIELDS:
+            total = {"input": 2_000, "output": 2}.get(field, 0)
+            self.assertEqual(sum(t[field] for t in toks), total, field)
+
+    def test_cost_shares_add_up_to_the_exact_total(self):
+        self.record_split("57,58,59")
+        rows = [self.entries(k)[0] for k in ("57", "58", "59")]
+        eur_units = [round(r["total_cost_eur"] * 10_000) for r in rows]
+        usd_units = [round(r["total_cost_usd"] * 10_000) for r in rows]
+        self.assertEqual(eur_units, [4, 3, 3])
+        self.assertEqual(usd_units, [8, 6, 6])
+
+    def test_prints_one_cost_block_with_the_run_total(self):
+        out = self.record_split("57,58,59")
+        self.assertEqual(out.count("--- create-issue — cost ---"), 1)
+        self.assertEqual(out.count("Cost: €"), 1)
+        # The run total, not a share (a share would read 668 or 666 in).
+        self.assertIn("Tokens: 2.0k in · 2 out · 0 cached · 2.0k total", out)
+        self.assertNotIn("not added to any feature ledger", out)
+
+    def test_invalid_and_duplicate_items_are_ignored(self):
+        out = self.record_split("57, x,57,58")
+        self.assertIn("ignoring invalid --issues item 'x'", out)
+        self.assertEqual(len(self.entries("57")), 1)
+        self.assertEqual(len(self.entries("58")), 1)
+        # Split in two, not three: the duplicate is not a share.
+        self.assertEqual(self.entries("57")[0]["tokens"]["input"], 1_000)
+        self.assertEqual(sorted(p.name for p in cost.LEDGER_ROOT.glob("*/*.jsonl")),
+                         ["57.jsonl", "58.jsonl"])
+
+    def test_no_valid_issue_writes_no_ledger(self):
+        out = self.record_split("x")
+        self.assertIn("Cost: €", out)
+        self.assertIn("not added to any feature ledger", out)
+        self.assertEqual(list(cost.LEDGER_ROOT.glob("*/*.jsonl")), [])
+
+    def test_a_single_issue_in_issues_matches_the_issue_form(self):
+        self.record_split(None, issue="57")
+        self.record_split("58")
+        single, listed = self.entries("57")[0], self.entries("58")[0]
+        for row in (single, listed):
+            del row["timestamp"], row["feature"]
+        self.assertEqual(single, listed)
+
+    def test_cli_parses_issues_and_writes_one_row_each(self):
+        path = self.dir / "transcript.jsonl"
+        path.write_text(json.dumps(self.TRANSCRIPT[0]) + "\n")
+        argv = ["paf-report-cost.py", "record", "--session", "sess1", "--skill", "create-issue",
+                "--issues", "57,58", "--project", self.PROJECT, "--since", self.SINCE]
+        out = io.StringIO()
+        with mock.patch.object(cost, "find_transcripts", lambda _session: [path]), \
+                mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(out):
+            cost.main()
+        self.assertEqual(len(self.entries("57")), 1)
+        self.assertEqual(len(self.entries("58")), 1)
+
+    def test_cli_rejects_issue_together_with_issues(self):
+        argv = ["paf-report-cost.py", "record", "--session", "s", "--skill", "create-issue",
+                "--issue", "57", "--issues", "58"]
+        with mock.patch.object(sys, "argv", argv), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            cost.main()
+
+    def test_issues_take_precedence_over_branch(self):
+        path = self.dir / "transcript.jsonl"
+        path.write_text(json.dumps(self.TRANSCRIPT[0]) + "\n")
+        with mock.patch.object(cost, "find_transcripts", lambda _session: [path]):
+            self.run_command(
+                cost.cmd_record, session="sess1", skill="create-issue", issue=None,
+                issues="57,58", branch="feature/9-x", project=self.PROJECT, since=self.SINCE,
+            )
+        self.assertEqual(sorted(p.name for p in cost.LEDGER_ROOT.glob("*/*.jsonl")),
+                         ["57.jsonl", "58.jsonl"])
+
+    def test_empty_issues_writes_no_ledger(self):
+        out = self.record_split("")
+        self.assertIn("not added to any feature ledger", out)
+        self.assertEqual(list(cost.LEDGER_ROOT.glob("*/*.jsonl")), [])
+
+    def test_shares_sum_to_the_total_for_two_seven_and_more_shares_than_units(self):
+        for n in (2, 7, 25):
+            keys = [str(100 * n + i) for i in range(n)]
+            self.record_split(",".join(keys))
+            rows = [self.entries(k)[0] for k in keys]
+            self.assertEqual(sum(round(r["total_cost_usd"] * 10_000) for r in rows), 20, n)
+            self.assertEqual(sum(round(r["total_cost_eur"] * 10_000) for r in rows), 10, n)
+            self.assertEqual(sum(r["tokens"]["input"] for r in rows), 2_000, n)
+            self.assertTrue(all(r["total_cost_usd"] >= 0 for r in rows), n)
+
+    def test_the_issue_form_still_records_the_whole_run(self):
+        self.record_split(None, issue="57")
+        row = self.entries("57")[0]
+        self.assertEqual(row["tokens"]["input"], 2_000)
+        self.assertEqual(row["total_cost_usd"], 0.002)
+        self.assertEqual(row["total_cost_eur"], 0.001)
+
 
 if __name__ == "__main__":
     unittest.main()

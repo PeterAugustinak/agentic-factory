@@ -52,12 +52,16 @@ with neither the run is reported but not added to any ledger.
 
 Usage:
   paf-report-cost.py mark      --session <id> --skill <name> [--issue <n>] [--branch <name>] [--project <slug>]
-  paf-report-cost.py record    --session <id> --skill <name> [--issue <n>] [--branch <name>] [--project <slug>] [--since <iso>]
+  paf-report-cost.py record    --session <id> --skill <name> [--issue <n> | --issues <n>,<n>...] [--branch <name>] [--project <slug>] [--since <iso>]
   paf-report-cost.py aggregate [--issue <n>] [--branch <name>] [--project <slug>] [--cleanup]
 
 `mark` records this invocation's start (closing the same skill's open marker of
 this session first) so `record` can slice to it.
-`record` prices this run's slice and appends a ledger entry.
+`record` prices this run's slice and appends a ledger entry. With `--issues` (a
+create-issue run that posted several issues) the run's cost and every token
+count are split into equal shares across those issues' ledgers, the remainder
+going to the first issue listed so the shares add up to the exact totals; the
+output is still one cost block, with the run total.
 `aggregate` closes the feature's open markers, prints the feature total
 (per-skill breakdown) for the PR body and, with --cleanup, deletes the ledger
 file afterwards.
@@ -151,6 +155,22 @@ def resolve_key(args):
     if args.branch is not None and not _is_branch(args.branch) and not _is_number(args.issue):
         print(f"WARNING: ignoring unusable --branch value {args.branch!r}.")
     return feature_key(args.issue, args.branch)
+
+
+def resolve_keys(args) -> list:
+    """The feature keys `record` writes to: the issue numbers of `--issues`, in
+    order, without duplicates, warning about (and ignoring) any that is not one;
+    otherwise the single key of `--issue`/`--branch`, or none."""
+    if args.issues is None:
+        key = resolve_key(args)
+        return [key] if key is not None else []
+    keys = []
+    for item in (part.strip() for part in args.issues.split(",")):
+        if not _is_number(item):
+            print(f"WARNING: ignoring invalid --issues item {item!r} (not an issue number).")
+        elif item not in keys:
+            keys.append(item)
+    return keys
 
 
 def utc_now() -> datetime:
@@ -462,21 +482,37 @@ def read_marker(path: Path) -> dict:
     }
 
 
-def append_ledger(project: str, key: str, skill: str, result: dict, config: dict, ts: datetime) -> float:
-    """Append one priced run to the ledger of feature `key`; return its EUR cost."""
+def split_equally(total, n: int, scale: int = 1) -> list:
+    """`total` in `n` equal shares, counted in units of 1/scale; the leftover
+    remainder goes to the first share, so the shares add up to exactly `total`."""
+    share, rest = divmod(round(total * scale), n)
+    shares = [share] * n
+    shares[0] += rest
+    return shares if scale == 1 else [s / scale for s in shares]
+
+
+def append_ledger(project: str, keys: list, skill: str, result: dict, config: dict, ts: datetime) -> float:
+    """Append one priced run to the ledger of every feature in `keys`, split into
+    equal shares (the remainder to the first); return the run's whole EUR cost.
+    With one key the row carries the whole run, unchanged."""
     cost_eur = round(result["total_cost_usd"] * config["usd_to_eur"], 4)
-    entry = {
-        "skill": skill,
-        "feature": key,
-        "total_cost_eur": cost_eur,
-        "total_cost_usd": result["total_cost_usd"],
-        "tokens": result["tokens"],
-        "timestamp": ts.isoformat(),
-    }
-    path = ledger_path(project, key)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a") as fh:
-        fh.write(json.dumps(entry) + "\n")
+    n = len(keys)
+    eur = split_equally(cost_eur, n, 10_000)
+    usd = split_equally(result["total_cost_usd"], n, 10_000)
+    tok = {f: split_equally(result["tokens"][f], n) for f in TOKEN_FIELDS}
+    for i, key in enumerate(keys):
+        entry = {
+            "skill": skill,
+            "feature": key,
+            "total_cost_eur": eur[i],
+            "total_cost_usd": usd[i],
+            "tokens": {f: tok[f][i] for f in TOKEN_FIELDS},
+            "timestamp": ts.isoformat(),
+        }
+        path = ledger_path(project, key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as fh:
+            fh.write(json.dumps(entry) + "\n")
     return cost_eur
 
 
@@ -515,7 +551,7 @@ def close_marker(path: Path, config: dict, now: datetime) -> None:
         return
     result = cost_from_transcripts(paths, config["models"], since=m["start"], until=until)
     skill = f"{m['skill']}-stopped"
-    cost_eur = append_ledger(m["project"], key, skill, result, config, now)
+    cost_eur = append_ledger(m["project"], [key], skill, result, config, now)
     # Logged only once the row is written, so a failure above leaves the marker
     # and the boundary log as they were and a retry slices the same way.
     if not later:
@@ -559,7 +595,7 @@ def cmd_mark(args) -> None:
 def cmd_record(args) -> None:
     _validate("session", args.session)
     _validate("skill", args.skill)
-    key = resolve_key(args)
+    keys = resolve_keys(args)
     if args.project is not None:
         _validate("project", args.project)
     project = args.project or project_slug()
@@ -591,11 +627,11 @@ def cmd_record(args) -> None:
 
     result = cost_from_transcripts(find_transcripts(args.session), config["models"], since=since)
     now = utc_now()
-    if key is None:
+    if not keys:
         # Reported below, but with no feature key there is no ledger to add it to.
         cost_eur = round(result["total_cost_usd"] * config["usd_to_eur"], 4)
     else:
-        cost_eur = append_ledger(project, key, args.skill, result, config, now)
+        cost_eur = append_ledger(project, keys, args.skill, result, config, now)
     append_boundary(args.session, now)
 
     # This invocation is priced and recorded — clear its marker.
@@ -622,7 +658,7 @@ def cmd_record(args) -> None:
             f"WARNING: no pricing and no same-family fallback for {result['unknown_models']} — "
             f"their tokens were excluded. Add them to {PRICING_PATH} (dateless keys)."
         )
-    if key is None:
+    if not keys:
         print("NOTE: no issue number or branch given — this cost was not added to any feature ledger.")
 
 
@@ -712,7 +748,9 @@ def main() -> None:
     rec = sub.add_parser("record", help="price this run's slice and append to the ledger")
     rec.add_argument("--session", required=True)
     rec.add_argument("--skill", required=True)
-    rec.add_argument("--issue")
+    rec_key = rec.add_mutually_exclusive_group()
+    rec_key.add_argument("--issue")
+    rec_key.add_argument("--issues", help="comma-separated issue numbers in posting order — one run split equally across them")
     rec.add_argument("--branch", help="the feature key when there is no issue number")
     rec.add_argument("--project")
     rec.add_argument("--since", help="ISO 8601 slice start (overrides the mark marker)")
