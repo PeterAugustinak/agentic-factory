@@ -4,7 +4,7 @@ Human-facing documentation for the `create-issue` skill. The operational definit
 
 ## Purpose
 
-Turn a discussed feature idea into an issue, check its facts, and post it. It is the **first** skill in the factory; `/paf:implement-issue` builds what it posts.
+Turn a discussed feature idea into an issue, check its facts, and post it. When the topic is too big for one issue, it splits it and posts several linked issues in one run. It is the **first** skill in the factory; `/paf:implement-issue` builds what it posts.
 
 ## How to invoke
 
@@ -17,16 +17,20 @@ Discuss the idea in the conversation first (freely, or with `/grill-me`), then r
 
 ## How it works
 
-1. **Ask.** If the idea is unclear, the skill asks a few questions. It then asks you about every decision it would otherwise make itself, so the issue holds only what you confirmed.
-2. **Draft.** `issue-writer` drafts the issue. If it finds a decision nobody made, the skill asks you and redrafts.
-3. **Validate.** `issue-validator` checks the factual claims against official docs and the repository, and that every behaviour case a Decision or acceptance criterion touches is covered.
-4. **Fix.** An uncovered case is a blocker: the skill first asks you how to settle it. The skill fixes blockers in a redraft and re-checks only what changed, at most twice. If a blocker remains after that, the run **stops and posts nothing**. Each warning is then either corrected in place or added as a `Validator note:` under References.
-5. **Post.** The skill posts the issue directly, with **no review gate**, and prints its URL.
-6. **Cost.** The run's cost goes into the feature's cost ledger.
+1. **Split?** The skill judges, from the conversation, whether the topic should be several issues (INVEST: each part delivered and tested on its own). If not, you see nothing about it. If so, it shows a `Why split:` line and one line per part, and you choose `Split as shown`, `Keep as one issue`, or type changes (the revised split is shown again until you choose). In a split run every step below runs for each part.
+2. **Ask.** If the idea is unclear, the skill asks a few questions. It then asks you about every decision it would otherwise make itself, so the issue holds only what you confirmed. In a split run, the decisions of all parts are asked in one round, grouped by part.
+3. **Draft.** `issue-writer` drafts the issue. If it finds a decision nobody made, the skill asks you and redrafts. In a split run, such questions are collected across all parts and asked together.
+4. **Validate.** `issue-validator` checks the factual claims against official docs and the repository, and that every behaviour case a Decision or acceptance criterion touches is covered.
+5. **Fix.** An uncovered case is a blocker: the skill first asks you how to settle it. The skill fixes blockers in a redraft and re-checks only what changed, at most twice. If a blocker remains after that, the run **stops and posts nothing**. Each warning is then either corrected in place or added as a `Validator note:` under References. In a split run, a blocker left in any part means nothing is posted.
+6. **Post.** The skill posts the issue directly, with **no review gate**, and prints its URL. In a split run, it posts only after every part has passed validation, in dependency order, adding a `Depends on #N` line (a part that depends on another) or `Related to #N` lines (an independent part, for the siblings already posted) to each part's human part, and lists every URL in order. If posting fails part-way, it stops and prints the URLs already posted and the bodies of the unposted parts.
+7. **Cost.** The run's cost goes into the feature's cost ledger — in a split run, in equal shares across the posted issues.
 
 ```text
 idea discussed --> /paf:create-issue
                         |
+                        v
+  [skill + human] split triage -- split? --> confirm / change parts
+                        |                    (every step below per part)
                         v
   [skill + human] clarity + decision questions
                         |
@@ -37,19 +41,20 @@ idea discussed --> /paf:create-issue
   [agent] issue-validator
      |--- blocker --> redraft, re-check delta (max 2) --> still blocked: STOP
      v
-  [skill] fold warnings --> post via paf-vcs --> cost
+  [skill] fold warnings --> post via paf-vcs (all parts, in dependency order) --> cost
 ```
 
 ## Human interception points
 
+- **Split confirmation**: when the skill proposes a split, you confirm it, change it, or keep one issue.
 - **Questions before drafting** (and between drafts): clarity questions, every open decision, and how to settle each uncovered case the validator finds.
-- **Skill boundary**: you review the posted issue, then decide when to run `/paf:implement-issue`.
+- **Skill boundary**: you review the posted issue (or issues), then decide when to run `/paf:implement-issue`.
 
 `/paf:implement-issue` sees the `## For implementation agent` heading and skips re-validation. Issues without it (hand-written ones) are validated there. Design rationale: [`architecture.md` → issue-validator escalation](../architecture.md#issue-validator-escalation).
 
 ## Cost reporting
 
-The run is priced from its start mark onward (the discussion before it is not counted) and appended to the per-feature ledger that `/paf:check-out` totals. A run that stops before posting has no issue number, so its cost is dropped. Details: [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
+The run is priced from its start mark onward (the discussion before it is not counted) and appended to the per-feature ledger that `/paf:check-out` totals. A split run's cost and token counts are shared equally across the issues it posted (the remainder goes to the first), and the terminal shows one cost block with the run total. A run that stops before posting has no issue number, so its cost is dropped; a split run whose posting fails part-way records its cost only on the issues already posted. Details: [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
 
 ## Related files
 

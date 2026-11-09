@@ -19,7 +19,7 @@ curl -sSL https://raw.githubusercontent.com/PeterAugustinak/agentic-factory/deve
 This installs the skills, agents, and hook into your Claude Code config (`~/.claude/`) and wires the hook into `settings.json`. Re-running upgrades in place. Requires `git` and `python3` to install, plus an authenticated `gh` (GitHub) or `glab` (GitLab) CLI — whichever matches the target project's `origin` remote — to run the skills. After install, start a new Claude Code session and invoke:
 
 - `/paf:init` — check and fix a repository's readiness for PAF. Using PAF in a repo for the first time? Run `/paf:init` there first.
-- `/paf:create-issue` — turn a discussed idea into a structured issue
+- `/paf:create-issue` — turn a discussed idea into a structured issue, or several linked issues when it should be split
 - `/paf:implement-issue` — validate, plan, implement, verify, review, and check the acceptance criteria of an approved issue
 - `/paf:check-out` — validate and open an MR/PR for reviewed work
 
