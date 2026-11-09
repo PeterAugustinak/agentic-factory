@@ -5,6 +5,21 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.33.0] - 2026-11-09
+
+### Added
+
+- `/paf:create-issue` splits an oversized topic into several linked issues when the developer
+  confirms; the run's cost is shared equally across them (#111).
+
+### Changed
+
+- `/paf:check-out` asks no confirmation and prints a short, fixed result on success and on failure.
+  Its safety-net review reports errors only (#105, #109).
+- `issue-validator` blocks an issue that leaves a behaviour case open, and `/paf:implement-issue`
+  stops instead of deciding one itself (#107).
+- `/paf:implement-issue` rejects an issue without acceptance criteria (#109).
+
 ## [0.32.0] - 2026-11-06
 
 ### Changed
@@ -35,8 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An agent report whose closing fence is missing no longer stops the run. Agents are told to close
   the block; the parser treats an unclosed block as running to the end of the message, validates
   it as usual, and flags it as possibly truncated.
-
-Re-run the installer to pick up these changes.
 
 ## [0.31.0] - 2026-10-29
 
@@ -69,8 +82,6 @@ Re-run the installer to pick up these changes.
   prints that list first, then the applied-vs-skipped report. When adding tests, `full-stack-dev`
   extends the existing tests and fixtures for the area rather than adding parallel ones (#90).
 
-Re-run the installer to pick up these changes.
-
 ## [0.30.0] - 2026-10-21
 
 Graded MINOR rather than PATCH, although all three changes are bug fixes: #87 changes the interface
@@ -102,8 +113,6 @@ features without an issue are keyed by branch.
 - `docs/CONTRIBUTING.md` describes versioning as one version per release rather than one per PR:
   feature PRs leave `VERSION` and `CHANGELOG.md` alone, and a release covers every PR merged since
   the last version.
-
-Re-run the installer to pick up these changes.
 
 ## [0.29.0] - 2026-10-19
 
@@ -148,7 +157,7 @@ Re-run the installer to pick up these changes.
 - Labels are optional. `/paf:create-issue` posts without labels when the project lists none, skips
   listed labels that do not exist in the repository, and never stops over labels.
 - The content checklist moves "Labels" to the optional areas; "Merge strategy" stays required.
-  `/paf:init` no longer reports missing labels. Re-run the installer to pick up the change.
+  `/paf:init` no longer reports missing labels.
 
 ## [0.26.0] - 2026-10-10
 
@@ -178,7 +187,7 @@ Re-run the installer to pick up these changes.
 ### Fixed
 
 - Skills and agents read project context from `CLAUDE.md` or `AGENTS.md`, whichever Claude Code
-  loaded, instead of assuming `CLAUDE.md`. Re-run the installer to pick up the change.
+  loaded, instead of assuming `CLAUDE.md`.
 
 ## [0.25.0] - 2026-10-10
 
@@ -194,8 +203,7 @@ Re-run the installer to pick up these changes.
 - `/paf:implement-issue` records the fingerprint at its hand-off. `/paf:check-out` recomputes it
   before its safety-net review and skips the review only on an exact match, reporting the skip and
   its reason. Any content change, committed or not, a missing or unreadable record, or any error
-  runs the review as before. The fingerprint is cleared with the cost ledger when the feature ships.
-  Re-run the installer to pick up the new helper (#63).
+  runs the review as before. The fingerprint is cleared with the cost ledger when the feature ships (#63).
 
 ## [0.24.0] - 2026-10-09
 
@@ -220,8 +228,7 @@ Re-run the installer to pick up these changes.
 ### Fixed
 
 - `claude-sonnet-5` is priced at its standard $2/$10 (cache read $0.20) instead of the stale $3/$15,
-  and the pricing table no longer claims a fixed cache multiplier for every model. Re-run the
-  installer to pick up the new prices (#70).
+  and the pricing table no longer claims a fixed cache multiplier for every model (#70).
 
 ## [0.22.0] - 2026-10-09
 
@@ -254,7 +261,7 @@ changes: `paf-vcs` and every other installed file are byte-identical to 0.20.0.
 - Agents' `Read`/`Grep`/`Glob` are path-contained by the `PreToolUse` hook, which now also matches
   those tools. Reads inside the project root, or of the session's own saved tool results, are
   allowed; anything reaching outside gets an `ask` decision, a human prompt that auto mode's
-  classifier cannot approve silently. Re-run the installer to pick up the new matcher (#62).
+  classifier cannot approve silently (#62).
 
 ## [0.19.1] - 2026-10-08
 
