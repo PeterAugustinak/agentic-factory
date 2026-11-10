@@ -17,6 +17,7 @@ Invoke after install: `/skill-name`
 3. Write a focused system prompt: role, expected input, required output (must follow the output contract in `docs/architecture.md` Section 4)
 4. Agents are specialists — no orchestration, no external I/O, no VCS API calls
 5. Document the new agent in `docs/architecture.md` and update `agents/README.md` if needed
+6. Add its `name` to `PAF_AGENTS` in `hooks/PreToolUse-agent-guard.py` — the set the hook's PAF-only checks apply to; `tests/test_agent_guard.py` fails until it matches `agents/`
 
 ## Adding a hook
 
