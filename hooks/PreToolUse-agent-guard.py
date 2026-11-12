@@ -6,17 +6,23 @@ Keyed on the `agent_type` field of the PreToolUse payload, it returns an explici
 permission decision for every call it recognizes, so vetted factory calls run
 WITHOUT a permission prompt and forbidden ones are blocked:
 
-- ALLOW — the main thread unconditionally (the trusted orchestrator owns all I/O
-  and git state, §2), plus each agent's legitimate tool set: read-only Bash,
-  build/test Bash, project-scoped writes, project-scoped reads (plus the session's
-  own saved tool results), and web lookups (gated by each agent's `tools:`
-  allowlist). These skip the permission prompt.
-- DENY  — agents doing external I/O (gh/curl/wget/ssh/...), agents changing git
-  state (add/commit/push/...), read-only agents running non-read-only Bash, and
-  any write outside the project root. All skill-owned or unsafe (§2).
-- ASK   — an agent's Read/Grep/Glob reaching outside the project root: forces a
-  human permission prompt, which auto mode's classifier cannot approve silently,
-  so a legitimate read of an added directory still goes through (#62).
+- ALLOW — the main thread (the trusted orchestrator owns all I/O and git state,
+  §2) for every call but the one below, plus each agent's legitimate tool set:
+  read-only Bash, build/test Bash, project-scoped writes, project-scoped reads
+  (plus the session's own saved tool results), and web lookups (gated by each
+  agent's `tools:` allowlist). These skip the permission prompt.
+- DENY  — the main thread's `Agent` call starting a PAF agent whose prompt points
+  to an existing file in a temp directory: agent input goes in the prompt, never
+  through a file (§4, Input delivery); the reason goes to the model and tells it
+  to resend the content inline, and the developer sees no prompt (#112). Agents doing
+  external I/O (gh/curl/wget/ssh/...), agents changing git state
+  (add/commit/push/...), read-only agents running non-read-only Bash, and any
+  write outside the project root. A PAF agent's Read/Grep/Glob the hook cannot
+  confirm is inside the project root or the session's saved tool results (#112).
+  All skill-owned or unsafe (§2).
+- ASK   — a non-PAF agent's Read/Grep/Glob reaching outside the project root:
+  forces a human permission prompt, which auto mode's classifier cannot approve
+  silently, so a legitimate read of an added directory still goes through (#62).
 - DEFER — anything unrecognized: emit nothing, so Claude Code's normal permission
   flow (and prompt) applies. Keeps a human safety net for novel calls.
 
@@ -35,6 +41,34 @@ import sys
 # `tools: Read, Bash`, so frontmatter cannot express which need read-only Bash and
 # which need build/test Bash. Adding a new read-only Bash agent means one line here.
 READ_ONLY_AGENTS = {"code-explorer", "implementation-planner"}
+
+# PAF's own agents: the ones shipped in this repository's `agents/`, by frontmatter
+# `name` — the value the payload carries as `agent_type` and an `Agent` call as
+# `subagent_type`. The agent-call input check and the deny backstop on reads apply
+# to these only; PAF rules never apply outside PAF (#112). Adding an agent means one
+# line here, and a test fails until it is added.
+PAF_AGENTS = frozenset({
+    "code-explorer", "code-simplifier", "conformance-reviewer", "full-stack-dev",
+    "implementation-planner", "implementation-verifier", "issue-validator",
+    "issue-writer", "quality-assurer", "security-engineer",
+    "senior-engineer-reviewer", "test-coverage-reviewer",
+})
+
+READ_TOOLS = ("Read", "Grep", "Glob")
+
+# An absolute or home-relative path in an agent prompt: it starts at the beginning of
+# the prompt or after whitespace, a quote, a backtick, or an opening bracket, and runs
+# to the next character that cannot be part of an unquoted path. Only a path that is
+# an EXISTING FILE in a temp directory blocks the call (`temp_file_in_prompt()`), so a
+# path merely mentioned as content never does (#112).
+PROMPT_PATH = re.compile(r"(?<![^\s\"'`(<\[=:,])((?:~(?=/))?/[^\s\"'`<>(){}\[\],;|*]+)")
+
+# The temp directories, in the order Python's `tempfile.gettempdir()` documents its
+# search on POSIX: the TMPDIR, TEMP and TMP environment variables, then /tmp, /var/tmp
+# and /usr/tmp. `gettempdir()` itself is not called: it probes each candidate by
+# creating a file in it, a write on every hook call.
+TEMP_ENV_VARS = ("TMPDIR", "TEMP", "TMP")
+TEMP_DIRS = ("/tmp", "/var/tmp", "/usr/tmp")
 
 # Read-only Bash allowlist for the read-only agents. Matched on the command name of
 # EVERY segment of a compound command, not just the first (#41).
@@ -353,15 +387,52 @@ def session_tool_results(transcript_path: str, session_id: str) -> str:
         current = parent
 
 
-def _typed_or_none(value, expected_type):
+def temp_roots() -> list:
+    """The resolved temp directories (see TEMP_ENV_VARS / TEMP_DIRS)."""
+    roots = []
+    for candidate in [os.environ.get(name) for name in TEMP_ENV_VARS] + list(TEMP_DIRS):
+        if not candidate:
+            continue
+        try:
+            roots.append(os.path.realpath(candidate))
+        except ValueError:
+            continue  # an embedded NUL byte: no such directory
+    return roots
+
+
+def temp_file_in_prompt(prompt: str, project: str) -> str:
+    """The first path in `prompt` that is an existing file in a temp directory and
+    outside the project root, or "" when there is none (#112).
+
+    A path is only a pointer to agent input when the file exists: a path named as
+    content — a nonexistent `/tmp/x` in docs, a directory, `~/.claude/paf/costs/` —
+    never matches. Unresolvable paths (NUL, unexpandable `~`) are skipped.
+    """
+    roots = temp_roots()
+    for match in PROMPT_PATH.finditer(prompt):
+        candidate = match.group(1).rstrip(".:!?")
+        try:
+            resolved = os.path.realpath(os.path.expanduser(candidate))
+            if within_project(resolved, project):
+                continue
+            if any(within_project(resolved, root) for root in roots) and os.path.isfile(resolved):
+                return resolved
+        except (ValueError, OSError):
+            continue
+    return ""
+
+
+def _typed_or_none(value, expected_type, on_mismatch=defer):
     """`value` unchanged when it is `None` or already `expected_type`; otherwise
-    `defer()` — a field present but of the wrong shape is not ours to judge, the
-    same policy #22 established for the payload's own outer shape, applied to
-    every nested field the hook reads (#44). Shared by every "present but wrong
-    type" guard below so the idiom is written, and audited, once.
+    `on_mismatch()` — by default `defer()`: a field present but of the wrong shape
+    is not ours to judge, the same policy #22 established for the payload's own
+    outer shape, applied to every nested field the hook reads (#44). A PAF agent's
+    read passes a deny instead: a target the hook cannot place is denied (#112).
+    Shared by every "present but wrong type" guard below so the idiom is written,
+    and audited, once.
     """
     if value is not None and not isinstance(value, expected_type):
-        defer()
+        on_mismatch()
     return value
 
 
@@ -385,15 +456,49 @@ def main() -> None:
     # being well-formed (#44). A key present but empty/null fails safe into the
     # restricted agent branch below.
     if "agent_type" not in data:
+        # The one main-thread check (#112): a call starting a PAF agent must carry its
+        # input in the prompt, never point the agent to a file in a temp directory,
+        # which the agent may not read. A malformed field never defers here: it falls
+        # through to the allow below, so the main thread's other calls stay as they were.
+        tool_input = data.get("tool_input")
+        if data.get("tool_name") == "Agent" and isinstance(tool_input, dict):
+            subagent = tool_input.get("subagent_type")
+            prompt = tool_input.get("prompt")
+            if isinstance(subagent, str) and subagent in PAF_AGENTS and isinstance(prompt, str):
+                cwd = data.get("cwd")
+                project = os.path.realpath(
+                    os.environ.get("CLAUDE_PROJECT_DIR")
+                    or (cwd if isinstance(cwd, str) else "")
+                    or os.getcwd()
+                )
+                path = temp_file_in_prompt(prompt, project)
+                if path:
+                    deny(
+                        f"Input for the PAF agent '{subagent}' must go in the prompt, never "
+                        "through a file (docs/architecture.md §4, Input delivery). The prompt "
+                        f"points to {path}, a file in a temp directory the agent may not read. "
+                        "Resend this Agent call with that file's content pasted inline in the "
+                        "prompt, without naming its path."
+                    )
         allow("Main thread (orchestrating skill) is unrestricted (architecture.md §3).")
 
     # --- Agents: restricted; allow only their legitimate calls. ---
     agent = _typed_or_none(data.get("agent_type"), str) or ""
     tool = _typed_or_none(data.get("tool_name"), str) or ""
-    tool_input = _typed_or_none(data.get("tool_input"), dict) or {}
+    # A PAF agent's read is allowed only when the hook can place its target inside the
+    # project root or the session's saved tool results; anything it cannot place is
+    # denied, never deferred or asked (#112). For every other call this stays defer.
+    paf_read = agent in PAF_AGENTS and tool in READ_TOOLS
+    paf_read_reason = (
+        f"{agent} is a PAF agent and may read only inside the project root or this "
+        "session's saved tool results; this target is outside them or cannot be placed. "
+        "Work from the input in your prompt (architecture.md §3)."
+    )
+    unplaceable = (lambda: deny(paf_read_reason)) if paf_read else defer
+    tool_input = _typed_or_none(data.get("tool_input"), dict, unplaceable) or {}
     project = os.path.realpath(
         os.environ.get("CLAUDE_PROJECT_DIR")
-        or _typed_or_none(data.get("cwd"), str)
+        or _typed_or_none(data.get("cwd"), str, unplaceable)
         or os.getcwd()
     )
 
@@ -431,24 +536,25 @@ def main() -> None:
             allow("Write confined to the project root.")
         deny(f"Writes must stay within the project root ({project}); target resolves outside it.")
 
-    if tool in ("Read", "Grep", "Glob"):
+    if tool in READ_TOOLS:
         # Relative paths resolve the way the tools resolve them: against the working
         # directory, which is also what an absent Grep/Glob `path` defaults to. `~` is
         # expanded first, or `~/.ssh/x` would be judged as a project-relative path.
-        # Checked in order: project root, then the session's tool results, else ask. An
-        # unexpandable `~` (NUL, lone surrogate) raises ValueError, which falls through
-        # to ask rather than crashing: the hook must always exit 0.
+        # Checked in order: project root, then the session's tool results, else deny
+        # (PAF agent) or ask (any other agent). An unexpandable `~` (NUL, lone
+        # surrogate) raises ValueError, which falls through to that deny/ask rather
+        # than crashing: the hook must always exit 0.
         try:
-            cwd = _typed_or_none(data.get("cwd"), str) or project
+            cwd = _typed_or_none(data.get("cwd"), str, unplaceable) or project
             if tool == "Read":
-                target = _typed_or_none(tool_input.get("file_path"), str)
+                target = _typed_or_none(tool_input.get("file_path"), str, unplaceable)
                 if not target:
-                    defer()
+                    unplaceable()
             else:
-                target = _typed_or_none(tool_input.get("path"), str) or "."
+                target = _typed_or_none(tool_input.get("path"), str, unplaceable) or "."
             target = os.path.join(cwd, os.path.expanduser(target))
             if tool == "Glob":
-                pattern = _typed_or_none(tool_input.get("pattern"), str) or ""
+                pattern = _typed_or_none(tool_input.get("pattern"), str, unplaceable) or ""
                 target = glob_reach(pattern, target)
             if target is not None:
                 if within_project(target, project):
@@ -457,13 +563,15 @@ def main() -> None:
                 # disturb an in-root read. The realpath is deliberate: `tool-results`
                 # itself may be a symlink, and within_project() resolves the target.
                 tool_results = session_tool_results(
-                    _typed_or_none(data.get("transcript_path"), str) or "",
-                    _typed_or_none(data.get("session_id"), str) or "",
+                    _typed_or_none(data.get("transcript_path"), str, unplaceable) or "",
+                    _typed_or_none(data.get("session_id"), str, unplaceable) or "",
                 )
                 if tool_results and within_project(target, os.path.realpath(tool_results)):
                     allow("Read of this session's saved tool results.")
         except (ValueError, OSError):
             pass
+        if paf_read:
+            deny(paf_read_reason)
         ask(f"{agent} is reading outside the project root ({project}); confirm this read.")
 
     defer()  # anything else — normal permission flow

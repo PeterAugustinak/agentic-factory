@@ -564,15 +564,22 @@ class HookRunner:
         self.project = os.path.realpath(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
 
-    def run_hook(self, payload):
-        """Return the emitted permissionDecision, or None when the hook defers.
+    def run_hook(self, payload, env=None):
+        """Return the emitted permissionDecision, or None when the hook defers."""
+        output = self.run_hook_output(payload, env)
+        return output["permissionDecision"] if output else None
+
+    def run_hook_output(self, payload, env=None):
+        """Return the emitted `hookSpecificOutput`, or None when the hook defers.
 
         The environment is built explicitly rather than inherited so an ambient
-        CLAUDE_PROJECT_DIR from the real session cannot leak into the assertions.
+        CLAUDE_PROJECT_DIR (or TMPDIR) from the real session cannot leak into the
+        assertions; `env` adds to it.
         """
         env = {
             "PATH": os.environ.get("PATH", ""),
             "CLAUDE_PROJECT_DIR": self.project,
+            **(env or {}),
         }
         stdin = payload if isinstance(payload, str) else json.dumps(payload)
         proc = subprocess.run(
@@ -587,7 +594,7 @@ class HookRunner:
         out = proc.stdout.strip()
         if not out:
             return None  # defer — the hook emits nothing
-        return json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+        return json.loads(out)["hookSpecificOutput"]
 
 
 class HookDecisionTests(HookRunner, unittest.TestCase):
@@ -1016,8 +1023,14 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
 
 
 class ReadContainmentTests(HookRunner, unittest.TestCase):
-    """Agent Read/Grep/Glob are allowed inside the project root and the session's own
-    tool-results, and get `ask` everywhere else (#62)."""
+    """A non-PAF agent's Read/Grep/Glob are allowed inside the project root and the
+    session's own tool-results, get `ask` everywhere else (#62), and defer on a field
+    the hook cannot interpret — unchanged by #112. `PafReadContainmentTests` re-runs
+    every case for a PAF agent, which gets `deny` for both of the latter instead."""
+
+    agent = "Explore"   # a non-PAF agent
+    outside_decision = "ask"   # decision for a target outside the root and the tool results
+    malformed_decision = None  # decision for a field the hook cannot interpret (None = defer)
 
     def setUp(self):
         super().setUp()
@@ -1033,8 +1046,8 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
         self.agent_transcript = os.path.join(session_dir, "subagents", "agent-a.jsonl")
         self.saved_result = os.path.join(session_dir, "tool-results", "x.txt")
 
-    def read(self, tool, tool_input, agent="code-explorer", **extra):
-        payload = {"agent_type": agent, "tool_name": tool, "tool_input": tool_input,
+    def read(self, tool, tool_input, agent=None, **extra):
+        payload = {"agent_type": agent or self.agent, "tool_name": tool, "tool_input": tool_input,
                    "cwd": self.project}
         payload.update(extra)
         return self.run_hook(payload)
@@ -1046,7 +1059,7 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
 
     def test_relative_read_resolves_against_cwd(self):
         self.assertEqual(self.read("Read", {"file_path": "a.py"}), "allow")
-        self.assertEqual(self.read("Read", {"file_path": "a.py"}, cwd=self.outside), "ask")
+        self.assertEqual(self.read("Read", {"file_path": "a.py"}, cwd=self.outside), self.outside_decision)
 
     def test_grep_and_glob_inside_the_root_are_allowed(self):
         for tool in ("Grep", "Glob"):
@@ -1062,7 +1075,7 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
             with self.subTest(tool=tool):
                 self.assertEqual(self.read(tool, {"pattern": "*.py"}), "allow")
                 self.assertEqual(self.read(tool, {"pattern": "*.py", "path": ""}), "allow")
-                self.assertEqual(self.read(tool, {"pattern": "*.py"}, cwd=self.outside), "ask")
+                self.assertEqual(self.read(tool, {"pattern": "*.py"}, cwd=self.outside), self.outside_decision)
 
     def test_recursive_glob_pattern_is_allowed(self):
         self.assertEqual(self.read("Glob", {"pattern": "**/*.py"}), "allow")
@@ -1075,14 +1088,14 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
         sub = os.path.join(self.project, "sub")
         os.makedirs(sub)
         self.assertEqual(self.read("Read", {"file_path": "../a.py"}, cwd=sub), "allow")
-        self.assertEqual(self.read("Read", {"file_path": "../../x"}, cwd=sub), "ask")
+        self.assertEqual(self.read("Read", {"file_path": "../../x"}, cwd=sub), self.outside_decision)
         for tool in ("Grep", "Glob"):
             with self.subTest(tool=tool):
                 self.assertEqual(self.read(tool, {"pattern": "*.py"}, cwd=sub), "allow")
 
     # --- outside the root ---------------------------------------------------
 
-    def test_outside_paths_ask(self):
+    def test_outside_paths(self):
         cases = [
             ("Read", {"file_path": "/etc/passwd"}),
             ("Read", {"file_path": os.path.join(self.project, "..", "x")}),
@@ -1096,35 +1109,31 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
         ]
         for tool, tool_input in cases:
             with self.subTest(tool=tool, tool_input=tool_input):
-                self.assertEqual(self.read(tool, tool_input), "ask")
+                self.assertEqual(self.read(tool, tool_input), self.outside_decision)
 
-    def test_glob_pattern_reaching_outside_asks(self):
+    def test_glob_pattern_reaching_outside(self):
         for pattern in ("/etc/*", "../*", "../../**/*.env", "~/*", "src/**/../../x", "{a,../..}/x",
                         "/*", "/{a,b}/x", "/?x/*", "{/etc,/tmp}/*", "{/etc/passwd,x}",
                         "{~/.ssh/*,x}", "@(/etc/passwd|x)"):
             with self.subTest(pattern=pattern):
-                self.assertEqual(self.read("Glob", {"pattern": pattern}), "ask")
+                self.assertEqual(self.read("Glob", {"pattern": pattern}), self.outside_decision)
 
-    def test_symlink_inside_the_root_pointing_outside_asks(self):
+    def test_symlink_inside_the_root_pointing_outside(self):
         link = os.path.join(self.project, "link")
         os.symlink(self.outside, link)
-        self.assertEqual(self.read("Read", {"file_path": os.path.join(link, "x")}), "ask")
-        self.assertEqual(self.read("Grep", {"pattern": "x", "path": "link"}), "ask")
-        self.assertEqual(self.read("Glob", {"pattern": "link/*"}), "ask")
-        self.assertEqual(self.read("Glob", {"pattern": "*", "path": "link"}), "ask")
+        self.assertEqual(self.read("Read", {"file_path": os.path.join(link, "x")}), self.outside_decision)
+        self.assertEqual(self.read("Grep", {"pattern": "x", "path": "link"}), self.outside_decision)
+        self.assertEqual(self.read("Glob", {"pattern": "link/*"}), self.outside_decision)
+        self.assertEqual(self.read("Glob", {"pattern": "*", "path": "link"}), self.outside_decision)
 
-    def test_additional_directory_still_asks(self):
-        # Pins the decision "no additional-directories list in the payload, so ask": a
-        # read there is outside the root as far as the hook can tell, a prompt not a deny.
+    def test_additional_directory_is_outside(self):
+        # The payload carries no additional-directories list, so a read there is outside
+        # the root as far as the hook can tell: a prompt for a non-PAF agent, a deny for a
+        # PAF agent (#112).
         lib = os.path.join(self.outside, "lib.py")
-        self.assertEqual(self.read("Read", {"file_path": lib}), "ask")
-        self.assertEqual(self.read("Grep", {"pattern": "x", "path": self.outside}), "ask")
-        self.assertEqual(self.read("Glob", {"pattern": "*.py", "path": self.outside}), "ask")
-
-    def test_web_agent_reading_outside_asks(self):
-        self.assertEqual(
-            self.read("Grep", {"pattern": "key", "path": "/etc"}, agent="issue-validator"), "ask"
-        )
+        self.assertEqual(self.read("Read", {"file_path": lib}), self.outside_decision)
+        self.assertEqual(self.read("Grep", {"pattern": "x", "path": self.outside}), self.outside_decision)
+        self.assertEqual(self.read("Glob", {"pattern": "*.py", "path": self.outside}), self.outside_decision)
 
     # --- the session's saved tool results ---------------------------------------
 
@@ -1141,16 +1150,16 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
         self.assertEqual(
             self.read("Read", {"file_path": self.agent_transcript},
                       transcript_path=self.main_transcript, session_id=self.session_id),
-            "ask",
+            self.outside_decision,
         )
 
     def test_saved_tool_result_needs_the_matching_session(self):
         self.assertEqual(
             self.read("Read", {"file_path": self.saved_result},
                       transcript_path=self.main_transcript, session_id="other"),
-            "ask",
+            self.outside_decision,
         )
-        self.assertEqual(self.read("Read", {"file_path": self.saved_result}), "ask")
+        self.assertEqual(self.read("Read", {"file_path": self.saved_result}), self.outside_decision)
 
     def test_grep_and_glob_of_the_tool_results_directory_are_allowed(self):
         results_dir = os.path.dirname(self.saved_result)
@@ -1180,19 +1189,19 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
                 self.assertEqual(
                     self.read("Read", {"file_path": target},
                               transcript_path=self.main_transcript, session_id=self.session_id),
-                    "ask",
+                    self.outside_decision,
                 )
 
     # --- malformed input and the main thread ----------------------------------
 
-    def test_unexpandable_home_asks_instead_of_crashing(self):
+    def test_unexpandable_home_is_outside_instead_of_crashing(self):
         # os.path.expanduser raises ValueError on these; the hook must still exit 0 (#62).
         for bad in ("~\u0000/x", "~\ud800/x"):
             for tool, tool_input in (("Read", {"file_path": bad}),
                                      ("Grep", {"pattern": "x", "path": bad}),
                                      ("Glob", {"pattern": bad})):
                 with self.subTest(tool=tool, bad=bad):
-                    self.assertEqual(self.read(tool, tool_input), "ask")
+                    self.assertEqual(self.read(tool, tool_input), self.outside_decision)
 
     def test_malformed_session_fields_do_not_disturb_an_in_root_read(self):
         # Tool results are only consulted after the root check fails, so a NUL or a wrong
@@ -1204,19 +1213,20 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
                 self.assertEqual(self.read("Read", target, **extra), "allow")
 
     def test_malformed_session_fields_on_an_outside_read(self):
-        # ...but they are consulted for an outside one: a NUL asks, a wrong type defers.
+        # ...but they are consulted for an outside one: a NUL is outside, a wrong type
+        # is malformed.
         target = {"file_path": self.saved_result}
         self.assertEqual(self.read("Read", target, transcript_path="/x\u0000y.jsonl",
-                                   session_id=self.session_id), "ask")
+                                   session_id=self.session_id), self.outside_decision)
         self.assertEqual(self.read("Read", target, session_id="s\u0000",
-                                   transcript_path=self.main_transcript), "ask")
-        self.assertIsNone(self.read("Read", target, transcript_path=["x"]))
-        self.assertIsNone(self.read("Read", target, session_id={}))
+                                   transcript_path=self.main_transcript), self.outside_decision)
+        self.assertEqual(self.read("Read", target, transcript_path=["x"]), self.malformed_decision)
+        self.assertEqual(self.read("Read", target, session_id={}), self.malformed_decision)
 
-    def test_non_string_cwd_defers(self):
-        self.assertIsNone(self.read("Read", {"file_path": "a.py"}, cwd=123))
+    def test_non_string_cwd_is_malformed(self):
+        self.assertEqual(self.read("Read", {"file_path": "a.py"}, cwd=123), self.malformed_decision)
 
-    def test_malformed_fields_defer(self):
+    def test_malformed_fields(self):
         cases = [
             ("Read", {"file_path": 123}),
             ("Read", {}),
@@ -1225,7 +1235,7 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
         ]
         for tool, tool_input in cases:
             with self.subTest(tool=tool, tool_input=tool_input):
-                self.assertIsNone(self.read(tool, tool_input))
+                self.assertEqual(self.read(tool, tool_input), self.malformed_decision)
 
     def test_main_thread_reads_are_unrestricted(self):
         for tool, tool_input in (("Read", {"file_path": "/etc/passwd"}),
@@ -1235,6 +1245,193 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
                 self.assertEqual(
                     self.run_hook({"tool_name": tool, "tool_input": tool_input}), "allow"
                 )
+
+
+class PafReadContainmentTests(ReadContainmentTests):
+    """Every ReadContainmentTests case for a PAF agent: what is allowed stays allowed,
+    and everything the hook cannot confirm is inside the root or the session's tool
+    results — outside, unbounded, unexpandable, or unplaceable — is denied, never asked
+    or deferred (#112)."""
+
+    agent = "code-explorer"
+    outside_decision = "deny"
+    malformed_decision = "deny"
+
+    def test_every_paf_agent_is_denied_outside(self):
+        for agent in sorted(guard.PAF_AGENTS):
+            with self.subTest(agent=agent):
+                self.assertEqual(self.read("Grep", {"pattern": "key", "path": "/etc"}, agent=agent),
+                                 "deny")
+
+    def test_non_dict_tool_input_is_denied(self):
+        for tool in guard.READ_TOOLS:
+            with self.subTest(tool=tool):
+                self.assertEqual(self.read(tool, ["/etc/passwd"]), "deny")
+
+    def test_deny_reason_points_the_agent_to_its_prompt(self):
+        output = self.run_hook_output({"agent_type": self.agent, "tool_name": "Read",
+                                       "tool_input": {"file_path": "/etc/passwd"},
+                                       "cwd": self.project})
+        self.assertEqual(output["permissionDecision"], "deny")
+        self.assertIn("project root", output["permissionDecisionReason"])
+        self.assertIn("prompt", output["permissionDecisionReason"])
+
+    def test_non_read_tools_keep_their_decisions(self):
+        # The backstop is scoped to Read/Grep/Glob: a malformed Bash payload still defers.
+        self.assertIsNone(self.run_hook({"agent_type": self.agent, "tool_name": "Bash",
+                                         "tool_input": "x"}))
+
+
+class AgentCallTests(HookRunner, unittest.TestCase):
+    """The main thread's call starting a PAF agent is denied when its prompt points to
+    an existing file in a temp directory; nothing else about the main thread changes
+    (#112)."""
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmpdir = os.path.realpath(tmp.name)
+        self.env = {"TMPDIR": self.tmpdir}
+        self.draft = os.path.join(self.tmpdir, "draft.md")
+        with open(self.draft, "w") as fh:
+            fh.write("# draft\n")
+
+    def call(self, prompt, subagent="issue-validator", env=None, **extra):
+        tool_input = {"description": "x", "prompt": prompt}
+        if subagent is not None:
+            tool_input["subagent_type"] = subagent
+        payload = {"tool_name": "Agent", "tool_input": tool_input, "cwd": self.project}
+        payload.update(extra)
+        return self.run_hook(payload, self.env if env is None else env)
+
+    # --- denied ---------------------------------------------------------------
+
+    def test_prompt_pointing_to_a_temp_file_is_denied(self):
+        for prompt in (
+            f"Read {self.draft} and validate it.",
+            f"The draft is in `{self.draft}`.",
+            f'The draft is in "{self.draft}".',
+            f"The draft is in '{self.draft}'",
+            f"See the draft ({self.draft}).",
+            f"Draft: {self.draft}.",
+            f"{self.draft}",
+            f"path={self.draft}",
+            f"Validate the issue below.\n\n- file:{self.draft}\n",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(self.call(prompt), "deny")
+
+    def test_every_paf_agent_is_checked(self):
+        for agent in sorted(guard.PAF_AGENTS):
+            with self.subTest(agent=agent):
+                self.assertEqual(self.call(f"Read {self.draft}", subagent=agent), "deny")
+
+    def test_file_under_tmp_is_denied_without_tmpdir(self):
+        # /tmp is a temp directory whatever TMPDIR says.
+        directory = tempfile.mkdtemp(dir="/tmp")
+        self.addCleanup(lambda: __import__("shutil").rmtree(directory, ignore_errors=True))
+        path = os.path.join(directory, "draft.md")
+        with open(path, "w") as fh:
+            fh.write("x")
+        self.assertEqual(self.call(f"Read {path}", env={}), "deny")
+
+    def test_deny_reason_asks_for_the_content_inline(self):
+        output = self.run_hook_output(
+            {"tool_name": "Agent",
+             "tool_input": {"subagent_type": "issue-writer", "prompt": f"Read {self.draft}"},
+             "cwd": self.project},
+            self.env,
+        )
+        reason = output["permissionDecisionReason"]
+        self.assertEqual(output["permissionDecision"], "deny")
+        self.assertIn("inline", reason)
+        self.assertIn("§4, Input delivery", reason)
+        self.assertIn(self.draft, reason)
+
+    # --- not blocked ------------------------------------------------------------
+
+    def test_paths_mentioned_as_content_do_not_block(self):
+        for prompt in (
+            "Costs are recorded under ~/.claude/paf/costs/ per issue.",
+            f"Never write to {self.tmpdir}/nonexistent.txt or /tmp/pwned.txt.",
+            f"A scratch directory such as {self.tmpdir} is not readable.",
+            f"The hook lives at {guard.__file__}.",  # an existing file, not in a temp dir
+            "No paths here at all.",
+            "",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(self.call(prompt), "allow")
+
+    def test_a_temp_file_inside_the_project_root_does_not_block(self):
+        inside = os.path.join(self.project, "notes.md")
+        with open(inside, "w") as fh:
+            fh.write("x")
+        # The project itself lives in a temp directory here.
+        self.assertEqual(self.call(f"Read {inside}", env={"TMPDIR": os.path.dirname(self.project)}),
+                         "allow")
+
+    def test_unresolvable_paths_do_not_crash(self):
+        for prompt in (f"Read {self.draft}\u0000x", "Read ~\ud800/x", "Read /\u0000"):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(self.call(prompt), "allow")
+
+    def test_non_paf_agents_are_not_checked(self):
+        for subagent in ("Explore", "general-purpose", "Plan", None):
+            with self.subTest(subagent=subagent):
+                self.assertEqual(self.call(f"Read {self.draft}", subagent=subagent), "allow")
+
+    def test_malformed_fields_keep_the_main_thread_allowed(self):
+        cases = [
+            {"tool_name": "Agent", "tool_input": "Read " + self.draft},
+            {"tool_name": "Agent", "tool_input": {"subagent_type": "issue-writer", "prompt": [self.draft]}},
+            {"tool_name": "Agent", "tool_input": {"subagent_type": ["issue-writer"],
+                                                  "prompt": f"Read {self.draft}"}},
+            {"tool_name": "Agent", "tool_input": {"subagent_type": "issue-writer",
+                                                  "prompt": f"Read {self.draft}"}, "cwd": 123},
+        ]
+        for payload in cases[:3]:
+            with self.subTest(payload=payload):
+                self.assertEqual(self.run_hook(payload, self.env), "allow")
+        # A non-string cwd only drops the cwd fallback; the check still runs. The project
+        # variable is blanked so the cwd fallback is actually reached (the hook then falls
+        # back to its own working directory, which is not the temp directory).
+        self.assertEqual(self.run_hook(cases[3], {**self.env, "CLAUDE_PROJECT_DIR": ""}), "deny")
+
+    def test_other_main_thread_calls_stay_allowed(self):
+        for tool, tool_input in (("Bash", {"command": f"cat {self.draft}"}),
+                                 ("Read", {"file_path": self.draft}),
+                                 ("Write", {"file_path": self.draft, "content": "x"})):
+            with self.subTest(tool=tool):
+                self.assertEqual(self.run_hook({"tool_name": tool, "tool_input": tool_input},
+                                               self.env), "allow")
+
+    def test_empty_agent_type_is_not_the_main_thread(self):
+        # A present-but-empty agent_type is a restricted non-PAF agent, not the main thread.
+        payload = {"tool_name": "Read", "tool_input": {"file_path": "/etc/passwd"},
+                   "agent_type": "", "cwd": self.project}
+        self.assertEqual(self.run_hook(payload, self.env), "ask")
+
+    def test_agent_call_from_a_subagent_is_unchanged(self):
+        # The check is the main thread's; a subagent's Agent call defers as before.
+        self.assertIsNone(self.call(f"Read {self.draft}", agent_type="code-explorer"))
+
+
+class PafAgentSetTests(unittest.TestCase):
+    """`PAF_AGENTS` names exactly the agents shipped in `agents/` (#112)."""
+
+    def test_matches_the_agents_directory(self):
+        agents_dir = os.path.join(os.path.dirname(os.path.dirname(guard.__file__)), "agents")
+        names = set()
+        for entry in os.listdir(agents_dir):
+            if not entry.endswith(".md") or entry == "README.md":
+                continue
+            with open(os.path.join(agents_dir, entry)) as fh:
+                for line in fh:
+                    if line.startswith("name:"):
+                        names.add(line.split(":", 1)[1].strip().strip("\"'"))
+                        break
+        self.assertEqual(set(guard.PAF_AGENTS), names)
 
 
 if __name__ == "__main__":
