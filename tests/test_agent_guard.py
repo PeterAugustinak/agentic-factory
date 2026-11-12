@@ -21,7 +21,7 @@ import sys
 import tempfile
 import unittest
 
-from tests.support import AGENT_GUARD, load_module
+from tests.support import AGENT_GUARD, REVIEW_INPUT, load_module
 
 guard = load_module(AGENT_GUARD, "agent_guard")
 
@@ -563,6 +563,11 @@ class HookRunner:
         self._tmp = tempfile.TemporaryDirectory()
         self.project = os.path.realpath(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
+        # A scratch HOME, so `~` (and PAF's review input folder under it) never
+        # resolves into the real one.
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.home = os.path.realpath(home.name)
 
     def run_hook(self, payload):
         """Return the emitted permissionDecision, or None when the hook defers.
@@ -573,6 +578,7 @@ class HookRunner:
         env = {
             "PATH": os.environ.get("PATH", ""),
             "CLAUDE_PROJECT_DIR": self.project,
+            "HOME": self.home,
         }
         stdin = payload if isinstance(payload, str) else json.dumps(payload)
         proc = subprocess.run(
@@ -1182,6 +1188,67 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
                               transcript_path=self.main_transcript, session_id=self.session_id),
                     "ask",
                 )
+
+    # --- PAF's review input folder (#120) ---------------------------------------
+
+    def review_input(self, *parts):
+        return os.path.join(self.home, ".claude", "paf", "review-input", *parts)
+
+    def test_read_of_the_review_input_file_is_allowed(self):
+        os.makedirs(self.review_input("abc123"))
+        for target in (self.review_input("abc123", "120.md"),
+                       "~/.claude/paf/review-input/abc123/120.md"):
+            with self.subTest(target=target):
+                self.assertEqual(self.read("Read", {"file_path": target}), "allow")
+        self.assertEqual(
+            self.read("Read", {"file_path": self.review_input("abc123", "120.md")},
+                      agent="conformance-reviewer"),
+            "allow",
+        )
+
+    def test_read_of_the_path_the_helper_prints_is_allowed(self):
+        # Ties the helper's INPUT_ROOT to the hook's review_input_dir().
+        repo = os.path.join(self.project, "repo")
+        os.makedirs(repo)
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": self.home,
+               "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+               "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
+        for args in (["init", "-q", "-b", "develop"], ["commit", "-q", "--allow-empty", "-m", "b"]):
+            subprocess.run(["git", *args], cwd=repo, env=env, check=True, capture_output=True)
+        proc = subprocess.run(
+            [sys.executable, str(REVIEW_INPUT), "write", "--issue", "120", "--base", "develop"],
+            cwd=repo, env=env, input=b"issue\n", capture_output=True, check=True)
+        printed = proc.stdout.decode().strip()
+        self.assertTrue(printed.startswith("REVIEW_INPUT="))
+        self.assertEqual(self.read("Read", {"file_path": printed[len("REVIEW_INPUT="):]}), "allow")
+
+    def test_grep_and_glob_of_the_review_input_folder_ask(self):
+        folder = self.review_input()
+        os.makedirs(folder)
+        for tool in ("Grep", "Glob"):
+            with self.subTest(tool=tool):
+                self.assertEqual(self.read(tool, {"pattern": "*", "path": folder}), "ask")
+        self.assertEqual(self.read("Glob", {"pattern": folder + "/*"}), "ask")
+
+    def test_review_input_carve_out_does_not_widen(self):
+        paf = os.path.join(self.home, ".claude", "paf")
+        os.makedirs(self.review_input("k"))
+        os.makedirs(os.path.join(paf, "review-input-evil"))
+        elsewhere = tempfile.TemporaryDirectory()
+        self.addCleanup(elsewhere.cleanup)
+        os.symlink(os.path.realpath(elsewhere.name), self.review_input("k", "out"))
+        for target in (
+            os.path.join(paf, "costs", "120.json"),
+            os.path.join(paf, "fingerprints", "k", "120.json"),
+            os.path.join(paf, "VERSION"),
+            os.path.join(paf, "review-input-evil", "x"),
+            self.review_input("..", "costs", "x"),
+            self.review_input("k", "out", "x"),
+            os.path.join(self.home, ".ssh", "id_rsa"),
+        ):
+            with self.subTest(target=target):
+                self.assertEqual(self.read("Read", {"file_path": target}), "ask")
 
     # --- malformed input and the main thread ----------------------------------
 

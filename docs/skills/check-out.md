@@ -13,7 +13,7 @@ Run `/paf:check-out [optional issue-number]` on the feature branch once you have
 ## How it works
 
 1. **Gather.** The skill reads the issue, computes the change as the branch's diff against the base (committed or not), and compares the branch with `/paf:implement-issue`'s hand-off fingerprint.
-2. **Safety net.** Only when the content changed since the hand-off (or the fingerprint cannot confirm it did not): `senior-engineer-reviewer` runs as a high-level pass over the whole diff, looking for regressions in your hand-edits. It is asked to report only critical regressions, as errors, and no warnings. It gets the issue verbatim; what its Decisions and Constraints, with the binding Approach and Acceptance criteria, decide or put out of scope is not a finding (for an issue without the agent section, whatever its body states). An `error` stops the run. On a fingerprint match it is skipped, silently.
+2. **Safety net.** Only when the content changed since the hand-off (or the fingerprint cannot confirm it did not): `senior-engineer-reviewer` runs as a high-level pass over the whole diff, looking for regressions in your hand-edits. It is asked to report only critical regressions, as errors, and no warnings. It reads the issue verbatim and the change manifest from the review input file, which a helper writes under `~/.claude/paf/review-input/` (never in the project) and deletes once the review is done; a helper failure stops the run. What its Decisions and Constraints, with the binding Approach and Acceptance criteria, decide or put out of scope is not a finding (for an issue without the agent section, whatever its body states). An `error` stops the run. On a fingerprint match it is skipped, silently.
 3. **Spec check.** `quality-assurer` confirms every acceptance criterion; an unmet one stops the run. For an issue with no acceptance criteria (a missing or empty section), it checks against the issue body instead, silently.
 4. **Pre-merge.** The project's full pre-merge command runs. On failure, the project's optional auto-fix command runs once and the check re-runs once; anything still failing stops the run.
 5. **Commit & push.** Whatever is still uncommitted is committed; the branch is pushed.
@@ -53,5 +53,6 @@ The run is priced from its start mark onward, then the whole feature (`create-is
 
 - [`agents/senior-engineer-reviewer.md`](../../agents/senior-engineer-reviewer.md) and [`agents/quality-assurer.md`](../../agents/quality-assurer.md): the two agents.
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md): how agent output is parsed.
+- [`skills/paf-shared/paf-review-input.py`](../../skills/paf-shared/paf-review-input.py): the reviewer's input file.
 - [`skills/paf-shared/paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py): the hand-off fingerprint.
 - [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py): cost reporting.

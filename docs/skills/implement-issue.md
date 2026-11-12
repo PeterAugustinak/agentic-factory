@@ -19,7 +19,7 @@ Run `/paf:implement-issue <issue-number>`.
 5. **Branch.** The skill creates `feature/<issue>-<short-description>` from the base branch.
 6. **Build.** The skill applies the approved edits in the same context, with no re-exploration.
 7. **Verify.** `implementation-verifier` runs the scoped tests, plus the UI check command for a UI change. A failure is fixed in the main thread, at most twice.
-8. **Review.** Five reviewers run in parallel. Each gets the issue verbatim and a change manifest whose removed lines are passed exactly as printed, never summarized. What the issue decides or puts out of scope (its Decisions and Constraints) is not a finding.
+8. **Review.** Five reviewers run in parallel. All of them read the same review input file, which a helper writes under `~/.claude/paf/review-input/` (never in the project) straight from the fetched issue and git: the issue verbatim, the created files, and a change manifest whose removed lines are kept exactly as printed. Each prompt holds only the reviewer's lens and the file's path. The file is deleted once the reviewers finish, and a leftover is wiped at the start of the next run; a helper failure stops the run with `Result: failure`. What the issue decides or puts out of scope (its Decisions and Constraints) is not a finding.
 9. **Triage.** `full-stack-dev` decides which findings to apply and applies them. It fixes defects only; a warning that would add behaviour beyond the plan is skipped.
 10. **Re-verify.** `implementation-verifier` runs again; `full-stack-dev` fixes a failure, at most twice. The reviewers are never re-run.
 11. **Acceptance check.** `quality-assurer` checks every acceptance criterion. An unmet one is fixed in the main thread and re-verified, at most twice; then the run stops with `Result: failure`. If the fix needs a must-have item beyond the issue, you are asked whether to add it; no (or no answer) stops the run.
@@ -67,5 +67,6 @@ The run is priced from its start mark onward and appended to the per-feature led
 
 - [`agents/`](../../agents/): `issue-validator`, `implementation-verifier`, the five reviewers, `full-stack-dev`, and `quality-assurer`.
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md): how agent output is parsed.
+- [`skills/paf-shared/paf-review-input.py`](../../skills/paf-shared/paf-review-input.py): the reviewers' shared input file.
 - [`skills/paf-shared/paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py): the hand-off fingerprint.
 - [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py): cost reporting.

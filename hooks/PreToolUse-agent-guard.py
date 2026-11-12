@@ -9,14 +9,16 @@ WITHOUT a permission prompt and forbidden ones are blocked:
 - ALLOW — the main thread unconditionally (the trusted orchestrator owns all I/O
   and git state, §2), plus each agent's legitimate tool set: read-only Bash,
   build/test Bash, project-scoped writes, project-scoped reads (plus the session's
-  own saved tool results), and web lookups (gated by each agent's `tools:`
-  allowlist). These skip the permission prompt.
+  own saved tool results, and a `Read` of PAF's review input folder), and web
+  lookups (gated by each agent's `tools:` allowlist). These skip the permission
+  prompt.
 - DENY  — agents doing external I/O (gh/curl/wget/ssh/...), agents changing git
   state (add/commit/push/...), read-only agents running non-read-only Bash, and
   any write outside the project root. All skill-owned or unsafe (§2).
-- ASK   — an agent's Read/Grep/Glob reaching outside the project root: forces a
-  human permission prompt, which auto mode's classifier cannot approve silently,
-  so a legitimate read of an added directory still goes through (#62).
+- ASK   — an agent's Read/Grep/Glob reaching outside the project root (bar the two
+  locations above): forces a human permission prompt, which auto mode's
+  classifier cannot approve silently, so a legitimate read of an added directory
+  still goes through (#62).
 - DEFER — anything unrecognized: emit nothing, so Claude Code's normal permission
   flow (and prompt) applies. Keeps a human safety net for novel calls.
 
@@ -353,6 +355,17 @@ def session_tool_results(transcript_path: str, session_id: str) -> str:
         current = parent
 
 
+def review_input_dir() -> str:
+    """PAF's review input folder, `~/.claude/paf/review-input/` (#120).
+
+    `skills/paf-shared/paf-review-input.py` writes the one input file every code
+    reviewer of a run reads there — user-scoped, so the project stays untouched — and
+    names this same folder in its `INPUT_ROOT`; the two must agree. Resolved, since
+    `within_project()` compares against the resolved target.
+    """
+    return os.path.realpath(os.path.join(os.path.expanduser("~"), ".claude", "paf", "review-input"))
+
+
 def _typed_or_none(value, expected_type):
     """`value` unchanged when it is `None` or already `expected_type`; otherwise
     `defer()` — a field present but of the wrong shape is not ours to judge, the
@@ -435,7 +448,8 @@ def main() -> None:
         # Relative paths resolve the way the tools resolve them: against the working
         # directory, which is also what an absent Grep/Glob `path` defaults to. `~` is
         # expanded first, or `~/.ssh/x` would be judged as a project-relative path.
-        # Checked in order: project root, then the session's tool results, else ask. An
+        # Checked in order: project root, then the session's tool results, then — for
+        # Read only — PAF's review input folder (#120), else ask. An
         # unexpandable `~` (NUL, lone surrogate) raises ValueError, which falls through
         # to ask rather than crashing: the hook must always exit 0.
         try:
@@ -462,6 +476,10 @@ def main() -> None:
                 )
                 if tool_results and within_project(target, os.path.realpath(tool_results)):
                     allow("Read of this session's saved tool results.")
+                # Only Read, and only this one folder: no other path under ~/.claude/paf/
+                # and no Grep/Glob is opened up.
+                if tool == "Read" and within_project(target, review_input_dir()):
+                    allow("Read of PAF's review input file.")
         except (ValueError, OSError):
             pass
         ask(f"{agent} is reading outside the project root ({project}); confirm this read.")
