@@ -19,7 +19,7 @@ Run `/paf:check-out [optional issue-number]` on the feature branch once you have
 5. **Commit & push.** Whatever is still uncommitted is committed; the branch is pushed.
 6. **Cost.** The run's cost goes into the feature's cost ledger.
 7. **MR/PR.** The skill totals the feature's cost and opens the MR/PR from a fixed description template, written to a temporary file so the cost table stays verbatim. Its Deviations section names only what the issue's Approach, Decisions, Constraints, or acceptance criteria state and the code does differently.
-8. **Output.** On success: `Result: success`, the MR/PR link, and one line per deviation from the standard run, only when it applies (the safety-net review ran, the pre-merge auto-fix ran and what it changed). On any stop: `Result: failure`, `Blocker:`, `Next:`, then the failing findings verbatim, one per line. A blank line separates every field. Nothing else.
+8. **Output.** On success: `Result: success`, the MR/PR link, and one line per deviation from the standard run, only when it applies (the safety-net review ran, the pre-merge auto-fix ran and what it changed), then this run's cost. On any stop: `Result: failure`, `Blocker:`, `Next:`, then the failing findings verbatim, one per line. A blank line separates every field. Nothing else.
 
 ```text
 /paf:check-out
@@ -47,7 +47,7 @@ Design rationale (the safety net, the fingerprint skip, the auto-fix posture): [
 
 ## Cost reporting
 
-The run is priced from its start mark onward, then the whole feature (`create-issue`, `implement-issue`, `check-out`, plus any stopped runs) is totalled into the MR/PR description and the ledger is cleared. Details: [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
+The run is priced from its start mark onward, then the whole feature (`create-issue`, `implement-issue`, `check-out`, plus any stopped runs) is totalled into the MR/PR description and the ledger is cleared. A successful run ends with this run's cost in the terminal, like the other skills; a stopped run shows none. Details: [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
 
 ## Related files
 

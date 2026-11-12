@@ -98,6 +98,8 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-report-cost.py" record \
   --branch "$(git branch --show-current)"
 ```
 
+Keep its output, exactly as printed, for the final output (step 8).
+
 **7. Total the feature and open the MR/PR (skill).**
 The description is posted from a file, and its cost section goes into that file straight from the script's output — never retyped by you, so it stays verbatim. Create a private temporary directory — `python3 -c 'import tempfile; print(tempfile.mkdtemp(prefix="paf-"))'` — and `Write` the filled-in description (below) to `<dir>/pr-description.md`, **without** its cost section.
 
@@ -163,7 +165,7 @@ Rules for filling it in:
 Capture the MR/PR **URL** from `paf-vcs`'s `URL=` output line for the final output (step 8).
 
 **8. Final output (skill).**
-Print the result in this fixed shape, in this order, and **nothing before or after it** — no extra prose, no recap of the steps:
+Print the result in this fixed shape, in this order, and nothing else — no extra prose, no recap of the steps:
 
 ```
 Result: success
@@ -173,11 +175,15 @@ Result: success
 Safety-net review ran: the branch changed after /paf:implement-issue's hand-off
 
 Pre-merge auto-fix ran: <what it changed>
+
+<step 6's cost output, exactly as printed>
 ```
 
-`Result` and the link come first. Every field is separated by a blank line. The last two lines are deviations from the standard run and appear **only when they apply**, each on one line:
+`Result` and the link come first. Every field is separated by a blank line. The two optional lines after the link are deviations from the standard run and appear **only when they apply**, each on one line:
 - `Safety-net review ran:` — when step 2 invoked the reviewer. A skip on a fingerprint match is the standard run and prints nothing.
 - `Pre-merge auto-fix ran:` — when step 4's auto-fix ran and the re-validation passed, with what it changed.
+
+The output ends with this run's cost: step 6's `record` output exactly as printed, the same cost block `/paf:create-issue` and `/paf:implement-issue` print. A STOP prints no cost.
 
 On **every STOP** — in any step — print instead, and nothing else:
 
