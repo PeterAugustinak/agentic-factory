@@ -5,9 +5,9 @@ PAF's deterministic scripts live at paths that are not importable names —
 contain hyphens, and neither directory is a package. They are loaded by file path
 instead, which is also the honest thing to test: the tests exercise the exact file
 the installer ships. `skills/paf-shared/paf-vcs` is a Bash script, and
-`skills/paf-shared/paf-fingerprint.py` is defined by what git reports in a real
-repository, so their tests run the shipped file as a subprocess rather than
-loading it.
+`skills/paf-shared/paf-fingerprint.py` and `skills/paf-shared/paf-review-input.py`
+are defined by what git reports in a real repository, so their tests run the
+shipped file as a subprocess rather than loading it.
 """
 
 import importlib.util
@@ -19,6 +19,7 @@ AGENT_GUARD = REPO_ROOT / "hooks" / "PreToolUse-agent-guard.py"
 REPORT_COST = REPO_ROOT / "skills" / "paf-shared" / "paf-report-cost.py"
 PAF_VCS = REPO_ROOT / "skills" / "paf-shared" / "paf-vcs"
 FINGERPRINT = REPO_ROOT / "skills" / "paf-shared" / "paf-fingerprint.py"
+REVIEW_INPUT = REPO_ROOT / "skills" / "paf-shared" / "paf-review-input.py"
 READINESS = REPO_ROOT / "skills" / "paf-shared" / "paf-readiness.py"
 
 
