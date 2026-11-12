@@ -5,6 +5,27 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.34.0] - 2026-11-12
+
+### Changed
+
+- `/paf:create-issue` drafts and validates once, then asks every remaining open choice (writer
+  `Undecided:` warnings, validator `Uncovered:` blockers, corrections needing a choice) in one
+  question phase, followed by one redraft and a delta check. At most two updates; a part still
+  blocked after that stops the run with nothing posted. `Validator note:` is gone: each finding is
+  fixed in place, added to Context, asked, or dropped (#116).
+- `/paf:implement-issue` no longer stops on open points. Must-have items the issue missed appear in
+  the plan for approval, or are asked about when the QA fix step finds them; a declined item, or a
+  requirement the code makes impossible, stops the run (#116).
+- The `/paf:implement-issue` reviewers and `/paf:check-out`'s safety-net reviewer read the issue body
+  and change manifest from one shared input file under `~/.claude/paf/review-input/`, written by the
+  new `paf-review-input.py` helper, instead of having them pasted into each prompt. The file is
+  removed after the review; the `PreToolUse` hook allows agent `Read` of that folder only (#120).
+
+### Fixed
+
+- `/paf:check-out` prints its own cost at the end of a successful run (#114).
+
 ## [0.33.0] - 2026-11-09
 
 ### Added
