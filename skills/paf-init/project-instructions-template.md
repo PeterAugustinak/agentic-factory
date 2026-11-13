@@ -44,7 +44,8 @@ whatever environment this describes, so if tests only pass inside docker, say so
 The **exact command**, not a description. Agents run it verbatim. This is the command
 `implementation-verifier` scopes to the changed area for fast in-loop verification inside
 `/paf:implement-issue`'s fix loops — it runs the tests there, plus the optional UI check command
-below when a change touches UI, and never the lint command below.
+below when a change touches UI, and never the lint command below. `/paf:check-out` also uses it,
+scoped to a single test, to re-run a failed pre-merge test once in isolation.
 
 ### Code standards / lint command
 
@@ -75,12 +76,12 @@ Describe it in whatever terms your toolchain uses; PAF names no tool and no flag
 If you define one, `/paf:check-out` uses it **only** on a pre-merge validation failure: it runs your
 command exactly as written, **once**, then re-runs the full pre-merge validation. If that now passes,
 the failures were mechanical and the run continues (the skill reports what changed); anything still
-failing needs judgement and **STOPs and escalates** to you, as always. PAF never authors the fix
-itself and never makes a second attempt.
+failing needs judgement and **STOPs and escalates** to you (failed tests are first re-run once each
+in isolation). PAF never authors the fix itself and never makes a second attempt.
 
-Omit this area and nothing changes: a pre-merge failure STOPs the run, which is the default
-behaviour. Only define a command that is **behaviour-preserving** — a command that could change what
-the code *does* does not belong here.
+Omit this area and nothing changes: a pre-merge failure STOPs the run, after the same one isolated
+re-run of any failed tests, which is the default behaviour. Only define a command that is
+**behaviour-preserving** — a command that could change what the code *does* does not belong here.
 
 ### UI check command
 
