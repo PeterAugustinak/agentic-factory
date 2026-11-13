@@ -14,8 +14,8 @@ Run `/paf:check-out [optional issue-number]` on the feature branch once you have
 
 1. **Gather.** The skill reads the issue, computes the change as the branch's diff against the base (committed or not), and compares the branch with `/paf:implement-issue`'s hand-off fingerprint.
 2. **Safety net.** Only when the content changed since the hand-off (or the fingerprint cannot confirm it did not): `senior-engineer-reviewer` runs as a high-level pass over the whole diff, looking for regressions in your hand-edits. It is asked to report only critical regressions, as errors, and no warnings. It reads the issue verbatim and the change manifest from the review input file, which a helper writes under `~/.claude/paf/review-input/` (never in the project) and deletes once the review is done; a helper failure stops the run. What its Decisions and Constraints, with the binding Approach and Acceptance criteria, decide or put out of scope is not a finding (for an issue without the agent section, whatever its body states). An `error` stops the run. On a fingerprint match it is skipped, silently.
-3. **Spec check.** `quality-assurer` confirms every acceptance criterion; an unmet one stops the run. For an issue with no acceptance criteria (a missing or empty section), it checks against the issue body instead, silently.
-4. **Pre-merge.** The project's full pre-merge command runs. On failure, the project's optional auto-fix command runs once and the check re-runs once; anything still failing stops the run.
+3. **Spec check.** Only when the content changed (the same condition as step 2): `quality-assurer` confirms every acceptance criterion; an unmet one stops the run. For an issue with no acceptance criteria (a missing or empty section), it checks against the issue body instead, silently. On a fingerprint match it is skipped, silently: `/paf:implement-issue`'s own acceptance check already passed on that exact content. The fingerprint covers the branch content, not the issue, so criteria edited after the hand-off mean re-running `/paf:implement-issue`.
+4. **Pre-merge.** The project's full pre-merge command runs. On failure, the project's optional auto-fix command runs once and the check re-runs once. If only named tests still fail, each is re-run on its own once with the project's test command: all passing continues, one still failing stops the run and names it. Any other failure stops the run.
 5. **Commit & push.** Whatever is still uncommitted is committed; the branch is pushed.
 6. **Cost.** The run's cost goes into the feature's cost ledger.
 7. **MR/PR.** The skill totals the feature's cost and opens the MR/PR from a fixed description template, written to a temporary file so the cost table stays verbatim. Its Deviations section names only what the issue's Approach, Decisions, Constraints, or acceptance criteria state and the code does differently.
@@ -27,12 +27,15 @@ Run `/paf:check-out [optional issue-number]` on the feature branch once you have
       v
   [skill] read issue, diff vs base, fingerprint check
       |--- changed --> [agent] senior-engineer-reviewer --- error --> STOP
-      v
-  [agent] quality-assurer --- unmet --> STOP
-      |
-      v
-  [skill] pre-merge --- fail --> auto-fix once, re-check --> still failing: STOP
-      |
+      |                       |
+      |                       v
+      |                [agent] quality-assurer --- unmet --> STOP
+      |                       |
+      | match (skip both)     |
+      v                       v
+  [skill] pre-merge --- fail --> auto-fix once, re-check --> still failing:
+      |                            failed tests only --> re-run each alone once --> still failing: STOP
+      |                            any other failure --> STOP
       v
   [skill] commit, push --> cost --> open MR/PR --> short output
 ```
@@ -43,7 +46,7 @@ Run `/paf:check-out [optional issue-number]` on the feature branch once you have
 - **Blocker hand-back**: every stop returns control to you. `check-out` has no fix loop; you fix the cause and re-run it.
 - **Skill boundary after it**: you review and merge the MR/PR.
 
-Design rationale (the safety net, the fingerprint skip, the auto-fix posture): [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
+Design rationale (the safety net, the fingerprint skip, the auto-fix posture, the flaky-test re-run): [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
 
 ## Cost reporting
 
