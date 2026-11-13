@@ -276,11 +276,28 @@ class ShippedPricingFileTests(unittest.TestCase):
 
     # Five rates in the order input / 5m write / 1h write / cache read / output,
     # USD per MTok, from https://platform.claude.com/docs/en/about-claude/pricing
-    # (read 2026-10-09).
+    # (read 2026-11-13).
     EXPECTED = {
+        "claude-fable-5-2": (8.0, 10.0, 16.0, 0.20, 40.0),
+        "claude-mythos-5-2": (8.0, 10.0, 16.0, 0.20, 40.0),
+        "claude-fable-5-1": (10.0, 12.50, 20.0, 0.25, 50.0),
+        "claude-mythos-5-1": (10.0, 12.50, 20.0, 0.25, 50.0),
+        "claude-fable-5": (10.0, 12.50, 20.0, 1.0, 50.0),
+        "claude-mythos-5": (10.0, 12.50, 20.0, 1.0, 50.0),
         "claude-opus-5-5": (4.0, 5.0, 8.0, 0.20, 20.0),
+        "claude-opus-5": (5.0, 6.25, 10.0, 0.50, 25.0),
+        "claude-opus-4-8": (5.0, 6.25, 10.0, 0.50, 25.0),
+        "claude-opus-4-7": (5.0, 6.25, 10.0, 0.50, 25.0),
+        "claude-opus-4-6": (5.0, 6.25, 10.0, 0.50, 25.0),
+        "claude-opus-4-5": (5.0, 6.25, 10.0, 0.50, 25.0),
+        "claude-opus-4-1": (15.0, 18.75, 30.0, 1.50, 75.0),
+        "claude-opus-4": (15.0, 18.75, 30.0, 1.50, 75.0),
         "claude-sonnet-5-5": (2.0, 2.50, 4.0, 0.10, 10.0),
         "claude-sonnet-5": (2.0, 2.50, 4.0, 0.20, 10.0),
+        "claude-sonnet-4-6": (3.0, 3.75, 6.0, 0.30, 15.0),
+        "claude-sonnet-4-5": (3.0, 3.75, 6.0, 0.30, 15.0),
+        "claude-sonnet-4": (3.0, 3.75, 6.0, 0.30, 15.0),
+        "claude-haiku-4-5": (1.0, 1.25, 2.0, 0.10, 5.0),
     }
     HAIKU_5_5_TIERS = (
         (100_000, (0.10, 0.125, 0.20, 0.01, 0.50)),
