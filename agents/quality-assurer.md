@@ -3,6 +3,12 @@ name: quality-assurer
 description: Compares the final implemented state to the spec and confirms every acceptance criterion is met or flags what is missing.
 model: sonnet
 tools: Read
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role

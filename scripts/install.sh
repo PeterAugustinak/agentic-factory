@@ -10,7 +10,7 @@
 #   - skills  -> ~/.claude/skills/<name>/        (flat; command = frontmatter name, e.g. /paf:create-issue)
 #             -> ~/.claude/skills/paf-shared/        (shared helpers; not a skill)
 #   - agents  -> ~/.claude/agents/paf/
-#   - hooks   -> ~/.claude/hooks/paf/  (+ wired into ~/.claude/settings.json)
+#   - hooks   -> ~/.claude/hooks/paf/  (registered by the PAF skills' and agents' frontmatter)
 #
 # Re-running upgrades cleanly (idempotent). Env overrides:
 #   PAF_REF             git ref to install (default: develop; master once released)
@@ -93,30 +93,46 @@ rm -rf "$HOOKS_DIR"; mkdir -p "$HOOKS_DIR"
 cp "$SRC/hooks/$HOOK_NAME" "$HOOKS_DIR/"
 chmod +x "$HOOKS_DIR/$HOOK_NAME"
 
-# --- wire the hook into settings.json (idempotent, preserves everything else) ---
-python3 - "$SETTINGS" "$HOOKS_DIR/$HOOK_NAME" <<'PY'
-import json, os, sys
-settings_path, hook_path = sys.argv[1], sys.argv[2]
-command = f"python3 {hook_path}"
-matcher = "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+# --- drop a PAF hook entry an earlier version wired into settings.json ---
+# The hook is registered by the PAF skills' and agents' frontmatter, so it runs only where
+# PAF runs; settings.json would apply it to every session (architecture.md §3). The file is
+# rewritten only when it holds a PAF entry; otherwise it is left exactly as it is. The same
+# snippet is in uninstall.sh: both run standalone (curl | bash), so they cannot share a file.
+if [ -f "$SETTINGS" ]; then
+  stripped="$(python3 - "$SETTINGS" "$HOOK_NAME" <<'PY'
+import json, sys
+path, base = sys.argv[1], sys.argv[2]
 try:
-    with open(settings_path) as fh:
-        data = json.load(fh)
-    if not isinstance(data, dict):
-        data = {}
-except (FileNotFoundError, json.JSONDecodeError):
-    data = {}
-pre = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
-base = os.path.basename(hook_path)
+    with open(path) as fh:
+        d = json.load(fh)
+except (OSError, ValueError):
+    raise SystemExit
+hooks = d.get("hooks") if isinstance(d, dict) else None
+pre = hooks.get("PreToolUse") if isinstance(hooks, dict) else None
+if not isinstance(pre, list):
+    raise SystemExit
 def is_ours(entry):
-    return any(base in (h.get("command") or "") for h in (entry or {}).get("hooks", []))
-pre[:] = [e for e in pre if not is_ours(e)]   # drop any prior PAF entry
-pre.append({"matcher": matcher, "hooks": [{"type": "command", "command": command}]})
-os.makedirs(os.path.dirname(settings_path), exist_ok=True)
-with open(settings_path, "w") as fh:
-    json.dump(data, fh, indent=2)
+    handlers = entry.get("hooks") if isinstance(entry, dict) else None
+    return isinstance(handlers, list) and any(
+        isinstance(h, dict) and isinstance(h.get("command"), str) and base in h["command"]
+        for h in handlers)
+keep = [e for e in pre if not is_ours(e)]
+if len(keep) == len(pre):
+    raise SystemExit   # no PAF entry: leave the file exactly as it is
+if keep:
+    hooks["PreToolUse"] = keep
+else:
+    hooks.pop("PreToolUse")
+    if not hooks:
+        d.pop("hooks")
+with open(path, "w") as fh:
+    json.dump(d, fh, indent=2)
     fh.write("\n")
+print("STRIPPED")
 PY
+)"
+  if [ "$stripped" = "STRIPPED" ]; then echo "  Removed the old PAF hook entry from settings.json"; fi
+fi
 
 # --- record the installed version ---
 mkdir -p "$PAF_DIR"
@@ -138,7 +154,7 @@ echo
 echo "PAF installed into $CLAUDE_DIR"
 echo "  skills:  $SKILLS_DIR/<name>   (+ paf-shared)"
 echo "  agents:  $AGENTS_DIR"
-echo "  hook:    $HOOKS_DIR/$HOOK_NAME  (wired into settings.json)"
+echo "  hook:    $HOOKS_DIR/$HOOK_NAME  (registered by the PAF skills and agents)"
 echo
 echo "Skills — invoke in Claude Code:"
 for s in "${installed_skills[@]}"; do

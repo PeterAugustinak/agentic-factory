@@ -3,6 +3,12 @@ name: implementation-planner
 description: Produces a full implementation plan from an approved requirement — files to touch, the change per file, and the test strategy.
 model: sonnet
 tools: Read, Bash
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role

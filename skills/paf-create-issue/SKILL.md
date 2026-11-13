@@ -4,6 +4,12 @@ description: Turn a discussed feature idea into a structured issue — or severa
 disable-model-invocation: true
 argument-hint: "[optional short idea]"
 allowed-tools: Read, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(python3 *)
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 # create-issue

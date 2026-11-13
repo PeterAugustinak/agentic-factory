@@ -3,6 +3,12 @@ name: security-engineer
 description: Reviews implemented code purely from a security perspective — vulnerabilities, unsafe patterns, and exposure.
 model: sonnet
 tools: Read
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role

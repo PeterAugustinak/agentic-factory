@@ -3,6 +3,12 @@ name: full-stack-dev
 description: Executes an approved implementation plan, or triages a set of review findings and applies the worthwhile ones, by editing files, writing tests, and running migrations.
 model: sonnet
 tools: Read, Edit, Write, Bash
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role

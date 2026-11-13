@@ -21,6 +21,8 @@ PAF_VCS = REPO_ROOT / "skills" / "paf-shared" / "paf-vcs"
 FINGERPRINT = REPO_ROOT / "skills" / "paf-shared" / "paf-fingerprint.py"
 REVIEW_INPUT = REPO_ROOT / "skills" / "paf-shared" / "paf-review-input.py"
 READINESS = REPO_ROOT / "skills" / "paf-shared" / "paf-readiness.py"
+INSTALL = REPO_ROOT / "scripts" / "install.sh"
+UNINSTALL = REPO_ROOT / "scripts" / "uninstall.sh"
 
 
 def load_module(path, name):

@@ -16,14 +16,14 @@ Install PAF on any machine with a single command — no cloning required:
 curl -sSL https://raw.githubusercontent.com/PeterAugustinak/agentic-factory/develop/scripts/install.sh | bash
 ```
 
-This installs the skills, agents, and hook into your Claude Code config (`~/.claude/`) and wires the hook into `settings.json`. Re-running upgrades in place. Requires `git` and `python3` to install, plus an authenticated `gh` (GitHub) or `glab` (GitLab) CLI — whichever matches the target project's `origin` remote — to run the skills. After install, start a new Claude Code session and invoke:
+This installs the skills, agents, and hook into your Claude Code config (`~/.claude/`). The hook is registered by the PAF skills and agents themselves, not in `settings.json`, so it runs only where PAF runs: sessions that never invoke a PAF skill are unaffected. Re-running upgrades in place (and removes the `settings.json` hook entry older versions wrote). Requires `git` and `python3` to install, plus an authenticated `gh` (GitHub) or `glab` (GitLab) CLI — whichever matches the target project's `origin` remote — to run the skills. After install, start a new Claude Code session and invoke:
 
 - `/paf:init` — check and fix a repository's readiness for PAF. Using PAF in a repo for the first time? Run `/paf:init` there first.
 - `/paf:create-issue` — turn a discussed idea into a structured issue, or several linked issues when it should be split
 - `/paf:implement-issue` — validate, plan, implement, verify, review, and check the acceptance criteria of an approved issue
 - `/paf:check-out` — validate and open an MR/PR for reviewed work
 
-To remove PAF (skills, agents, hook, and the hook entry in `settings.json` — nothing else):
+To remove PAF (skills, agents, hook, and any hook entry an older version left in `settings.json` — nothing else):
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/PeterAugustinak/agentic-factory/develop/scripts/uninstall.sh | bash

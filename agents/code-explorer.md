@@ -3,6 +3,12 @@ name: code-explorer
 description: Reads and summarises relevant files, symbols, and dependencies, producing a structured summary for other agents.
 model: haiku
 tools: Read, Bash
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role

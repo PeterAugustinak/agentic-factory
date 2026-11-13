@@ -27,6 +27,7 @@ A PAF skill's frontmatter uses these fields, in this order:
 | `disable-model-invocation` | **Always `true` for PAF skills.** This is the native mechanism that makes a skill **explicit-invocation only** — only the developer can invoke it via `/name`; Claude never auto-triggers it.(3) |
 | `argument-hint` | For skills that take an argument, shown during autocomplete. **Always quote it** — e.g. `argument-hint: "[issue-number]"`. Unquoted `[issue-number]` is a YAML *flow sequence* (a list), not a string; Claude Code's lenient parser accepts it, but a strict schema validator rejects it as `invalid type: sequence, expected a string`.(2) |
 | `allowed-tools` | Optional. Pre-approves the specific `gh`/`git`/test Bash commands the skill runs, so the developer is not prompted for each one. Does **not** restrict tools — it only removes approval prompts.(6) |
+| `hooks` | **Always set, to the identical block every PAF skill carries.** It registers the centralized `PreToolUse` hook when the skill is invoked, for the rest of the session, so the hook runs only where PAF runs rather than from `settings.json` in every session (`hooks/README.md`, `architecture.md` §3). It holds no policy, only the path to the one hook script. |
 
 ### Why `disable-model-invocation: true` on every PAF skill
 
@@ -36,7 +37,7 @@ PAF skills are **explicit-invocation only** — the main-skill split *is* the hu
 
 - **`context: fork` (and `agent`)** — **must not be used.** A forked skill runs as a *subagent*. Even though a subagent can now spawn its own subagents (Claude Code v2.1.172), it still **cannot run the human-gate tools** — `AskUserQuestion` and plan mode are main-thread-only.(5) A PAF skill is a human-gated orchestrator, so it must run **inline in the main thread**; forking would make the developer gates impossible. PAF skills therefore always run inline (default context).
 - **`when_to_use`, `paths`** — auto-invocation aids; irrelevant because PAF skills are never auto-invoked.
-- **`model`, `effort`, `hooks`, `disallowed-tools`** — left at defaults; the main thread is intentionally unrestricted (tool enforcement targets agents via the central hook, `architecture.md` §3), and per-skill model/effort tuning is not needed.
+- **`model`, `effort`, `disallowed-tools`** — left at defaults; the main thread is intentionally unrestricted (tool enforcement targets agents via the central hook, `architecture.md` §3), and per-skill model/effort tuning is not needed.
 
 ---
 

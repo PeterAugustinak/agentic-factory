@@ -4,6 +4,12 @@ description: Validate and open an MR/PR for the reviewed work on the current fea
 disable-model-invocation: true
 argument-hint: "[optional issue-number]"
 allowed-tools: Read, Write, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git *), Bash(python3 *)
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 # check-out

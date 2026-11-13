@@ -3,6 +3,12 @@ name: "paf:init"
 description: Check whether the current repository is ready for PAF and fix its project instructions file — environment prerequisites plus the content PAF needs. Idempotent; on a ready repo it prints "PAF ready" and changes nothing. Invoke with /paf:init the first time PAF is used in a repository, or any time as a health check.
 disable-model-invocation: true
 allowed-tools: Read, Bash(python3 ${CLAUDE_SKILL_DIR}/../paf-shared/paf-readiness.py *), Bash(git diff *), Bash(git check-ignore *), Bash(git symbolic-ref *), Bash(git branch --list *), Bash(git rev-parse *), Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *)
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 # init

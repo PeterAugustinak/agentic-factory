@@ -3,6 +3,12 @@ name: test-coverage-reviewer
 description: Reviews the tests accompanying a change for meaningful behavioural coverage — uncovered behaviour, unexercised edge cases, and tests that assert nothing.
 model: sonnet
 tools: Read
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role

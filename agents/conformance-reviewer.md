@@ -3,6 +3,12 @@ name: conformance-reviewer
 description: Reviews implemented code for conformance — breaches of the project's stated rules, hand-written reinventions of what the framework or an already-used library provides, and departures from the repository's existing patterns.
 model: sonnet
 tools: Read, Grep, Glob
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role
