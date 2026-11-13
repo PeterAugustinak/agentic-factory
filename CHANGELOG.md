@@ -5,6 +5,23 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.35.0] - 2026-11-13
+
+### Changed
+
+- `/paf:check-out` skips both its safety-net review and its acceptance check when the content still
+  matches `/paf:implement-issue`'s hand-off fingerprint (#121).
+- `/paf:check-out` re-runs each still-failing pre-merge test once on its own with the project's test
+  command; it continues if all pass and stops naming any that still fail (#121).
+- The `PreToolUse` hook is registered in the frontmatter of the PAF skills and agents instead of
+  `settings.json`, so it only acts during PAF runs and defers for agents that are not PAF's. The
+  installer removes the old `settings.json` entry (#122).
+
+### Fixed
+
+- `pricing.json` has every model from Anthropic's pricing page it was missing (Fable/Mythos 5.x,
+  Opus 4.x, Sonnet 4.x). Runs on Fable or Mythos models are no longer left out of the cost report.
+
 ## [0.34.0] - 2026-11-12
 
 ### Changed
