@@ -3,6 +3,12 @@ name: issue-validator
 description: Independently verifies the technical validity of a proposed approach against authoritative documentation and the actual repository, and reports findings.
 model: opus
 tools: Read, Grep, Glob, WebSearch, WebFetch
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role

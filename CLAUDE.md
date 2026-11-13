@@ -44,9 +44,9 @@ agentic-factory/
 
 ## Quick reference
 
-**Adding a skill:** `skills/<name>/SKILL.md` — orchestrator only, explicit invocation, must report cost (exemptions: `docs/architecture.md` §5). See `docs/CONTRIBUTING.md`.
+**Adding a skill:** `skills/<name>/SKILL.md` — orchestrator only, explicit invocation, must report cost (exemptions: `docs/architecture.md` §5), and carries the `hooks` block that registers the `PreToolUse` hook. See `docs/CONTRIBUTING.md`.
 
-**Adding an agent:** `agents/<name>.md` — specialist only, no orchestration. Output must follow the contract in `docs/architecture.md` Section 4. See `docs/CONTRIBUTING.md`.
+**Adding an agent:** `agents/<name>.md` — specialist only, no orchestration. Output must follow the contract in `docs/architecture.md` Section 4. Carries the `hooks` block, and its name goes into `PAF_AGENTS` in the hook. See `docs/CONTRIBUTING.md`.
 
 **Adding a hook:** `hooks/<EventName>-<purpose>.sh` — must be executable. Update `docs/architecture.md` Section 3 if tool scope changes. See `docs/CONTRIBUTING.md`.
 

@@ -7,7 +7,7 @@
 # Removes exactly what install.sh adds and nothing else:
 #   - PAF skills (identified by a `paf:` frontmatter name) + ~/.claude/skills/paf-shared/
 #   - ~/.claude/agents/paf/ and ~/.claude/hooks/paf/
-#   - the PAF hook entry from ~/.claude/settings.json (other settings untouched)
+#   - a PAF hook entry an earlier version wired into ~/.claude/settings.json (other settings untouched)
 #
 # Env override: CLAUDE_CONFIG_DIR (default: ~/.claude)
 
@@ -48,32 +48,42 @@ if [ -f "$MARKER" ]; then
   rmdir "$PAF_DIR" 2>/dev/null || true   # only if nothing else (e.g. costs/) remains
 fi
 
-# --- settings.json: strip only the PAF hook entry ---
+# --- settings.json: strip only a PAF hook entry an earlier version wired in ---
+# Rewritten only when it holds one; the same snippet is in install.sh.
 if [ -f "$SETTINGS" ]; then
-  python3 - "$SETTINGS" "$HOOK_NAME" <<'PY'
+  stripped="$(python3 - "$SETTINGS" "$HOOK_NAME" <<'PY'
 import json, sys
 path, base = sys.argv[1], sys.argv[2]
 try:
     with open(path) as fh:
         d = json.load(fh)
-except (FileNotFoundError, json.JSONDecodeError):
+except (OSError, ValueError):
     raise SystemExit
-pre = d.get("hooks", {}).get("PreToolUse")
-if isinstance(pre, list):
-    keep = [e for e in pre
-            if not any(base in (h.get("command") or "") for h in (e or {}).get("hooks", []))]
-    if keep:
-        d["hooks"]["PreToolUse"] = keep
-    else:
-        d["hooks"].pop("PreToolUse", None)
-        if not d["hooks"]:
-            d.pop("hooks", None)
-    with open(path, "w") as fh:
-        json.dump(d, fh, indent=2)
-        fh.write("\n")
-    print("STRIPPED")
+hooks = d.get("hooks") if isinstance(d, dict) else None
+pre = hooks.get("PreToolUse") if isinstance(hooks, dict) else None
+if not isinstance(pre, list):
+    raise SystemExit
+def is_ours(entry):
+    handlers = entry.get("hooks") if isinstance(entry, dict) else None
+    return isinstance(handlers, list) and any(
+        isinstance(h, dict) and isinstance(h.get("command"), str) and base in h["command"]
+        for h in handlers)
+keep = [e for e in pre if not is_ours(e)]
+if len(keep) == len(pre):
+    raise SystemExit   # no PAF entry: leave the file exactly as it is
+if keep:
+    hooks["PreToolUse"] = keep
+else:
+    hooks.pop("PreToolUse")
+    if not hooks:
+        d.pop("hooks")
+with open(path, "w") as fh:
+    json.dump(d, fh, indent=2)
+    fh.write("\n")
+print("STRIPPED")
 PY
-  removed+=("settings.json PreToolUse entry")
+)"
+  if [ "$stripped" = "STRIPPED" ]; then removed+=("settings.json PreToolUse entry"); fi
 fi
 
 if [ "${#removed[@]}" -eq 0 ]; then

@@ -3,6 +3,12 @@ name: code-simplifier
 description: Reviews implemented code for unnecessary complexity — DRY violations, over-engineering, and readability problems.
 model: sonnet
 tools: Read
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role

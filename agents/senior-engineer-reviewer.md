@@ -3,6 +3,12 @@ name: senior-engineer-reviewer
 description: Performs a deep functional review of implemented code, catching bugs, logic errors, and incorrect assumptions.
 model: sonnet
 tools: Read
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 ## Role

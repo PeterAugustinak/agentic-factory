@@ -25,6 +25,7 @@ A PAF agent file begins with YAML frontmatter using exactly these fields, in thi
 | `description` | Yes | One sentence stating what the agent does. PAF agents are invoked **explicitly by name** from skills, so this is documentation, not an auto-delegation trigger. |
 | `model` | No (defaults to `inherit`) | The alias from `architecture.md` §1: `haiku`, `sonnet`, or `opus`. Aliases are used, not full model IDs, so the factory tracks model upgrades automatically.(3) |
 | `tools` | No (inherits all if omitted) | The **allowlist** from `architecture.md` §3, comma-separated. Only listed tools are available; every other tool — including all MCP tools — is denied.(4) |
+| `hooks` | Yes, in PAF | The identical block every PAF agent carries, registering the centralized `PreToolUse` hook for this agent's own tool calls (`hooks/README.md`, `architecture.md` §3). It holds no policy, only the path to the one hook script; the agent's `name` must also be in that script's `PAF_AGENTS` set.(2) |
 
 ### Why the allowlist (`tools`) form, not the denylist
 
@@ -34,11 +35,11 @@ Sub-tool restrictions the allowlist cannot express (read-only Bash; writes confi
 
 ### Fields deliberately not used
 
-PAF agents set none of the other supported frontmatter fields (`disallowedTools`, `permissionMode`, `maxTurns`, `color`, `isolation`, `mcpServers`, `hooks`, `effort`, etc.).(2) Reasons:
+PAF agents set none of the other supported frontmatter fields (`disallowedTools`, `permissionMode`, `maxTurns`, `color`, `isolation`, `mcpServers`, `effort`, etc.).(2) Reasons:
 
 - `disallowedTools` — unnecessary; the `tools` allowlist already denies everything unlisted.
-- `permissionMode`, `isolation`, `maxTurns`, `effort`, `color` — operational knobs orthogonal to an agent's definition; left at their defaults so behaviour stays predictable and controlled by the skill and the global hook.
-- `hooks` (per-agent) — PAF uses a single global `PreToolUse` hook keyed on `agent_type` (`architecture.md` §3), not per-agent hooks.
+- `permissionMode`, `isolation`, `maxTurns`, `effort`, `color` — operational knobs orthogonal to an agent's definition; left at their defaults so behaviour stays predictable and controlled by the skill and the centralized hook.
+- No per-agent hook *policy*: the `hooks` field only registers the one centralized `PreToolUse` script keyed on `agent_type` (`architecture.md` §3); no agent carries hook logic of its own.
 
 ---
 

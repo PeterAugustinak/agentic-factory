@@ -2,6 +2,10 @@
 """Centralized PreToolUse hook — the single allow+deny authority for PAF
 (architecture.md §3, layer 3).
 
+Registered by the frontmatter `hooks` field of the PAF skills and the PAF agents,
+never by settings.json, so it runs only where PAF runs: for the main thread once a
+PAF skill was invoked, and for a PAF agent's own calls (#122).
+
 Keyed on the `agent_type` field of the PreToolUse payload, it returns an explicit
 permission decision for every call it recognizes, so vetted factory calls run
 WITHOUT a permission prompt and forbidden ones are blocked:
@@ -19,8 +23,9 @@ WITHOUT a permission prompt and forbidden ones are blocked:
   locations above): forces a human permission prompt, which auto mode's
   classifier cannot approve silently, so a legitimate read of an added directory
   still goes through (#62).
-- DEFER — anything unrecognized: emit nothing, so Claude Code's normal permission
-  flow (and prompt) applies. Keeps a human safety net for novel calls.
+- DEFER — any agent that is not PAF's (not in PAF_AGENTS), and anything
+  unrecognized: emit nothing, so Claude Code's normal permission flow (and prompt)
+  applies. Keeps a human safety net for novel calls.
 
 Reads the hook payload as JSON on stdin; emits a PreToolUse decision as JSON on
 stdout (allow/deny/ask) or nothing (defer); always exits 0.
@@ -37,6 +42,16 @@ import sys
 # `tools: Read, Bash`, so frontmatter cannot express which need read-only Bash and
 # which need build/test Bash. Adding a new read-only Bash agent means one line here.
 READ_ONLY_AGENTS = {"code-explorer", "implementation-planner"}
+
+# Every PAF agent, by its frontmatter `name` (the payload's `agent_type`). The hook
+# governs only these: any other agent — Claude Code's built-ins, the user's own —
+# gets no decision (defer), so PAF behaves for it as if it were not installed (#122).
+# Adding a PAF agent means one line here, plus the hook block in its frontmatter.
+PAF_AGENTS = {
+    "code-explorer", "code-simplifier", "conformance-reviewer", "full-stack-dev",
+    "implementation-planner", "implementation-verifier", "issue-validator", "issue-writer",
+    "quality-assurer", "security-engineer", "senior-engineer-reviewer", "test-coverage-reviewer",
+}
 
 # Read-only Bash allowlist for the read-only agents. Matched on the command name of
 # EVERY segment of a compound command, not just the first (#41).
@@ -388,6 +403,8 @@ def main() -> None:
         defer()  # valid JSON but not an object (null/list/string) is not ours to judge
 
     # --- Main thread (the orchestrating skill): owns all I/O and git state. ---
+    # The hook reaches the main thread only through a PAF skill's frontmatter
+    # registration, i.e. once a PAF skill was invoked in the session (#122).
     # Allowed unconditionally, not gated on a command family: gating on the first
     # word made compound/piped/cd-prefixed commands fall through to a prompt (#22).
     # Checked before any other field of `data` is even extracted, let alone
@@ -395,13 +412,16 @@ def main() -> None:
     # ENTIRELY for the main thread and present with a real name only for a
     # subagent/--agent run, so main-thread identity is the ABSENCE of the key —
     # not a falsy value, and never conditioned on `tool_input` (or anything else)
-    # being well-formed (#44). A key present but empty/null fails safe into the
-    # restricted agent branch below.
+    # being well-formed (#44). A key present but empty/null is never the main
+    # thread: it falls to the agent branch below, where it defers as not PAF's.
     if "agent_type" not in data:
         allow("Main thread (orchestrating skill) is unrestricted (architecture.md §3).")
 
     # --- Agents: restricted; allow only their legitimate calls. ---
     agent = _typed_or_none(data.get("agent_type"), str) or ""
+    # An agent that is not PAF's gets no decision, wherever it runs (#122).
+    if agent not in PAF_AGENTS:
+        defer()
     tool = _typed_or_none(data.get("tool_name"), str) or ""
     tool_input = _typed_or_none(data.get("tool_input"), dict) or {}
     project = os.path.realpath(

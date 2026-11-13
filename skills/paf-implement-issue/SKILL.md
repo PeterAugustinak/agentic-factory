@@ -4,6 +4,12 @@ description: Validate an approved issue, then plan and implement it on a feature
 disable-model-invocation: true
 argument-hint: "[issue-number]"
 allowed-tools: Read, Edit, Write, Bash(${CLAUDE_SKILL_DIR}/../paf-shared/paf-vcs *), Bash(git *), Bash(python3 *)
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Edit|Write|MultiEdit|Read|Grep|Glob|WebSearch|WebFetch|Task"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/paf/PreToolUse-agent-guard.py"'
 ---
 
 # implement-issue
