@@ -21,7 +21,7 @@ A PAF agent file begins with YAML frontmatter using exactly these fields, in thi
 
 | Field | Required | Value in PAF |
 |---|---|---|
-| `name` | Yes | The agent name, matching `architecture.md` §1 (e.g. `code-explorer`). Received by hooks as `agent_type`.(2) |
+| `name` | Yes | The agent name, matching the file name (e.g. `code-explorer`). Received by hooks as `agent_type`.(2) |
 | `description` | Yes | One sentence stating what the agent does. PAF agents are invoked **explicitly by name** from skills, so this is documentation, not an auto-delegation trigger. |
 | `model` | No (defaults to `inherit`) | The alias from `architecture.md` §1: `haiku`, `sonnet`, or `opus`. Aliases are used, not full model IDs, so the factory tracks model upgrades automatically.(3) |
 | `tools` | No (inherits all if omitted) | The **allowlist** from `architecture.md` §3, comma-separated. Only listed tools are available; every other tool — including all MCP tools — is denied.(4) |
@@ -59,7 +59,7 @@ Every PAF agent body has the same five sections, in this order:
 
 ## Output contract
 
-This is the **canonical copy** of the output contract. It is identical to `architecture.md` §4. Because Claude Code does not expand `@path` imports inside an agent body — the body is delivered as a raw system prompt, verified empirically (an agent given `@file` syntax in its body sees the literal string, never the file's content)(5) — the contract block cannot be referenced from a shared file at runtime. Each agent file therefore reproduces the block below, with a **single per-file substitution**: the `agent:` value is set to that agent's own name (e.g. `agent: "code-explorer"`) instead of the `"<agent-name>"` placeholder. Everything else — every other field, comment, ordering, and the surrounding instruction — is copied exactly. If the contract ever changes, it changes here and in `architecture.md` §4, and the agent files are updated to match.
+This is the **canonical copy** of the output contract. `skills/paf-shared/output-contract.md` holds the same schema with the rules a skill parses it by; the decisions behind it are in `architecture.md` §4. Because Claude Code does not expand `@path` imports inside an agent body — the body is delivered as a raw system prompt, verified empirically (an agent given `@file` syntax in its body sees the literal string, never the file's content)(5) — the contract block cannot be referenced from a shared file at runtime. Each agent file therefore reproduces the block below, with a **single per-file substitution**: the `agent:` value is set to that agent's own name (e.g. `agent: "code-explorer"`) instead of the `"<agent-name>"` placeholder. Everything else — every other field, comment, ordering, and the surrounding instruction — is copied exactly. If the contract ever changes, it changes here and in `skills/paf-shared/output-contract.md`, and the agent files are updated to match.
 
 Every agent body's **`## Output`** section contains exactly this instruction and block (with `agent:` set to the file's own name):
 
@@ -79,7 +79,13 @@ Every agent body's **`## Output`** section contains exactly this instruction and
 >     location: "<file:line, or omitted if not applicable>"
 > ```
 
-Field usage differs by agent category (`architecture.md` §4): builders populate `artifacts`; reviewers populate `issues`; analysis agents populate `summary`. Each agent's **Output** section names which field carries its primary payload, but always emits the full schema.
+Each agent's **Output** section names which field carries its primary payload, but always emits the full schema. `summary` carries the agent's primary **textual deliverable** — a short paragraph for most agents, the complete document for a synthesis agent; `artifacts` carries **files** only, so an agent with no write access reports its product in `summary`. Field usage by agent category (the reasons are in `architecture.md` §4, Field usage by agent category):
+
+- **Builder** → `artifacts` is the primary payload; `issues` usually `[]`.
+- **Review / validation** → `issues` is the primary payload; `artifacts` is `[]`. `status` is `success` on completion regardless of what was found. The one exception is a **final gate** review (a spec-conformance check that the skill treats as a STOP point): it sets `status: failure` when the work does not meet the criteria, and states this in its own Output section.
+- **Analysis / read** → `summary` is the primary payload; `artifacts` and `issues` usually `[]`.
+- **Synthesis** → the produced document is the `summary` payload; no write access, so `artifacts` is `[]`.
+- **Verification** → `status` plus `issues` (the failures) are the primary payload.
 
 ---
 

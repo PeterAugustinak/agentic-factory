@@ -20,6 +20,13 @@ Contributing to this project — implementing the current issues or any future e
 
 If something is genuinely undocumented, say so and verify it empirically before deciding — never present a guess as a recommendation. Decisions captured in issues and in `docs/architecture.md` carry their source so they stay auditable; keep it that way.
 
+## Documentation rule — WHAT vs WHY
+
+- **WHAT** PAF does (steps and their order, output formats, commands, the hook's rules) lives only in the file that runs it — a `SKILL.md`, an agent file, the hook, a script — plus its human page: `docs/skills/<skill>.md`, `hooks/README.md`, `agents/README.md`, `docs/authoring/*.md`.
+- **WHY** (decisions, reasons, sources, accepted risks) lives only in `docs/architecture.md`, which never restates WHAT and points to the implementing file instead.
+- **Deliberate copies** the runtime needs: the output-contract block in every agent file, and the strict-sourcing paragraph inline in every `SKILL.md`.
+- **Record format** in `docs/architecture.md`: Decision, Why, Source, Accepted risk (only when one exists) — no flow, output format, or command line. Adapted from Michael Nygard, "Documenting Architecture Decisions" (2011).
+
 ## Repository layout
 
 ```
@@ -46,7 +53,7 @@ agentic-factory/
 
 **Adding a skill:** `skills/<name>/SKILL.md` — orchestrator only, explicit invocation, must report cost (exemptions: `docs/architecture.md` §5), and carries the `hooks` block that registers the `PreToolUse` hook. See `docs/CONTRIBUTING.md`.
 
-**Adding an agent:** `agents/<name>.md` — specialist only, no orchestration. Output must follow the contract in `docs/architecture.md` Section 4. Carries the `hooks` block, and its name goes into `PAF_AGENTS` in the hook. See `docs/CONTRIBUTING.md`.
+**Adding an agent:** `agents/<name>.md` — specialist only, no orchestration. Output must follow the contract in `docs/authoring/agent-definition-format.md`. Carries the `hooks` block, and its name goes into `PAF_AGENTS` in the hook. See `docs/CONTRIBUTING.md`.
 
 **Adding a hook:** `hooks/<EventName>-<purpose>.sh` — must be executable. Update `docs/architecture.md` Section 3 if tool scope changes. See `docs/CONTRIBUTING.md`.
 

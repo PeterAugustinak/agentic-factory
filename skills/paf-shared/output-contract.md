@@ -1,6 +1,6 @@
 # Agent output contract — parsing rules (shared)
 
-Every PAF agent returns its result as **exactly one fenced ` ```yaml ` block** as its final message, closed by a ` ``` ` line as the very last line. This file is the single, shared definition of how a skill parses and validates that block. Skills reference it instead of repeating these rules. It mirrors `docs/architecture.md` §4–§5.
+Every PAF agent returns its result as **exactly one fenced ` ```yaml ` block** as its final message, closed by a ` ``` ` line as the very last line. This file is the single, shared definition of how a skill parses and validates that block. Skills reference it instead of repeating these rules. The decisions behind it are in `docs/architecture.md` §4–§5.
 
 ## The schema
 

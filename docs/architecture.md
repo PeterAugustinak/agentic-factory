@@ -1,6 +1,6 @@
 # PAF Architecture
 
-This document is the single source of truth for the design of the Personal Agentic Factory (PAF). All agent definitions, skills, and hooks must follow it without re-deciding what is settled here.
+This document is the single source of truth for the design decisions of the Personal Agentic Factory (PAF) and the reasons behind them. All agent definitions, skills, and hooks must follow it without re-deciding what is settled here.
 
 PAF splits responsibilities cleanly:
 
@@ -8,33 +8,86 @@ PAF splits responsibilities cleanly:
 - **Agents own the cognitive work** — code analysis, synthesis, review — each with a defined tool scope and a model suited to its task.
 - **The human owns the decisions** — the factory accelerates and structures the work; it does not replace judgement.
 
-Every decision here has been verified against official Claude Code documentation or an established best practice — nothing is guessed. Where a decision depends on a specific Claude Code behaviour, the source is cited inline and collected under [Sources](#sources). Details described as "implementation detail" are intentionally left to the agent/skill/hook implementations; everything else is fixed.
+Every decision here has been verified against official Claude Code documentation or an established best practice — nothing is guessed. Where a decision depends on a specific Claude Code behaviour, the source is cited inline and collected under [Sources](#sources). Where a decision states no external source, its record says so.
+
+**What this document holds — WHAT and WHY.** WHY — the decisions, their reasons, their sources, and the risks accepted with them — lives only here. WHAT PAF does — steps and their order, output formats, commands, the hook's rules as implemented — lives only in the file that runs it (a `SKILL.md`, an agent file under `agents/`, the hook, or a script), plus its human explanation: `docs/skills/<skill>.md` for a skill, `hooks/README.md` for the hook, `agents/README.md` for the agents, and `docs/authoring/*.md` for the agent and skill file formats. This document never restates WHAT: a record points to the file or skill step that implements it. Two copies are deliberate, because the runtime needs them: the output-contract block in every agent file (an `@import` does not expand in an agent body — [`agent-definition-format.md`](authoring/agent-definition-format.md)), and the strict-sourcing paragraph stated inline in every `SKILL.md`.
+
+**Record format.** Decisions are short records, adapted from the Architecture Decision Record practice (23), grouped under the section and subsection headings. Each record has a bold title and these fields:
+
+- **Decision** — what is decided, pointing to the file that implements it.
+- **Why** — the reason.
+- **Source** — the numbered source(s) below, the issue that decided it, or "PAF design choice; no external source."
+- **Accepted risk** — only when one exists.
+
+A record contains no step-by-step flow, no output format, and no command line.
 
 ---
 
 ## 1. Agents
 
-A PAF agent is a specialist subagent owning one cognitive responsibility, with a tool scope (§3) and a model suited to its task. Agents are caller-agnostic (§2) and all follow the output contract (§4). This section defines *how an agent is shaped*, not which agents exist: the agents are self-describing in `agents/<name>.md`, and how to author one is in [`agent-definition-format.md`](authoring/agent-definition-format.md). The architecture keeps no roster — read `agents/` for the current set.
+**Specialist agents, no roster**
+
+- **Decision:** A PAF agent is a specialist subagent owning one cognitive responsibility, with a tool scope (§3) and a model suited to its task. Agents are caller-agnostic (§2) and all follow the output contract (§4). This document keeps no roster: each agent is self-describing in `agents/<name>.md`, and how to author one is in [`agent-definition-format.md`](authoring/agent-definition-format.md).
+- **Why:** The files in `agents/` are the current set; a roster here would be a second statement of it.
+- **Source:** PAF design choice; no external source.
 
 ### Model selection
 
-Each agent declares its `model` as an alias (`haiku`, `sonnet`, `opus`) — aliases, not pinned IDs, so model upgrades apply automatically.(1) Choose by how much reasoning the work genuinely requires and how expensive a miss is once it propagates downstream, not by a coarse verb list.
+**Aliases, not pinned IDs**
 
-- **Mechanical / I-O-bound, no reasoning** (e.g. reading and summarising files; running the project's test command — and, for a UI change, its UI check command — and reporting pass/fail) → the cheapest capable model (currently `haiku`). Such agents often run at the start of every flow, or repeatedly inside a fix loop, so keeping them cheap matters. One narrow discriminator inside otherwise mechanical work does not by itself lift an agent to mid-tier.
-- **Requires reasoning, judgement, or interpretation** (planning, building, reviewing) → the mid-tier model (currently `sonnet`).
-- Reserve the top model (`opus`) for work that genuinely needs the deepest reasoning, or where a miss is uniquely expensive because it happens **before** there is any built work for a later reviewer to catch it in — do not default to it. **Validating** an approach against authoritative documentation *and* the repository *before* it enters the build pipeline is such a case: unlike the post-build reviews in §4's field usage, a defect missed here propagates into everything subsequently built. See the issue-validator escalation (§5) for where it runs and how its `error` findings are handled.
+- **Decision:** Each agent declares its `model` as an alias (`haiku`, `sonnet`, `opus`), never a pinned ID, in its own file under `agents/`.
+- **Why:** Model upgrades then apply automatically.
+- **Source:** (1)
+
+**Choose by reasoning and the cost of a miss**
+
+- **Decision:** An agent's model is chosen by how much reasoning the work genuinely requires and how expensive a miss is once it propagates downstream, not by a coarse verb list. **Mechanical / I-O-bound, no reasoning** work (e.g. reading and summarising files; running tests, or a UI check, and reporting pass/fail) gets the cheapest capable model (currently `haiku`); one narrow discriminator inside otherwise mechanical work does not by itself lift an agent to mid-tier. Work that **requires reasoning, judgement, or interpretation** (planning, building, reviewing) gets the mid-tier model (currently `sonnet`). The top model (`opus`) is reserved for work that genuinely needs the deepest reasoning, or where a miss is uniquely expensive because it happens **before** there is any built work for a later reviewer to catch it — it is never the default. **Validating** an approach against authoritative documentation *and* the repository before it enters the build pipeline is such a case; where it runs and how its `error` findings are handled is the `issue-validator` escalation (§5).
+- **Why:** Mechanical agents often run at the start of every flow, or repeatedly inside a fix loop, so keeping them cheap matters. A defect missed during validation — unlike one missed in the post-build reviews (§4, Field usage by agent category) — propagates into everything built after it. The tiering itself is a PAF design choice.
+- **Source:** (1)
 
 ### Agent categories
 
-Agents fall into a few stable shapes. The category drives tool scope (§3) and output field usage (§4):
+**Categories drive scope and payload**
 
-- **Analysis / read** — explore or reason over code and return a summary or plan. Read, plus **read-only Bash** for codebase exploration (§3).
-- **Synthesis** — produce a document (e.g. an issue) as text. Read-only.
-- **Builder** — edit files, write tests, run commands. Read + write, project-confined. Given a plan, a builder implements it as decided; given a set of **review findings**, it also triages them — deciding which are worth applying and reporting applied-vs-skipped with reasons, led by a list of any behaviour changes beyond the approved plan (any change to what the code does for a user or caller that the plan did not contain), or `None`. When it adds tests, it extends the existing tests and fixtures for the area rather than adding parallel ones. Triage is bounded by a rule that is severity-based **with two classes carved out of it**: a finding that **contradicts an explicit decision or out-of-scope item in the issue** is skipped **whatever severity it carries** and named as such, because the issue body is the scope the developer approved and severity cannot override it (a defect in how a decision was implemented is not such a contradiction; in an issue with the `## For implementation agent` section, those decisions and out-of-scope items are its `Decisions` and `Constraints` subsections, which add to the human part's binding Approach and Acceptance criteria, never replace them); `error` applies by default; a `warning` whose fix would change behaviour beyond the approved plan is skipped, because triage fixes defects and never extends the feature; a **factual or self-consistency defect** (a stale reference, a contradiction between two stated facts) applies **whatever severity it carries**, because severity grades impact while that class is a correctness defect regardless; everything else at `warning` is discretionary. A builder also **sweeps**: when it changes a fact, rule, or name stated in more than one place, it updates every occurrence in the same change, so an edit never leaves the repository self-contradicting. Triage is scoped to the findings it was handed; it never widens the work — and the sweep is not a widening, since it restates the *same* change elsewhere rather than adding a different one.
-- **Review / validation** — inspect implemented code, or check a proposed approach against authoritative sources **and the repository it targets**, and report findings. Read-only, plus read-only repo search when validating claims against, or checking a change for conformance with, the codebase and web lookup when validating against external documentation (§3). A code reviewer reads the issue body verbatim from the shared review input file (§4, Input delivery), and anything the issue explicitly decides or places out of scope is settled — not a finding; a defect in how such a decision was implemented still is. In an issue with the `## For implementation agent` section, that is what its `Decisions` and `Constraints` subsections state, alongside the human part's Approach and Acceptance criteria, which remain binding.
-- **Verification** — run tests (and, for a UI change, the project's UI check) and report pass/fail. Read + execute, no writes.
+- **Decision:** Agents fall into a few stable shapes — Analysis / read, Synthesis, Builder, Review / validation, Verification — and the category drives the agent's tool scope (§3) and its output field usage (§4, Field usage by agent category).
+- **Why:** Scope and payload follow from the shape of the work, so they are derived from the category rather than decided agent by agent.
+- **Source:** PAF design choice; no external source.
 
-There is intentionally **no `github-*` or I/O agent** — GitHub and git interaction is mechanical, not cognitive, and is owned by the skill (see [Section 2](#external-io-and-vcs-state-are-skill-owned)).
+**Analysis / read**
+
+- **Decision:** Explores or reasons over code and returns a summary or plan. Read, plus **read-only Bash** for codebase exploration (§3).
+- **Why:** The work reads and searches code and never changes it.
+- **Source:** PAF design choice; no external source.
+
+**Synthesis**
+
+- **Decision:** Produces a document (e.g. an issue) as text. Read-only.
+- **Why:** Its product is text returned in the output contract, so it needs no write access.
+- **Source:** PAF design choice; no external source.
+
+**Builder**
+
+- **Decision:** Edits files, writes tests, runs commands — read + write, project-confined. Given a plan, a builder implements it as decided; given review findings, it triages them, and the triage is bounded by the issue, never widens the work, and is reported applied-vs-skipped with reasons. A finding that contradicts an explicit decision or out-of-scope item in the issue is skipped whatever its severity; a factual or self-consistency defect is applied whatever its severity. The builder also sweeps: a change to a fact, rule, or name stated in several places is made in all of them. The rules as implemented are in `agents/full-stack-dev.md` (Input, Task, Output).
+- **Why:** The issue body is the scope the developer approved, and severity cannot override it. Triage fixes defects and never extends the feature. Severity grades impact, while a factual or self-consistency defect is a correctness defect regardless of it. The sweep keeps an edit from leaving the repository self-contradicting, and it is not a widening: it restates the *same* change elsewhere rather than adding a different one.
+- **Source:** PAF design choice; no external source.
+
+**Review / validation**
+
+- **Decision:** Inspects implemented code, or checks a proposed approach against authoritative sources **and the repository it targets**, and reports findings. Read-only, plus read-only repo search and, for validating against external documentation, web lookup (§3). Code reviewers treat what the issue explicitly decides or places out of scope as settled, not a finding; a defect in how such a decision was implemented still is. As implemented: the shared review input (§4, Input delivery) and `skills/paf-shared/paf-review-input.py`.
+- **Why:** The issue body is the scope the developer approved, as for the Builder.
+- **Source:** PAF design choice; no external source.
+
+**Verification**
+
+- **Decision:** Runs tests (and, for a UI change, the project's UI check) and reports pass/fail. Read + execute, no writes.
+- **Why:** It checks the work and never changes it.
+- **Source:** PAF design choice; no external source.
+
+**No I/O agent**
+
+- **Decision:** There is intentionally **no `github-*` or I/O agent**; GitHub and git interaction is owned by the skill (see [Section 2](#external-io-and-vcs-state-are-skill-owned)).
+- **Why:** GitHub and git interaction is mechanical, not cognitive.
+- **Source:** PAF design choice; no external source.
 
 ---
 
@@ -195,60 +248,73 @@ The architecture fixes the *policy patterns*; the exact command patterns are an 
 
 ### Delivery mechanism
 
-Claude Code has **no native typed return channel** for subagents — a subagent returns results as its **final assistant message in plain text**.(2)
+**Final message as the return channel**
 
-Therefore:
-
-- Every agent's system prompt instructs it that **its final message must be exactly one fenced ` ```yaml ` block conforming to the contract below, closed by a ` ``` ` line as the very last line — no prose before or after.**
-- The **skill (main thread)** extracts the **last** fenced `yaml` block from the returned message and parses it: reading `status` to drive control flow, and passing `summary` / `issues` forward to the next agent.
-- The contract is "machine-checkable" because **the skill parses and validates it** — not because the harness enforces a schema. There is no native validation. If an agent returns malformed or missing YAML, the skill fails loudly and escalates to the developer (see [Section 5](#5-loop-cap-escalation-and-cost-reporting)).
+- **Decision:** Every agent returns its result as one machine-parseable YAML block in its final message, and the **skill (main thread)** extracts, parses, and validates it. Malformed or missing output fails loudly and escalates to the developer ([Section 5](#5-loop-cap-escalation-and-cost-reporting)). As implemented: the `## Output` section of every agent ([`agent-definition-format.md`](authoring/agent-definition-format.md), Output contract) and the parsing rules in `skills/paf-shared/output-contract.md`.
+- **Why:** Claude Code has **no native typed return channel** for subagents — a subagent returns results as its final assistant message in plain text — and there is no native schema validation. The contract is machine-checkable only because the skill parses and validates it.
+- **Source:** (2)
 
 ### Input delivery
 
-The input side has one rule too, because a skill that leaves it open lets the model improvise — and an improvised input breaks the run:
+**In the prompt, read from the project, or — for the code reviewers — the review input file**
 
-- **In the prompt, read from the project, or — for the code reviewers — the review input file.** A skill passes every agent input as text in the invocation prompt, or names files inside the project root that the agent `Read`s itself. The code reviewers (`implement-issue`'s deep review, `check-out`'s safety net) instead get one shared file, below, and their prompt holds only their lens and its path. Every skill step that invokes an agent names exactly what it passes and, for command output, the command that produces it.
-- **Never through any other file outside the project.** A skill never writes an agent input to a scratchpad, `/tmp`, or any other path outside the project root for the agent to read: the hook forces a permission prompt on every agent read outside the project root (§3), which stops an otherwise autonomous run. The one exception is the **review input file** under `~/.claude/paf/review-input/`, keyed by repository root and issue: the shared helper `paf-shared/paf-review-input.py` writes the issue — piped straight from `paf-vcs view-issue` — the created files, the change manifest, and the fixed text on how to read them, so the main thread never retypes them, and every reviewer of a run reads the same bytes. It is user-scoped because PAF leaves no trace in the project (§5) — no `.paf/` directory, no ignore or exclude entry — and the hook allows an agent `Read` of exactly that folder (§3). The helper runs through `Bash` like the cost and fingerprint helpers, not the `Write` tool, whose writes to the protected `.claude` path are never auto-approved.(15) Each run wipes a leftover at its start, the file is removed as soon as the reviewers return, and any helper failure STOPs the run — there is no fall-back to pasting (#120).
-- **Verbatim means verbatim.** An input the skill names as verbatim — the issue body, its acceptance criteria, the removed lines of a change manifest, a findings list — reaches the agent exactly as it was fetched or printed: pasted, or, for the code reviewers, written by the review input helper straight from the commands' output. Never summarized, shortened, or omitted, whatever the prompt size. A shortened input silently removes what the agent was meant to judge. Pasting into every reviewer prompt is what the review input file replaces: the main thread retyped the same text as output tokens once per reviewer, and measured runs showed reviewers handed an orchestrator-written summary instead of the verbatim text (#120).
+- **Decision:** A skill passes every agent input as text in the invocation prompt, or names files inside the project root that the agent `Read`s itself. The code reviewers (`implement-issue`'s deep review, `check-out`'s safety net) instead get one shared review input file. Each skill step that invokes an agent states exactly what it passes.
+- **Why:** A skill that leaves the input open lets the model improvise — and an improvised input breaks the run.
+- **Source:** PAF design choice; no external source.
+
+**Never through any other file outside the project**
+
+- **Decision:** A skill never writes an agent input to a scratchpad, `/tmp`, or any other path outside the project root for the agent to read. The one exception is the **review input file**, user-scoped, written by the shared helper `skills/paf-shared/paf-review-input.py` through `Bash`, not through the `Write` tool. The helper failing stops the run. As implemented: the helper and the review steps of `skills/paf-implement-issue/SKILL.md` and `skills/paf-check-out/SKILL.md`.
+- **Why:** The hook forces a permission prompt on every agent read outside the project root (§3), which stops an otherwise autonomous run. The review input file means the main thread never retypes the input and every reviewer of a run reads the same bytes. It is user-scoped because PAF leaves no trace in the project (§5) — no `.paf/` directory, no ignore or exclude entry — and the hook allows an agent `Read` of exactly that folder (§3). `Write` is avoided because its writes to the protected `.claude` path are never auto-approved.
+- **Source:** (15); #120.
+
+**Verbatim means verbatim**
+
+- **Decision:** An input the skill names as verbatim — the issue body, its acceptance criteria, the removed lines of a change manifest, a findings list — reaches the agent exactly as it was fetched or printed: pasted, or, for the code reviewers, written by the review input helper straight from the commands' output. Never summarized, shortened, or omitted, whatever the prompt size.
+- **Why:** A shortened input silently removes what the agent was meant to judge. Pasting into every reviewer prompt — what the review input file replaces — had the main thread retype the same text as output tokens once per reviewer, and measured runs showed reviewers handed an orchestrator-written summary instead of the verbatim text.
+- **Source:** #120.
 
 ### Schema
 
-A **uniform schema**: every field is always present; collections are `[]` when not applicable. This keeps parsing predictable and improves agent adherence (a fixed template is followed more reliably than conditional fields).
+**Uniform schema**
 
-```yaml
-agent: "<agent-name>"            # required — all agents
-status: "success"               # required — one of: success | failure | needs_retry
-summary: |                       # required — all agents (block scalar)
-  one paragraph: what was done or what failed
-artifacts:                       # always present; [] when none
-  - path: "<relative file path>"
-    action: "created"           # one of: created | modified | deleted
-issues:                          # always present; [] when none
-  - severity: "error"           # one of: error | warning
-    message: "<description>"
-    location: "<file:line, or omitted if not applicable>"
-```
+- **Decision:** One schema for every agent: every field is always present, and collections are `[]` when not applicable. The schema itself is in [`agent-definition-format.md`](authoring/agent-definition-format.md) (Output contract) and `skills/paf-shared/output-contract.md`.
+- **Why:** It keeps parsing predictable and improves agent adherence — a fixed template is followed more reliably than conditional fields.
+- **Source:** PAF design choice; no external source.
 
-There is **no `cost` block** in the agent contract — an agent cannot reliably count its own tokens; cost is measured by the skill from the transcript (see [Section 5](#5-loop-cap-escalation-and-cost-reporting)).
+**No cost block**
+
+- **Decision:** The agent contract carries no cost; cost is measured by the skill from the transcript (see [Section 5](#5-loop-cap-escalation-and-cost-reporting)).
+- **Why:** An agent cannot reliably count its own tokens.
+- **Source:** PAF design choice; no external source.
 
 ### Severity semantics
 
-- **`severity: error`** denotes a **blocker** — a finding that stops the flow and requires developer action (e.g. `quality-assurer`'s unmet-criteria findings halt `check-out` and drive `implement-issue`'s acceptance loop; a factual `issue-validator` error prompts an informed developer-approval gate in `implement-issue` rather than an unconditional stop, while a completeness one stops it — §5).
-- **`severity: warning`** denotes a **minor / non-blocking** finding that is passed forward (e.g. carried into the implementation plan) or surfaced for the developer to decide on.
+**Error blocks, warning passes forward**
 
-The skill uses this field to branch.
+- **Decision:** **`severity: error`** denotes a **blocker** — a finding that stops the flow and requires developer action. **`severity: warning`** denotes a **minor / non-blocking** finding that is passed forward or surfaced for the developer to decide on. How each skill branches on it is in its own `SKILL.md` (for `issue-validator`, see its escalation in §5).
+- **Why:** The skill needs one field that separates what stops the flow from what is carried forward.
+- **Source:** PAF design choice; no external source.
 
-Severity drives that **skill-level** branching; it does **not** by itself decide whether the builder may skip a finding. A finding identifying a factual or self-consistency defect is applied whatever severity it carries — see the triage rule in §1, Builder.
+**Severity does not decide triage**
+
+- **Decision:** Severity drives the **skill-level** branching only; it does **not** by itself decide whether the builder may skip a finding. A finding identifying a factual or self-consistency defect is applied whatever severity it carries — see the triage rule in §1, Builder.
+- **Why:** Severity grades impact, while a factual or self-consistency defect is a correctness defect regardless of it.
+- **Source:** PAF design choice; no external source.
 
 ### Field usage by agent category
 
-The schema is uniform; this documents which fields carry the meaningful payload, by category (§1). `summary` carries the agent's primary **textual deliverable** — a short paragraph for most agents, but the complete document for an agent whose product *is* text (synthesis). `artifacts` carries **files** only: an agent with no write access produces no artifacts and reports its product in `summary`.
+**Payload follows the category**
 
-- **Builder** → `artifacts` is the primary payload; `issues` usually `[]`.
-- **Review / validation** → `issues` is the primary payload; `artifacts` is `[]`. By default `status` is `success` on completion regardless of what was found — reporting findings is the job, and the skill/developer decides how to act on them. The one exception is a **final gate** review (a spec-conformance check that the skill treats as a STOP point): it sets `status: failure` when the work does not meet the criteria, so the skill can halt. An agent that acts as such a gate states this in its own Output section.
-- **Analysis / read** → `summary` is the primary payload; `artifacts` and `issues` usually `[]`.
-- **Synthesis** → the produced document is the `summary` payload; no write access, so `artifacts` is `[]`.
-- **Verification** → `status` plus `issues` (the failures) are the primary payload.
+- **Decision:** The schema is uniform, but which fields carry the meaningful payload follows the agent's category (§1). `summary` carries the agent's primary **textual deliverable** — the complete document for an agent whose product *is* text (synthesis). `artifacts` carries **files** only. The usage per category is in [`agent-definition-format.md`](authoring/agent-definition-format.md) (Output contract).
+- **Why:** An agent with no write access produces no files, so its product can only be reported in `summary`.
+- **Source:** PAF design choice; no external source.
+
+**Review status reports completion**
+
+- **Decision:** A review or validation agent sets `status: success` on completion regardless of what it found. The one exception is a **final gate** review — a spec-conformance check that the skill treats as a STOP point — which sets `status: failure` when the work does not meet the criteria, and states this in its own Output section.
+- **Why:** Reporting findings is the job; the skill and the developer decide how to act on them. A final gate needs `failure` so the skill can halt.
+- **Source:** PAF design choice; no external source.
 
 ---
 
@@ -379,25 +445,55 @@ The exact ledger location, record format, and pricing table are implementation d
 
 ## 6. Project instructions as the single source of project context
 
-The project's **instructions file** — `CLAUDE.md` or `AGENTS.md`, whichever Claude Code loads for the project — is the single source of project-specific context, and it is **loaded automatically into every agent** — there is no manual injection. PAF is tool-agnostic here: a project that keeps its context in an `AGENTS.md` shared with other coding agents needs no `CLAUDE.md`, and nothing in a skill or agent may assume one filename. This document calls it "the project instructions".
+**Single source of project context**
 
-- **Either file is native.** Claude Code reads `AGENTS.md` as the project instructions when no `CLAUDE.md`, `.claude/CLAUDE.md`, or `CLAUDE.local.md` exists in the working directory or above it; when one does, by default only the `CLAUDE.md` files load, unless the `CLAUDE.md` imports `@AGENTS.md` or the **Project instructions** setting is `claude-md-and-agents-md`. Reading `AGENTS.md` directly needs Claude Code v2.1.277 or later; earlier versions, and sessions that disabled the built-in plugin, read `CLAUDE.md` only.(8)
-- **Auto-loading is native and not optional.** Every custom subagent loads the same instruction hierarchy the main conversation loads (user `~/.claude/CLAUDE.md`, project `CLAUDE.md`/`.claude/CLAUDE.md`, project rules, `CLAUDE.local.md`, managed policy, and any `AGENTS.md` loaded as project instructions). Only the built-in `Explore` and `Plan` agents skip it, and a custom agent whose frontmatter sets `omitClaudeMd: true`; no PAF agent sets it.(6) (8)
-- **It depends on launch location, not agent config.** The hierarchy is resolved by walking up from the working directory, so the project-root instructions file reaches every agent as long as Claude Code is launched from within the project (the normal case). PAF keeps project context in the **root** instructions file; subdirectory instruction files load on demand, not at launch, so PAF does not rely on them.
-- **No duplication.** A value that exists in the project instructions is never repeated in an agent prompt or skill file. The project instructions hold project-specific context (stack, entry points, conventions, exact test/lint/pre-merge commands, and the optional auto-fix and UI check commands), kept under ~200 lines. Agent prompts hold only factory-level role, tool scope, and output-contract instructions.
-- **Verification.** The `InstructionsLoaded` hook can log exactly which instruction files reached each agent.(7) It does **not** fire for an `AGENTS.md` read directly through the Project instructions setting — only for one a `CLAUDE.md` imports or symlinks to — so it cannot confirm an `AGENTS.md`-only project.(8)
+- **Decision:** The project's **instructions file** — `CLAUDE.md` or `AGENTS.md`, whichever Claude Code loads for the project — is the single source of project-specific context; this document calls it "the project instructions". PAF is tool-agnostic here: a project that keeps its context in an `AGENTS.md` shared with other coding agents needs no `CLAUDE.md`, and nothing in a skill or agent may assume one filename.
+- **Why:** The file is **loaded automatically into every agent** (see "Auto-loading is native and not optional"), so there is no manual injection. Claude Code reads `AGENTS.md` as the project instructions when no `CLAUDE.md`, `.claude/CLAUDE.md`, or `CLAUDE.local.md` exists in the working directory or above it; when one does, by default only the `CLAUDE.md` files load, unless the `CLAUDE.md` imports `@AGENTS.md` or the **Project instructions** setting is `claude-md-and-agents-md`.
+- **Source:** (6) (8)
+- **Accepted risk:** Reading `AGENTS.md` directly needs Claude Code v2.1.277 or later; earlier versions, and sessions that disabled the built-in plugin, read `CLAUDE.md` only.
 
-- **Feature-branch naming is PAF's, not the project's.** Every feature branch is `feature/<issue-number>-<short-description>`. `implement-issue` creates it and `check-out` reads the issue number back out of it to find the issue and the cost ledger, so the pattern is fixed by the factory and is not part of the project instructions. The merge strategy is not project context either: PAF opens the MR/PR but never merges it; merging is the developer's.
+**Auto-loading is native and not optional**
 
-This is why skills do not manually inject project-instruction sections into agents — it is unnecessary given native auto-loading.
+- **Decision:** Skills never manually inject project-instruction sections into agents.
+- **Why:** Every custom subagent loads the same instruction hierarchy the main conversation loads (user `~/.claude/CLAUDE.md`, project `CLAUDE.md`/`.claude/CLAUDE.md`, project rules, `CLAUDE.local.md`, managed policy, and any `AGENTS.md` loaded as project instructions). Only the built-in `Explore` and `Plan` agents skip it, and a custom agent whose frontmatter sets `omitClaudeMd: true`; no PAF agent sets it.
+- **Source:** (6) (8)
 
-- **Strict sourcing — no cross-project bleed.** Project-specific values come **only** from *this* project's instructions and repository. Skills must never substitute a value — especially a filename or command — from the operator's memory, another project, or a prior session. Auto-recalled memories are unrelated background and may name files that do not exist in the current repo. If a value a step needs is not defined here, the skill **STOPs and asks the developer** rather than inventing or borrowing one. Each skill states this guardrail in its own `Input` section, and the verification / pre-merge steps STOP when no command is defined.
+**It depends on launch location, not agent config**
+
+- **Decision:** PAF keeps project context in the **root** instructions file and does not rely on subdirectory instruction files.
+- **Why:** The hierarchy is resolved by walking up from the working directory, so the project-root instructions file reaches every agent as long as Claude Code is launched from within the project (the normal case); subdirectory instruction files load on demand, not at launch.
+- **Source:** (8)
+
+**No duplication**
+
+- **Decision:** A value that exists in the project instructions is never repeated in an agent prompt or skill file. The project instructions hold the project-specific context; agent prompts hold only factory-level role, tool scope, and output-contract instructions.
+- **Why:** The project instructions already reach every agent natively (see "Auto-loading is native and not optional"); a repeat would be a second statement that can drift.
+- **Source:** PAF design choice; no external source.
+
+**Verification**
+
+- **Decision:** The `InstructionsLoaded` hook is the way to check which instruction files reached each agent, rather than assuming it.
+- **Why:** It logs exactly which instruction files reached each agent, so a missing file is seen, not inferred.
+- **Source:** (7) (8)
+- **Accepted risk:** It does **not** fire for an `AGENTS.md` read directly through the Project instructions setting — only for one a `CLAUDE.md` imports or symlinks to — so it cannot confirm an `AGENTS.md`-only project.
+
+**Feature-branch naming is PAF's, not the project's**
+
+- **Decision:** Every feature branch is `feature/<issue-number>-<short-description>`, fixed by the factory and not part of the project instructions. The merge strategy is not project context either: PAF opens the MR/PR but never merges it. As implemented: `skills/paf-implement-issue/SKILL.md` creates the branch and `skills/paf-check-out/SKILL.md` reads the issue number back out of it.
+- **Why:** `check-out` reads the issue number back out of the branch to find the issue and the cost ledger, so the pattern must be the factory's; merging is the developer's.
+- **Source:** PAF design choice; no external source.
+
+**Strict sourcing — no cross-project bleed**
+
+- **Decision:** Project-specific values come **only** from *this* project's instructions and repository. Skills never substitute a value — especially a filename or command — from the operator's memory, another project, or a prior session. If a value a step needs is not defined here, the skill **STOPs and asks the developer** rather than inventing or borrowing one. Each skill states this guardrail inline in its own `Input` section (a deliberate runtime copy), and its verification / pre-merge steps STOP when no command is defined.
+- **Why:** Auto-recalled memories are unrelated background and may name files that do not exist in the current repo.
+- **Source:** PAF design choice; no external source.
 
 ---
 
 ## Sources
 
-All architecture decisions are grounded in the official Claude Code documentation. Inline citations above use these numbers:
+Decisions are grounded in the official Claude Code documentation or an established standard or practice. Inline citations above use these numbers:
 
 1. Subagents — Choose a model. https://code.claude.com/docs/en/sub-agents#choose-a-model
 2. Subagents — Chain subagents / What loads at startup / Available tools (`AskUserQuestion`, `EnterPlanMode`, and `ExitPlanMode` depend on the main conversation's UI/session state and are unavailable to subagents even when listed in `tools` — `ExitPlanMode` unless the subagent's `permissionMode` is `plan`) / Spawn nested subagents (a subagent may spawn subagents up to depth 5, as of v2.1.172). https://code.claude.com/docs/en/sub-agents#chain-subagents
@@ -421,3 +517,4 @@ All architecture decisions are grounded in the official Claude Code documentatio
 20. Agent SDK — Handle approvals and user input, Limitations (each `AskUserQuestion` call supports 1–4 questions with 2–4 options each). https://code.claude.com/docs/en/agent-sdk/user-input#limitations
 21. Hooks — Hooks in skills and agents (skill hooks stay registered for the rest of the session; subagent hooks run only while that subagent runs; same format as settings hooks), a skill's copy of a handler stays separate from identical settings handlers, shell-form commands run via `sh -c`, which expands variables, and `strictPluginOnlyCustomization` (a personal skill keeps no frontmatter hooks under it). https://code.claude.com/docs/en/hooks#hooks-in-skills-and-agents
 22. Subagents — Hooks in subagent frontmatter (hooks of user-level `~/.claude/agents/` and `--agents` subagents run without workspace trust; a project subagent's need it, and a `-p` session does not count) and the scope priority for agents sharing a name. https://code.claude.com/docs/en/sub-agents
+23. Michael Nygard, "Documenting Architecture Decisions", 2011 — the Architecture Decision Record practice (title, context, decision, status, consequences), adapted here into Decision, Why, Source, and Accepted risk. https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions
