@@ -18,10 +18,19 @@ curl -sSL https://raw.githubusercontent.com/PeterAugustinak/agentic-factory/deve
 
 This installs the skills, agents, and hook into your Claude Code config (`~/.claude/`). The hook is registered by the PAF skills and agents themselves, not in `settings.json`, so it runs only where PAF runs: sessions that never invoke a PAF skill are unaffected. Re-running upgrades in place (and removes the `settings.json` hook entry older versions wrote). Requires `git` and `python3` to install, plus an authenticated `gh` (GitHub) or `glab` (GitLab) CLI — whichever matches the target project's `origin` remote — to run the skills. After install, start a new Claude Code session and invoke:
 
+**Setup** (run once per repository):
+
 - `/paf:init` — check and fix a repository's readiness for PAF. Using PAF in a repo for the first time? Run `/paf:init` there first.
+
+**Core skills** (end-to-end workflow, in order):
+
 - `/paf:create-issue` — turn a discussed idea into a structured issue, or several linked issues when it should be split
 - `/paf:implement-issue` — validate, plan, implement, verify, review, and check the acceptance criteria of an approved issue
 - `/paf:check-out` — validate and open an MR/PR for reviewed work
+
+**Helper skills** (specific purposes):
+
+- `/paf:clean-up` — after the MR/PR is merged: switch to the base branch, pull it, and delete the feature branch
 
 To remove PAF (skills, agents, hook, and any hook entry an older version left in `settings.json` — nothing else):
 

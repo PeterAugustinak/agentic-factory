@@ -156,10 +156,21 @@ echo "  skills:  $SKILLS_DIR/<name>   (+ paf-shared)"
 echo "  agents:  $AGENTS_DIR"
 echo "  hook:    $HOOKS_DIR/$HOOK_NAME  (registered by the PAF skills and agents)"
 echo
+setup_skill="paf-init"
+core_skills=(paf-create-issue paf-implement-issue paf-check-out)  # pipeline order (architecture.md §2)
+print_skill() { local cmd; cmd="$(skill_command "$1")"; printf '  /%s\n' "${cmd:-$1}"; }
 echo "Skills — invoke in Claude Code:"
-for s in "${installed_skills[@]}"; do
-  cmd="$(skill_command "$s")"
-  printf '  /%s\n' "${cmd:-$s}"
+echo
+echo "Setup (run once per repository):"
+print_skill "$setup_skill"
+echo
+echo "Core skills (end-to-end workflow, in order):"
+for s in "${core_skills[@]}"; do print_skill "$s"; done
+echo
+echo "Helper skills (specific purposes):"
+for s in "${installed_skills[@]}"; do  # every other installed skill is a helper
+  case " $setup_skill ${core_skills[*]} " in *" $s "*) continue ;; esac
+  print_skill "$s"
 done
 echo
 echo "Start a new Claude Code session (or restart) to pick up the skills."

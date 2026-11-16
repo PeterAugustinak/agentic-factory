@@ -13,6 +13,7 @@ The real scripts run as subprocesses against a scratch config directory
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -28,6 +29,21 @@ OLD_PAF_ENTRY = {
 USER_PRE_ENTRY = {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-guard.sh"}]}
 USER_POST = [{"matcher": "Edit", "hooks": [{"type": "command", "command": "fmt.sh"}]}]
 
+# The installer's closing skill list, exactly as #138 fixes it.
+GROUPED_LISTING = """Skills — invoke in Claude Code:
+
+Setup (run once per repository):
+  /paf:init
+
+Core skills (end-to-end workflow, in order):
+  /paf:create-issue
+  /paf:implement-issue
+  /paf:check-out
+
+Helper skills (specific purposes):
+  /paf:clean-up
+"""
+
 
 class ScriptRunner:
     def setUp(self):
@@ -40,12 +56,12 @@ class ScriptRunner:
         os.makedirs(self.home)
         self.settings = os.path.join(self.config, "settings.json")
 
-    def run_script(self, script):
+    def run_script(self, script, src=REPO_ROOT):
         env = {
             "PATH": os.environ.get("PATH", ""),
             "HOME": self.home,
             "CLAUDE_CONFIG_DIR": self.config,
-            "PAF_LOCAL_SRC": str(REPO_ROOT),
+            "PAF_LOCAL_SRC": str(src),
         }
         proc = subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env)
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -113,6 +129,24 @@ class InstallTests(ScriptRunner, unittest.TestCase):
                 self.run_script(INSTALL)
                 self.assertEqual(self.read_settings(), text)
 
+    def test_lists_skills_in_three_groups(self):
+        out = self.run_script(INSTALL)
+        self.assertIn(GROUPED_LISTING, out)
+
+    def test_an_extra_skill_is_listed_under_helper_skills(self):
+        src = Path(self.tmp, "src")
+        for name in ("skills", "agents", "hooks"):
+            shutil.copytree(REPO_ROOT / name, src / name)
+        shutil.copy(REPO_ROOT / "VERSION", src / "VERSION")
+        extra = src / "skills" / "paf-zz-extra"
+        extra.mkdir()
+        (extra / "SKILL.md").write_text('---\nname: "paf:zz-extra"\n---\n')
+        out = self.run_script(INSTALL, src=src)
+        core, helpers = out.split("Core skills")[1].split("Helper skills (specific purposes):\n")
+        self.assertNotIn("/paf:zz-extra", core)
+        self.assertEqual(helpers.split("\n\n")[0].splitlines(),
+                         ["  /paf:clean-up", "  /paf:zz-extra"])
+
     def test_reinstall_is_idempotent(self):
         self.write_settings({"hooks": {"PreToolUse": [OLD_PAF_ENTRY, USER_PRE_ENTRY]}})
         self.run_script(INSTALL)
@@ -155,7 +189,7 @@ class UninstallTests(ScriptRunner, unittest.TestCase):
     def test_removes_what_the_installer_placed(self):
         self.run_script(INSTALL)
         self.run_script(UNINSTALL)
-        for rel in ("agents/paf", "hooks/paf", "skills/paf-shared", "skills/paf-init"):
+        for rel in ("agents/paf", "hooks/paf", "skills/paf-shared", "skills/paf-init", "skills/paf-clean-up"):
             with self.subTest(path=rel):
                 self.assertFalse(os.path.exists(os.path.join(self.config, rel)))
 

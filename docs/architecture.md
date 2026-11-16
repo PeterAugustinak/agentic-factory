@@ -207,6 +207,12 @@ A record contains no step-by-step flow, no output format, and no command line.
 - **Why:** This three-way split is the human-control architecture: the gaps between the main skills are the mandatory review gates.
 - **Source:** PAF design choice; no external source.
 
+**Three skill kinds: setup, core, helper**
+
+- **Decision:** Every PAF skill is one of three kinds. **Setup** — `init`, run once per repository before the pipeline. **Core** — the three main skills above, the end-to-end workflow in their fixed order. **Helper** — a developer-invoked skill for one specific purpose, outside the pipeline; it invokes no agents and does not report cost (§5). The installer lists the skills in these three groups: `init` and the core skills are named in `scripts/install.sh`, and every other installed skill is listed as a helper automatically; no frontmatter field records the kind.
+- **Why:** The main skills and their order do not change (above), so naming them costs no maintenance, and a skill that is neither setup nor core is a helper by elimination. A frontmatter field would be a second place to state what the installer already knows.
+- **Source:** PAF design choice; no external source.
+
 **In-skill interception mechanisms**
 
 - **Decision:** A skill may also pause mid-run for developer input through two mechanisms: a plan-approval pause (the skill presents a plan and waits for explicit confirmation before implementing) and a structured decision through `AskUserQuestion` (e.g. choosing between two viable approaches, or resolving an ambiguity the skill must not decide alone). How many in-skill interceptions a skill has, and where, belongs to the skill: its `SKILL.md`, and the "Human interception points" section of its `docs/skills/` page. The architecture defines only the mechanisms.
@@ -654,6 +660,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 - **Decision:** Every skill run ends with a single report of the **token cost of that invocation**, except the skills listed here:
   - `init` — a setup and health check run before any feature exists, so there is no issue to key a ledger entry on (below).
+  - helper skills ([Three skill kinds](#human-interception-model)) — they run outside the feature pipeline and invoke no agents, so their cost is near zero and there is no feature to attribute it to.
 
   A new skill reports cost by default; exempting one means adding it to this list with its reason.
 - **Why:** Reporting is the default, so an exemption is a deliberate choice that carries its own reason.
