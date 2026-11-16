@@ -1,5 +1,12 @@
 # Contributing to PAF
 
+## Where documentation goes
+
+- **WHAT** PAF does — steps and their order, output formats, commands, the hook's rules — goes only in the file that runs it (a `SKILL.md`, an agent file, the hook, a script), plus its human page: `docs/skills/<skill>.md` for a skill, `hooks/README.md` for the hook, `agents/README.md` for the agents, `docs/authoring/*.md` for the agent and skill file formats.
+- **WHY** — decisions, their reasons, sources, and accepted risks — goes only in `docs/architecture.md`. Never restate WHAT there; point to the file that implements it.
+- **Deliberate copies** the runtime needs stay: the output-contract block in every agent file (an `@import` does not expand in an agent body), and the strict-sourcing paragraph inline in every `SKILL.md`.
+- **Record format** in `docs/architecture.md`: a bold title, then **Decision**, **Why**, **Source**, and **Accepted risk** (only when one exists) — no step-by-step flow, output format, or command line. Adapted from Michael Nygard, "Documenting Architecture Decisions" (2011); see the introduction of `docs/architecture.md`.
+
 ## Adding a skill
 
 1. Create a directory under `skills/`: `skills/<skill-name>/`
@@ -15,9 +22,9 @@ Invoke after install: `/skill-name`
 1. Create `agents/<agent-name>.md`
 2. Required frontmatter fields: `name`, `description`, `model`, `tools`, and the `hooks` block that registers the `PreToolUse` hook (copy it from any PAF agent; `hooks/README.md`)
 3. Add the agent's `name` to `PAF_AGENTS` in `hooks/PreToolUse-agent-guard.py` — the hook gives no decision to an agent missing from that set
-4. Write a focused system prompt: role, expected input, required output (must follow the output contract in `docs/architecture.md` Section 4)
+4. Write a focused system prompt: role, expected input, required output (must follow the output contract in `docs/authoring/agent-definition-format.md`)
 5. Agents are specialists — no orchestration, no external I/O, no VCS API calls
-6. Document the new agent in `docs/architecture.md` and update `agents/README.md` if needed
+6. Record any new design decision in `docs/architecture.md` as a decision record (never the agent itself — it keeps no roster), and update `agents/README.md` if needed
 
 ## Adding a hook
 
