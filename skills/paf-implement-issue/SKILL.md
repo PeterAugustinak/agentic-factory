@@ -209,6 +209,14 @@ python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-fingerprint.py" record --issue "<
 
 It pins the base commit and records a content fingerprint of every path that differs from it, tracked and untracked, under the user's `~/.claude/paf/` (never in the repository); a re-run overwrites it. If it fails, print its error and continue — `/paf:check-out` finds no fingerprint of this hand-off — either none at all, or only an earlier run's, which matches only if the content is identical to that earlier reviewed state — and otherwise runs its safety-net review as usual (fails safe).
 
+Then save a snapshot of this hand-off, so `/paf:check-out` can show the convention suggester exactly what changed since it:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../paf-shared/paf-snapshot.py" save --issue "<issue-number>"
+```
+
+It stores the working tree — tracked and untracked files, ignored files left out — as git objects under the user's `~/.claude/paf/` (never in the repository: its index, status and object store stay unchanged); a re-run replaces it. If it fails, print its error and continue — `/paf:check-out` then finds no snapshot and makes no convention suggestions.
+
 **13. Report cost (skill).**
 Run the shared cost helper:
 

@@ -22,3 +22,7 @@ The `.md` files in this directory are the current set — each one is self-descr
 scope, role). `docs/architecture.md` §1 records the decisions on how an agent is *shaped* (model selection,
 categories) and deliberately keeps no roster; how to write one, output contract included, is in
 `docs/authoring/agent-definition-format.md`.
+
+One agent is advisory: `convention-suggester` only suggests rules for the project instructions, so a
+caller continues when it fails or returns malformed output (`docs/architecture.md` §5, Malformed-contract
+escalation).

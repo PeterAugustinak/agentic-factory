@@ -23,7 +23,7 @@ Run `/paf:implement-issue <issue-number>`.
 9. **Triage.** `full-stack-dev` decides which findings to apply and applies them. It fixes defects only; a warning that would add behaviour beyond the plan is skipped.
 10. **Re-verify.** `implementation-verifier` runs again; `full-stack-dev` fixes a failure, at most twice. The reviewers are never re-run.
 11. **Acceptance check.** `quality-assurer` checks every acceptance criterion. An unmet one is fixed in the main thread and re-verified, at most twice; then the run stops with `Result: failure`. If the fix needs a must-have item beyond the issue, you are asked whether to add it; no (or no answer) stops the run.
-12. **Hand off.** The changes stay uncommitted. The skill prints Result, How to test (at most three steps), one line each only when they apply (UI not verified, behaviour changes beyond the plan, each skipped error), and Next last, with a blank line between fields. Nothing else. It records a fingerprint so `/paf:check-out` can skip its safety-net review when nothing changed.
+12. **Hand off.** The changes stay uncommitted. The skill prints Result, How to test (at most three steps), one line each only when they apply (UI not verified, behaviour changes beyond the plan, each skipped error), and Next last, with a blank line between fields. Nothing else. It records a fingerprint so `/paf:check-out` can skip its safety-net review when nothing changed, and saves a snapshot of the code under `~/.claude/paf/` (never in the project) so `/paf:check-out` can suggest conventions from what you change afterwards. A failure of either prints its error and the run continues.
 13. **Cost.** The run's cost goes into the feature's cost ledger.
 
 ```text
@@ -47,7 +47,7 @@ Run `/paf:implement-issue <issue-number>`.
   [agent] quality-assurer ---- unmet --> main-thread fix + re-verify (max 2; must-have beyond issue? ask you) --> STOP
         |
         v
-  [skill] short hand-off (uncommitted) --> fingerprint --> cost
+  [skill] short hand-off (uncommitted) --> fingerprint --> snapshot --> cost
 ```
 
 Legend: `[skill]` = orchestration and external I/O done by the skill itself in the main thread; `[agent]` = work delegated to a specialist agent; `[agents]` = several agents; `[skill + human]` = a skill step that pauses for your input; `STOP` = the run halts and hands back to you, to fix the cause and re-run the skill. The diagram reads top to bottom.
@@ -71,4 +71,5 @@ The run is priced from its start mark onward and appended to the per-feature led
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md): how agent output is parsed.
 - [`skills/paf-shared/paf-review-input.py`](../../skills/paf-shared/paf-review-input.py): the reviewers' shared input file.
 - [`skills/paf-shared/paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py): the hand-off fingerprint.
+- [`skills/paf-shared/paf-snapshot.py`](../../skills/paf-shared/paf-snapshot.py): the hand-off snapshot.
 - [`skills/paf-shared/paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py): cost reporting.

@@ -177,7 +177,7 @@ A record contains no step-by-step flow, no output format, and no command line.
 
 **Posted text is never retyped**
 
-- **Decision:** Text whose exact bytes matter is posted from a file, never retyped by the model after the fact. There is one such text: the MR/PR cost section, which must be the cost helper's output verbatim; how `check-out` builds and posts that file is its step 7 (`skills/paf-check-out/SKILL.md`). Only the main thread touches this file; agents receive content inline, or — the code reviewers — through the review input file (§4, Input delivery). `create-issue` posts its body straight from a heredoc.
+- **Decision:** Text whose exact bytes matter is posted from a file, never retyped by the model after the fact. There is one such text: the MR/PR cost section, which must be the cost helper's output verbatim; how `check-out` builds and posts that file is its step 7 (`skills/paf-check-out/SKILL.md`). Only the main thread touches this file; agents receive content inline, or — the code reviewers — through the review input file, and the convention suggester through its own input file (§4, Input delivery). `create-issue` posts its body straight from a heredoc.
 - **Why:** A heredoc retyped in a later turn can differ from its source. `create-issue` has no approval gate whose approved text a file would have to preserve.
 - **Source:** PAF design choice; no external source.
 
@@ -394,23 +394,23 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **Final message as the return channel**
 
-- **Decision:** Every agent returns its result as one machine-parseable YAML block in its final message, and the **skill (main thread)** extracts, parses, and validates it. Malformed or missing output fails loudly and escalates to the developer ([Section 5](#5-loop-cap-escalation-and-cost-reporting)). As implemented: the `## Output` section of every agent ([`agent-definition-format.md`](authoring/agent-definition-format.md), Output contract) and the parsing rules in `skills/paf-shared/output-contract.md`.
+- **Decision:** Every agent returns its result as one machine-parseable YAML block in its final message, and the **skill (main thread)** extracts, parses, and validates it. Malformed or missing output fails loudly and escalates to the developer ([Section 5](#5-loop-cap-escalation-and-cost-reporting)), with one advisory exception there. As implemented: the `## Output` section of every agent ([`agent-definition-format.md`](authoring/agent-definition-format.md), Output contract) and the parsing rules in `skills/paf-shared/output-contract.md`.
 - **Why:** Claude Code has **no native typed return channel** for subagents — a subagent returns results as its final assistant message in plain text — and there is no native schema validation. The contract is machine-checkable only because the skill parses and validates it.
 - **Source:** (2)
 
 ### Input delivery
 
-**In the prompt, read from the project, or — for the code reviewers — the review input file**
+**In the prompt, read from the project, or — for the code reviewers and the convention suggester — an input file**
 
-- **Decision:** A skill passes every agent input as text in the invocation prompt, or names files inside the project root that the agent `Read`s itself. The code reviewers (`implement-issue`'s deep review, `check-out`'s safety net) instead get one shared review input file. Each skill step that invokes an agent states exactly what it passes.
+- **Decision:** A skill passes every agent input as text in the invocation prompt, or names files inside the project root that the agent `Read`s itself. The code reviewers (`implement-issue`'s deep review, `check-out`'s safety net) instead get one shared review input file, and `check-out`'s convention suggester gets an input file of its own. Each skill step that invokes an agent states exactly what it passes.
 - **Why:** A skill that leaves the input open lets the model improvise — and an improvised input breaks the run.
 - **Source:** PAF design choice; no external source.
 
 **Never through any other file outside the project**
 
-- **Decision:** A skill never writes an agent input to a scratchpad, `/tmp`, or any other path outside the project root for the agent to read. The one exception is the **review input file**, user-scoped, written by the shared helper `skills/paf-shared/paf-review-input.py` through `Bash`, not through the `Write` tool. The helper failing stops the run. As implemented: the helper and the review steps of `skills/paf-implement-issue/SKILL.md` and `skills/paf-check-out/SKILL.md`.
-- **Why:** The hook forces a permission prompt on every agent read outside the project root (§3), which stops an otherwise autonomous run. The review input file means the main thread never retypes the input and every reviewer of a run reads the same bytes. It is user-scoped because PAF leaves no trace in the project (§5) — no `.paf/` directory, no ignore or exclude entry — and the hook allows an agent `Read` of exactly that folder (§3). `Write` is avoided because its writes to the protected `.claude` path are never auto-approved.
-- **Source:** (15); #120.
+- **Decision:** A skill never writes an agent input to a scratchpad, `/tmp`, or any other path outside the project root for the agent to read. The two exceptions are the **review input file**, written by the shared helper `skills/paf-shared/paf-review-input.py`, and the **convention suggester's input file**, written by `skills/paf-shared/paf-snapshot.py` as a separate file in the same folder. Both are user-scoped and written through `Bash`, not through the `Write` tool. A review input helper failure stops the run; a convention input failure only skips the suggestions (§5, Convention suggestions). As implemented: the helpers and the review steps of `skills/paf-implement-issue/SKILL.md` and `skills/paf-check-out/SKILL.md`.
+- **Why:** The hook forces a permission prompt on every agent read outside the project root (§3), which stops an otherwise autonomous run. The review input file means the main thread never retypes the input and every reviewer of a run reads the same bytes. It is user-scoped because PAF leaves no trace in the project (§5) — no `.paf/` directory, no ignore or exclude entry — and the hook allows an agent `Read` of exactly that folder (§3). `Write` is avoided because its writes to the protected `.claude` path are never auto-approved. The suggester's file is its own so that neither helper overwrites or clears the other's input.
+- **Source:** (15); #120; #130.
 
 **Verbatim means verbatim**
 
@@ -494,7 +494,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **Confirmation-and-ship gate**
 
-- **Decision:** `check-out` is a **confirmation-and-ship gate**, not a review-and-fix stage: a single safety-net review and one acceptance check, both skipped when nothing changed since `implement-issue`'s hand-off, then the pre-merge validation, then git/VCS finalisation. The pre-merge validation stays the last gate before the commit and the MR/PR. As implemented: `skills/paf-check-out/SKILL.md`.
+- **Decision:** `check-out` is a **confirmation-and-ship gate**, not a review-and-fix stage: a single safety-net review and one acceptance check, both skipped when nothing changed since `implement-issue`'s hand-off, with the advisory convention suggestions under the same condition, then the pre-merge validation, then git/VCS finalisation. The pre-merge validation stays the last gate before the commit and the MR/PR. As implemented: `skills/paf-check-out/SKILL.md`.
 - **Why:** The deep review already ran in `implement-issue`, before the developer's manual review (§2).
 - **Source:** #121 (the gate order, developer's decision).
 
@@ -518,6 +518,19 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 - **Source:** #121 (developer's choice).
 - **Accepted risk:** If the issue's acceptance criteria are edited after the hand-off while the code is unchanged, the fingerprint still matches, `check-out` skips both agents, and the edited criteria are not re-checked. An accepted limit, not a closed hole.
 
+**Hand-off snapshot**
+
+- **Decision:** At the same successful hand-off that pins the fingerprint, `implement-issue` also saves a snapshot of the working tree — tracked and untracked files, ignored files left out — as a git tree. It is built with a temporary index, and every new git object goes to an object directory in the user's `~/.claude/paf/` namespace that reaches the repository's object store as an alternate, so the repository's index, status and object store stay unchanged. It is keyed like the fingerprint, replaced by a re-run of `implement-issue`, and removed with the fingerprint when `check-out` ships; an abandoned one is left in place, with no age-based cleanup. A failed save prints its error and the run continues. As implemented: `skills/paf-shared/paf-snapshot.py` and both skills' `SKILL.md`.
+- **Why:** The fingerprint stores checksums, so it knows which files changed since the hand-off but not what changed; the convention suggester (below) needs the diff. A git tree yields that diff with git alone, standard library only, and git's own environment variables redirect the index and the object store without touching the repository.
+- **Source:** (24) (25); #130 (verified in a scratch repository and a linked worktree).
+- **Accepted risk:** The snapshot refers to the repository's object store through the alternate, and git may prune an object there that only the snapshot still uses — for example a blob that was staged and later replaced(25). The snapshot then cannot be read, and the convention suggestions are skipped with a deviation line; `check-out` itself continues. An accepted limit, not a closed hole.
+
+**Convention suggestions — advisory**
+
+- **Decision:** When the content changed since the hand-off, a snapshot exists, and a project instructions file exists, `check-out` runs `convention-suggester` alongside the safety-net review on the diff between the snapshot and the current code. Its suggestions — general conventions the developer's hand-edits show that the instructions do not state, at most three — are put to the developer one question each, after the acceptance check passes and before the pre-merge validation; **Add** writes the sentence into the project instructions file, and it is committed with the feature. The feature is advisory and never stops a run; without a change, a snapshot, or an instructions file there is no agent, no question, and nothing printed. As implemented: the safety-net and spec-check steps of `skills/paf-check-out/SKILL.md` and `agents/convention-suggester.md`.
+- **Why:** The deep review checks the code against the conventions the project instructions state; every correction the developer makes after the hand-off is about one that is not written there, and unless it reaches the instructions the next feature repeats it. The developer's own **Add** is the only way a rule lands, so a wrong suggestion costs a click, not a rule. Asking before the pre-merge validation keeps that validation the last gate before the commit and the MR/PR.
+- **Source:** #130 (developer's decisions).
+
 **Accepted limits of the safety net when it runs**
 
 - **Decision:** When it runs, the safety net sees the whole branch change against the base (§4, Input delivery), and its framing tells it not to re-litigate the already-reviewed implementation.
@@ -533,7 +546,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **No fix loop, no retry — failures STOP and escalate**
 
-- **Decision:** `check-out` never fixes-and-continues on anything requiring judgement and never retries a check, with two bounded exceptions, each capped at a single attempt and neither a fix loop: the mechanical auto-fix (mutation posture, below) and the isolated re-run of failed tests (flaky tests, below). Any blocker — an `error` from the safety net, an unmet criterion, a failing pre-merge validation, malformed agent output, a failure to open the MR/PR — halts the run and escalates to the developer, who resolves it and re-runs `check-out`. The stop points and the failure output are in `skills/paf-check-out/SKILL.md` (its output step and Escalation section).
+- **Decision:** `check-out` never fixes-and-continues on anything requiring judgement and never retries a check, with two bounded exceptions, each capped at a single attempt and neither a fix loop: the mechanical auto-fix (mutation posture, below) and the isolated re-run of failed tests (flaky tests, below). Any blocker — an `error` from the safety net, an unmet criterion, a failing pre-merge validation, malformed agent output (bar the advisory convention suggester's, Malformed-contract escalation below), a failure to open the MR/PR — halts the run and escalates to the developer, who resolves it and re-runs `check-out`. The stop points and the failure output are in `skills/paf-check-out/SKILL.md` (its output step and Escalation section).
 - **Why:** `check-out` is the final human-controlled finalisation stage, so the developer — not the factory — decides how to resolve a failure.
 - **Source:** PAF design choice; no external source.
 
@@ -647,6 +660,12 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 - **Why:** The whole pipeline depends on the contract, and the raw output makes the failure diagnosable.
 - **Source:** PAF design choice; no external source.
 
+**Advisory exception — `convention-suggester`**
+
+- **Decision:** A missing or malformed report from `convention-suggester`, or a `status` other than `success`, does not stop `check-out`: the convention suggestions are skipped, one deviation line in the final output says so, and the run continues. It is the only agent whose output is exempt from the stop above. As implemented: the safety-net step of `skills/paf-check-out/SKILL.md`.
+- **Why:** The suggestions are an optional improvement to the project instructions, never a gate on shipping work that was already reviewed and accepted; stopping the ship over them would trade the feature for a nicety. The deviation line keeps the skip visible.
+- **Source:** #130 (developer's decision).
+
 **Unclosed fence**
 
 - **Decision:** A block with no closing fence runs to the end of the message, so it is extracted and validated, not treated as missing; if it passes, the run continues and the developer is told the report may be truncated, here and in the run's final report. As implemented: `skills/paf-shared/output-contract.md`.
@@ -731,7 +750,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **User-scoped, never in the project**
 
-- **Decision:** The ledger lives under the user's `~/.claude/` namespace, not in the target repository — no `.paf/` directory, no gitignore entry. The hand-off fingerprints (above) and the reviewers' review input file (§4, Input delivery) share this user scope.
+- **Decision:** The ledger lives under the user's `~/.claude/` namespace, not in the target repository — no `.paf/` directory, no gitignore entry. The hand-off fingerprints and snapshots (above) and the review and convention input files (§4, Input delivery) share this user scope.
 - **Why:** It preserves PAF's project-agnostic principle: installing and running PAF leaves no trace in the project.
 - **Source:** PAF design choice; no external source.
 
@@ -830,3 +849,5 @@ Decisions are grounded in the official Claude Code documentation or an establish
 21. Hooks — Hooks in skills and agents (skill hooks stay registered for the rest of the session; subagent hooks run only while that subagent runs; same format as settings hooks), a skill's copy of a handler stays separate from identical settings handlers, shell-form commands run via `sh -c`, which expands variables, and `strictPluginOnlyCustomization` (a personal skill keeps no frontmatter hooks under it). https://code.claude.com/docs/en/hooks#hooks-in-skills-and-agents
 22. Subagents — Hooks in subagent frontmatter (hooks of user-level `~/.claude/agents/` and `--agents` subagents run without workspace trust; a project subagent's need it, and a `-p` session does not count) and the scope priority for agents sharing a name. https://code.claude.com/docs/en/sub-agents
 23. Michael Nygard, "Documenting Architecture Decisions", 2011 — the Architecture Decision Record practice (title, context, decision, status, consequences), adapted here into Decision, Why, Source, and Accepted risk. https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions
+24. Git — Environment variables (`GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`). https://git-scm.com/docs/git#_environment_variables
+25. git-clone — `--shared` (objects reached through alternates; the warning that pruning the source repository can corrupt a repository that depends on it). https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---shared

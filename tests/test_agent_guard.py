@@ -21,7 +21,7 @@ import sys
 import tempfile
 import unittest
 
-from tests.support import AGENT_GUARD, REPO_ROOT, REVIEW_INPUT, load_module
+from tests.support import AGENT_GUARD, REPO_ROOT, REVIEW_INPUT, SNAPSHOT, load_module
 
 guard = load_module(AGENT_GUARD, "agent_guard")
 
@@ -1284,6 +1284,32 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
         printed = proc.stdout.decode().strip()
         self.assertTrue(printed.startswith("REVIEW_INPUT="))
         self.assertEqual(self.read("Read", {"file_path": printed[len("REVIEW_INPUT="):]}), "allow")
+
+    def test_read_of_the_convention_input_the_snapshot_helper_prints_is_allowed(self):
+        # Ties paf-snapshot.py's INPUT_ROOT to the hook's review_input_dir() (#130).
+        repo = os.path.join(self.project, "repo")
+        os.makedirs(repo)
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": self.home,
+               "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+               "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
+        for args in (["init", "-q", "-b", "develop"], ["commit", "-q", "--allow-empty", "-m", "b"]):
+            subprocess.run(["git", *args], cwd=repo, env=env, check=True, capture_output=True)
+        helper = [sys.executable, str(SNAPSHOT)]
+        subprocess.run(helper + ["save", "--issue", "130"], cwd=repo, env=env,
+                       check=True, capture_output=True)
+        with open(os.path.join(repo, "views.py"), "w") as fh:
+            fh.write("class V: pass\n")
+        proc = subprocess.run(helper + ["write-input", "--issue", "130", "--instructions", "CLAUDE.md"],
+                              cwd=repo, env=env, capture_output=True, check=True)
+        printed = proc.stdout.decode().strip()
+        self.assertTrue(printed.startswith("CONVENTION_INPUT="))
+        self.assertNotEqual(printed, "CONVENTION_INPUT=none")
+        self.assertEqual(
+            self.read("Read", {"file_path": printed[len("CONVENTION_INPUT="):]},
+                      agent="convention-suggester"),
+            "allow",
+        )
 
     def test_grep_and_glob_of_the_review_input_folder_ask(self):
         folder = self.review_input()
