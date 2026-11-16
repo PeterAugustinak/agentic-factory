@@ -24,12 +24,12 @@ A PAF agent file begins with YAML frontmatter using exactly these fields, in thi
 | `name` | Yes | The agent name, matching the file name (e.g. `code-explorer`). Received by hooks as `agent_type`.(2) |
 | `description` | Yes | One sentence stating what the agent does. PAF agents are invoked **explicitly by name** from skills, so this is documentation, not an auto-delegation trigger. |
 | `model` | No (defaults to `inherit`) | The alias from `architecture.md` §1: `haiku`, `sonnet`, or `opus`. Aliases are used, not full model IDs, so the factory tracks model upgrades automatically.(3) |
-| `tools` | No (inherits all if omitted) | The **allowlist** from `architecture.md` §3, comma-separated. Only listed tools are available; every other tool — including all MCP tools — is denied.(4) |
+| `tools` | No (inherits all if omitted) | The **allowlist** derived per `architecture.md` §3 (Scoping an agent), comma-separated. Only listed tools are available; every other tool — including all MCP tools — is denied.(4) |
 | `hooks` | Yes, in PAF | The identical block every PAF agent carries, registering the centralized `PreToolUse` hook for this agent's own tool calls (`hooks/README.md`, `architecture.md` §3). It holds no policy, only the path to the one hook script; the agent's `name` must also be in that script's `PAF_AGENTS` set.(2) |
 
 ### Why the allowlist (`tools`) form, not the denylist
 
-`architecture.md` §3 gives each agent an "Allowed" and a "Blocked" column. PAF encodes the **Allowed** column as the `tools` allowlist because the allowlist is default-deny: only what is listed is available, everything else is blocked.(4) This matches the architecture's intent exactly and is more robust than a denylist (a denylist must enumerate every tool to block and silently admits any tool added to Claude Code later). The "Blocked" column therefore needs no encoding — it is the complement of the allowlist, and is preserved in each file's **Constraints** section as documentation.
+`architecture.md` §3 (Scoping an agent) derives the tools each agent is allowed from its category. PAF encodes them as the `tools` allowlist because the allowlist is default-deny: only what is listed is available, everything else is blocked.(4) This matches the architecture's intent exactly and is more robust than a denylist (a denylist must enumerate every tool to block and silently admits any tool added to Claude Code later). The blocked tools therefore need no encoding — they are the complement of the allowlist, and are preserved in each file's **Constraints** section as documentation.
 
 Sub-tool restrictions the allowlist cannot express (read-only Bash; writes confined to the project; no `gh`) are enforced by the centralized `PreToolUse` hook, per `architecture.md` §3 — not in frontmatter.
 
@@ -37,7 +37,7 @@ Sub-tool restrictions the allowlist cannot express (read-only Bash; writes confi
 
 PAF agents set none of the other supported frontmatter fields (`disallowedTools`, `permissionMode`, `maxTurns`, `color`, `isolation`, `mcpServers`, `effort`, etc.).(2) Reasons:
 
-- `disallowedTools` — unnecessary; the `tools` allowlist already denies everything unlisted.
+- `disallowedTools` — unnecessary; the `tools` allowlist already denies everything unlisted. (If both fields are set, `disallowedTools` is applied first, then `tools` resolves against the remainder.(4))
 - `permissionMode`, `isolation`, `maxTurns`, `effort`, `color` — operational knobs orthogonal to an agent's definition; left at their defaults so behaviour stays predictable and controlled by the skill and the centralized hook.
 - No per-agent hook *policy*: the `hooks` field only registers the one centralized `PreToolUse` script keyed on `agent_type` (`architecture.md` §3); no agent carries hook logic of its own.
 
@@ -52,7 +52,7 @@ Every PAF agent body has the same five sections, in this order:
 1. **`## Role`** — one paragraph: what this agent is and the single responsibility it owns (from `architecture.md` §1).
 2. **`## Input`** — what the caller passes in the invocation prompt, described by *what is received*, never by *who sends it* (a skill, or a developer invoking the agent directly). The agent does not fetch its own work; it is handed context.
 3. **`## Task`** — the concrete steps the agent performs.
-4. **`## Constraints`** — boundaries: the tool scope in plain language (mirroring the "Blocked" column and any hook-enforced sub-tool limits), and the universal rules — agents never orchestrate other agents, never call `gh`, never change git state.
+4. **`## Constraints`** — boundaries: the tool scope in plain language (the complement of the `tools` allowlist, plus any hook-enforced sub-tool limits), and the universal rules — agents never orchestrate other agents, never call `gh`, never change git state.
 5. **`## Output`** — the output contract (below), reproduced with only the `agent:` value substituted (see below).
 
 ---

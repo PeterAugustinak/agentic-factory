@@ -55,7 +55,7 @@ agentic-factory/
 
 **Adding an agent:** `agents/<name>.md` — specialist only, no orchestration. Output must follow the contract in `docs/authoring/agent-definition-format.md`. Carries the `hooks` block, and its name goes into `PAF_AGENTS` in the hook. See `docs/CONTRIBUTING.md`.
 
-**Adding a hook:** `hooks/<EventName>-<purpose>.sh` — must be executable. Update `docs/architecture.md` Section 3 if tool scope changes. See `docs/CONTRIBUTING.md`.
+**Adding a hook:** `hooks/<EventName>-<purpose>.sh` — must be executable. If tool scope changes, record the decision in `docs/architecture.md` §3 and the rule in `hooks/README.md`. See `docs/CONTRIBUTING.md`.
 
 ## Project conventions
 
