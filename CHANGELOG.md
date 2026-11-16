@@ -5,6 +5,17 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.35.1] - 2026-11-16
+
+Documentation only: no skill, agent, hook or script changes behaviour.
+
+### Changed
+
+- Documentation follows a WHAT/WHY rule: what PAF does lives only in the file that runs it and its
+  human page; why lives only in `docs/architecture.md` (#124).
+- `docs/architecture.md` is rewritten as decision records (Decision, Why, Source, Accepted risk),
+  with no flows, formats or commands (#124, #125, #126, #127).
+
 ## [0.35.0] - 2026-11-13
 
 ### Changed
