@@ -48,7 +48,7 @@ READ_ONLY_AGENTS = {"code-explorer", "implementation-planner"}
 # gets no decision (defer), so PAF behaves for it as if it were not installed (#122).
 # Adding a PAF agent means one line here, plus the hook block in its frontmatter.
 PAF_AGENTS = {
-    "code-explorer", "code-simplifier", "conformance-reviewer", "full-stack-dev",
+    "code-explorer", "code-simplifier", "conformance-reviewer", "convention-suggester", "full-stack-dev",
     "implementation-planner", "implementation-verifier", "issue-validator", "issue-writer",
     "quality-assurer", "security-engineer", "senior-engineer-reviewer", "test-coverage-reviewer",
 }
@@ -375,7 +375,9 @@ def review_input_dir() -> str:
 
     `skills/paf-shared/paf-review-input.py` writes the one input file every code
     reviewer of a run reads there — user-scoped, so the project stays untouched — and
-    names this same folder in its `INPUT_ROOT`; the two must agree. Resolved, since
+    `skills/paf-shared/paf-snapshot.py` writes the convention suggester's own input
+    file next to it (#130). Both name this same folder in their `INPUT_ROOT`; all
+    three must agree. Resolved, since
     `within_project()` compares against the resolved target.
     """
     return os.path.realpath(os.path.join(os.path.expanduser("~"), ".claude", "paf", "review-input"))
