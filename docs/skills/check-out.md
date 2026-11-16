@@ -52,7 +52,7 @@ Design rationale (the safety net, the fingerprint skip, the auto-fix posture, th
 
 ## Cost reporting
 
-The run is priced from its start mark onward, then the whole feature (`create-issue`, `implement-issue`, `check-out`, plus any stopped runs) is totalled into the MR/PR description and the ledger is cleared. A successful run ends with this run's cost in the terminal, like the other skills; a stopped run shows none. Details: [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
+The run is priced from its start mark onward, then the whole feature (`create-issue`, `implement-issue`, `check-out`, plus any stopped runs) is totalled into the MR/PR description and the ledger is cleared. A successful run ends with this run's cost in the terminal, like the other skills; a stopped run shows none. How it is priced: [`paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py); design rationale: [`architecture.md` §5, Cost reporting](../architecture.md#cost-reporting).
 
 ## Related files
 
