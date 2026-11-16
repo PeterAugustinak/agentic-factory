@@ -40,6 +40,8 @@ Run `/paf:check-out [optional issue-number]` on the feature branch once you have
   [skill] commit, push --> cost --> open MR/PR --> short output
 ```
 
+Legend: `[skill]` = orchestration and external I/O done by the skill itself in the main thread; `[agent]` = work delegated to a specialist agent; `STOP` = the run halts and hands back to you, to fix the cause and re-run the skill. The diagram reads top to bottom.
+
 ## Human interception points
 
 - **Skill boundary before it**: you review `/paf:implement-issue`'s output; running `/paf:check-out` is the go-ahead.

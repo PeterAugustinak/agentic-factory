@@ -69,7 +69,7 @@ A skill's material is split by *who reads it and when*:
 - **`skills/<name>/references/*.md`** — detailed machine-facing reference the skill loads **on demand** (e.g. the exact cost-ledger record format, contract-parsing edge cases). Referenced from `SKILL.md` by relative path so Claude knows what each file is and when to read it. Keeps `SKILL.md` lean.(10)
 - **`docs/<skill-name>.md`** — human-facing explanation: the orchestration diagram, how the skill works, which agents it uses. **Never loaded by Claude**; it is documentation for the developer. Per-skill docs live here, not inside the skill folder (`architecture.md` decision; issue #5).
 
-Shared, side-effectful `gh`/`git` sequences that recur across skills are factored into **`scripts/`** at the repo root and invoked via Bash — not duplicated in each `SKILL.md` and not pushed into agents (`architecture.md` §2).
+Shared, side-effectful `gh`/`git` sequences that recur across skills are factored into shared helpers in **`skills/paf-shared/`** and invoked via Bash — not duplicated in each `SKILL.md` and not pushed into agents (`architecture.md` §2).
 
 **`skills/paf-shared/` — cross-skill runtime material.** Reference docs and helper scripts that *every* skill needs at run time (the output-contract parsing rules, the cost-reporting helper, the pricing table) live once in `skills/paf-shared/` and are reached from any skill via `${CLAUDE_SKILL_DIR}/../paf-shared/…`. This keeps them DRY and installed alongside the skills (reachable at run time), which `scripts/` — reserved for the installer and dev utilities — is not. `_shared/` has no `SKILL.md`, so Claude Code does not load it as a skill.
 

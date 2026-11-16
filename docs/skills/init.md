@@ -93,6 +93,8 @@ The launch directory is read from the Claude Code process (`$CLAUDE_PID`), becau
   [skill] write, print diff, re-run check (no commit)
 ```
 
+Legend: `[skill]` = work the skill does itself in the main thread; `[human gate]` = a point where you decide. The diagram reads top to bottom.
+
 ## Related files
 
 - [`skills/paf-init/SKILL.md`](../../skills/paf-init/SKILL.md): the skill.
