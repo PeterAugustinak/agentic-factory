@@ -136,9 +136,9 @@ A record contains no step-by-step flow, no output format, and no command line.
 
 **Turn discipline in the plan→build phase**
 
-- **Decision:** The skill instructs the plan→build phase to batch independent tool calls into one turn and not to re-read files already in context — never at the cost of a read the plan needs (`skills/paf-implement-issue/SKILL.md`, steps 4 and 7).
-- **Why:** This phase is the factory's longest main-thread stretch, and every turn resends the whole conversation, so turns — not reads — multiply cost.
-- **Source:** (14)
+- **Decision:** The skill instructs the plan→build phase to keep both turn count and main-thread context size down — batching independent calls, not re-reading, and keeping search output small — never at the cost of a read or a sweep the plan needs (`skills/paf-implement-issue/SKILL.md`, steps 4 and 7).
+- **Why:** This phase is the factory's longest main-thread stretch. Every turn resends the whole conversation, and everything that enters the main-thread context is billed as a cache write and then as a cache read on every later turn, so both the number of turns and the size of what enters the context multiply cost. A measured run spent 30% of its cost on main-thread cache writes, with the same sweep run three times and three large saved tool outputs read back whole.
+- **Source:** (13), (14)
 
 **The main-thread sweep**
 
