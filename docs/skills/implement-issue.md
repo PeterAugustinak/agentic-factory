@@ -63,7 +63,7 @@ When verification, or the acceptance check, still fails after its cap, the run s
 
 ## Cost reporting
 
-The run is priced from its start mark onward and appended to the per-feature ledger that `/paf:check-out` totals. A run that stops early is still recovered into the ledger as an `implement-issue-stopped` row. Details: [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
+The run is priced from its start mark onward and appended to the per-feature ledger that `/paf:check-out` totals. A run that stops early is still recovered into the ledger as an `implement-issue-stopped` row. How it is priced: [`paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py); design rationale: [`architecture.md` §5, Cost reporting](../architecture.md#cost-reporting).
 
 ## Related files
 

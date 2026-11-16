@@ -59,7 +59,7 @@ Legend: `[skill]` = orchestration and external I/O done by the skill itself in t
 
 ## Cost reporting
 
-The run is priced from its start mark onward (the discussion before it is not counted) and appended to the per-feature ledger that `/paf:check-out` totals. A split run's cost and token counts are shared equally across the issues it posted (the remainder goes to the first), and the terminal shows one cost block with the run total. A run that stops before posting has no issue number, so its cost is dropped; a split run whose posting fails part-way records its cost only on the issues already posted. Details: [`architecture.md` §5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
+The run is priced from its start mark onward (the discussion before it is not counted) and appended to the per-feature ledger that `/paf:check-out` totals. A split run's cost and token counts are shared equally across the issues it posted (the remainder goes to the first), and the terminal shows one cost block with the run total. A run that stops before posting has no issue number, so its cost is dropped; a split run whose posting fails part-way records its cost only on the issues already posted. How it is priced: [`paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py); design rationale: [`architecture.md` §5, Cost reporting](../architecture.md#cost-reporting).
 
 ## Related files
 
