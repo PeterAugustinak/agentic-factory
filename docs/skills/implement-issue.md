@@ -50,6 +50,8 @@ Run `/paf:implement-issue <issue-number>`.
   [skill] short hand-off (uncommitted) --> fingerprint --> cost
 ```
 
+Legend: `[skill]` = orchestration and external I/O done by the skill itself in the main thread; `[agent]` = work delegated to a specialist agent; `[agents]` = several agents; `[skill + human]` = a skill step that pauses for your input; `STOP` = the run halts and hands back to you, to fix the cause and re-run the skill. The diagram reads top to bottom.
+
 ## Human interception points
 
 - **Factual validator blocker** (`AskUserQuestion`): only for an issue without the agent section; an uncovered case stops without asking.

@@ -47,6 +47,8 @@ idea discussed --> /paf:create-issue
   [skill] apply fixes --> post via paf-vcs (all parts, in dependency order) --> cost
 ```
 
+Legend: `[skill]` = orchestration and external I/O done by the skill itself in the main thread; `[agent]` = work delegated to a specialist agent; `[human]` and `[skill + human]` = a point where you are asked; `STOP` = the run halts and hands back to you, to fix the cause and re-run the skill. The diagram reads top to bottom.
+
 ## Human interception points
 
 - **Split confirmation**: when the skill proposes a split, you confirm it, change it, or keep one issue.
