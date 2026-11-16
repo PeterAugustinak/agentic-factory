@@ -42,10 +42,10 @@ def frontmatter(path):
 
 
 class FrontmatterRegistrationTests(unittest.TestCase):
-    def test_the_four_skills_and_the_agents_are_found(self):
+    def test_the_skills_and_the_agents_are_found(self):
         self.assertEqual(
             [p.parent.name for p in SKILLS],
-            ["paf-check-out", "paf-create-issue", "paf-implement-issue", "paf-init"],
+            ["paf-check-out", "paf-clean-up", "paf-create-issue", "paf-implement-issue", "paf-init"],
         )
         self.assertTrue(AGENTS)
 
@@ -53,6 +53,13 @@ class FrontmatterRegistrationTests(unittest.TestCase):
         for path in SKILLS + AGENTS:
             with self.subTest(path=str(path.relative_to(REPO_ROOT))):
                 self.assertIn(HOOK_BLOCK, frontmatter(path))
+
+
+class SkillFrontmatterContractTests(unittest.TestCase):
+    def test_clean_up_is_named_and_explicit_invocation_only(self):
+        fm = frontmatter(REPO_ROOT / "skills" / "paf-clean-up" / "SKILL.md")
+        self.assertIn('name: "paf:clean-up"', fm)
+        self.assertIn("disable-model-invocation: true", fm)
 
 
 class CommandResolutionTests(unittest.TestCase):

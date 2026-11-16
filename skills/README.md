@@ -22,9 +22,22 @@ The installer places each skill **flat** at `~/.claude/skills/<skill-name>/`, an
 
 ## Skills in this factory
 
+### Setup (run once per repository)
+
 | Skill | Command | Purpose |
 |-------|---------|---------|
 | `init` | `/paf:init` | Check and fix a repository's readiness for PAF (run first in a new repo) |
+
+### Core skills (end-to-end workflow, in order)
+
+| Skill | Command | Purpose |
+|-------|---------|---------|
 | `create-issue` | `/paf:create-issue` | Produce a structured issue (human part + agent section) from a feature idea — or several linked issues when it should be split |
 | `implement-issue` | `/paf:implement-issue` | Plan and implement a feature from an approved issue |
 | `check-out` | `/paf:check-out` | Review, fix, and post a PR for completed work |
+
+### Helper skills (specific purposes)
+
+| Skill | Command | Purpose |
+|-------|---------|---------|
+| `clean-up` | `/paf:clean-up` | After the MR/PR is merged: switch to the base branch, pull it, and delete the feature branch |
