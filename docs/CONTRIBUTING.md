@@ -32,7 +32,7 @@ Invoke after install: `/skill-name`
 2. Make it executable: `chmod +x hooks/<EventName>-<purpose>.{sh,py}`
 3. The script receives the hook payload as **JSON on stdin** (`tool_name`, `tool_input`, `agent_type`, `cwd`, ...) and `CLAUDE_PROJECT_DIR` in its environment. To block a `PreToolUse` call, print a `permissionDecision: "deny"` object (`hookSpecificOutput`) on stdout, or exit 2. See the Claude Code hook documentation.
 4. Register it through the frontmatter `hooks` field of the skills and agents it must govern, never in `settings.json`, which would run it in every session (`docs/architecture.md` §3)
-5. Update `docs/architecture.md` §3 if the hook changes a tool access scope, and document the hook in `hooks/README.md`
+5. If the hook changes a tool access scope, record the decision in `docs/architecture.md` §3, and document the hook and its rules as implemented in `hooks/README.md`
 
 ## PR process
 
