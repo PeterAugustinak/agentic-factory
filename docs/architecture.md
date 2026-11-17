@@ -490,6 +490,12 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 - **Why:** A loop that cannot converge in two attempts needs the developer's judgement, not more attempts; one cap and one escalation keep the stopping rule the same in every loop. A fixer judging its own fix is not an independent check.
 - **Source:** PAF design choice; no external source.
 
+**Code location in a linked worktree**
+
+- **Decision:** `implement-issue` detects, with git alone, whether it runs in a linked git worktree, and only then names the worktree's top-level folder in every hand-off for built code. It never stops or warns at the start of a run and changes nothing else about it; a failed detection leaves the location out. `check-out` is unchanged. As implemented: the hand-off step of `skills/paf-implement-issue/SKILL.md`.
+- **Why:** A session can start in a worktree PAF did not create, and git refuses to switch to a branch that another worktree has checked out(28), so the developer cannot open the feature branch in their main project folder and has to be told where to review and run the code. The developer chose the hand-off line over stopping at the start of the run. Detection uses git only, so no tool's worktree folder layout is built in and the skill stays project-agnostic: in a linked worktree the git directory and the common git directory differ(27), and printed as absolute, canonical paths(26) they compare as plain text.
+- **Source:** (26) (27) (28); #132 (verified in this repository's main working tree and its linked worktrees, from the top level and from a subdirectory).
+
 ### `check-out` safety-net review and gate
 
 **Confirmation-and-ship gate**
@@ -851,3 +857,6 @@ Decisions are grounded in the official Claude Code documentation or an establish
 23. Michael Nygard, "Documenting Architecture Decisions", 2011 — the Architecture Decision Record practice (title, context, decision, status, consequences), adapted here into Decision, Why, Source, and Accepted risk. https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions
 24. Git — Environment variables (`GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`). https://git-scm.com/docs/git#_environment_variables
 25. git-clone — `--shared` (objects reached through alternates; the warning that pruning the source repository can corrupt a repository that depends on it). https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---shared
+26. git-rev-parse — `--git-dir`, `--git-common-dir`, `--show-toplevel`, and `--path-format=absolute` (the printed paths are absolute and canonical). https://git-scm.com/docs/git-rev-parse
+27. git-worktree — Details (within a linked worktree `$GIT_DIR` points to its private directory and `$GIT_COMMON_DIR` back to the main worktree's `$GIT_DIR`). https://git-scm.com/docs/git-worktree#_details
+28. git-switch — `--ignore-other-worktrees` (`git switch` refuses when the wanted branch is already checked out by another worktree). https://git-scm.com/docs/git-switch
