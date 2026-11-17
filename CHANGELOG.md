@@ -5,6 +5,27 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.36.0] - 2026-11-17
+
+### Added
+
+- `/paf:clean-up`, the first helper skill: after the MR/PR is merged it switches to the base branch,
+  pulls it and deletes the local feature branch (#138).
+- A `convention-suggester` agent in `/paf:check-out`. It reads the developer's edits since
+  `/paf:implement-issue`'s hand-off snapshot (new `paf-snapshot.py`) and suggests up to three
+  conventions the project instructions do not state yet; each is asked as Add or Skip. It is
+  advisory and never stops the run (#130).
+
+### Changed
+
+- The `/paf:implement-issue` hand-off names the code location when the run is in a git worktree
+  (#132).
+- `/paf:implement-issue` leaves what it set up for testing (sample records, files, started
+  services) in place at the hand-off (#133).
+- `/paf:implement-issue`'s planning read rule also limits context: searches print only matches,
+  saved tool output is searched rather than read whole, and a sweep is not re-run with variations
+  (#128).
+
 ## [0.35.1] - 2026-11-16
 
 Documentation only: no skill, agent, hook or script changes behaviour.
