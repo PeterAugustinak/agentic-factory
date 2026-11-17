@@ -496,6 +496,12 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 - **Why:** A session can start in a worktree PAF did not create, and git refuses to switch to a branch that another worktree has checked out(28), so the developer cannot open the feature branch in their main project folder and has to be told where to review and run the code. The developer chose the hand-off line over stopping at the start of the run. Detection uses git only, so no tool's worktree folder layout is built in and the skill stays project-agnostic: in a linked worktree the git directory and the common git directory differ(27), and printed as absolute, canonical paths(26) they compare as plain text.
 - **Source:** (26) (27) (28); #132 (verified in this repository's main working tree and its linked worktrees, from the top level and from a subdirectory).
 
+**What a run set up for testing**
+
+- **Decision:** At every hand-off for built code, success or failure, whatever the run — main thread or agent — set up that the `How to test` steps rely on stays in place, and `How to test` names it; only ignored files, local database records, and running services may stay. A set-up file git reports as untracked is removed before the review, and `How to test` says how to create it. The run removes or stops only what it set up itself and testing does not rely on. As implemented: the hand-off step of `skills/paf-implement-issue/SKILL.md`.
+- **Why:** In a real run the skill seeded a sample record, copied a media file, and started a container to check a new page, then removed them all, so the developer had nothing to open and had to ask for the data again. The developer chose keeping the set-up over a run that never sets anything up. What is kept must not become part of the change: an untracked file would be handed to the reviewers as a created file, recorded in the hand-off fingerprint, and committed by `check-out`; ignored files, database records, and services are none of these. A rule in the skill text keeps the skill project-agnostic — no seed command or project field.
+- **Source:** PAF design choice; #133.
+
 ### `check-out` safety-net review and gate
 
 **Confirmation-and-ship gate**

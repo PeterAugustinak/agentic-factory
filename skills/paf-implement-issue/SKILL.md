@@ -151,6 +151,7 @@ Invoke `full-stack-dev` **once** with **all** aggregated findings, the **issue b
 - A `warning` finding whose fix would change behaviour beyond the approved plan (a new rule, check, rejection, default, output, or side effect) is **skipped**: triage fixes defects, it never extends the feature.
 - The remaining `warning` findings are where it exercises discretion.
 - **Sweep**: any fact, rule, or name it changes must be updated in every place the repository states it, in the same change.
+- **What it set up**: the "What the run set up" rule of step 12, restated — it never removes or stops anything it did not set up itself, leaves in place an ignored file, local database record, or running service it set up, removes any untracked file it set up, and names in its `summary` whatever it set up and left in place, so the `How to test` steps can name it.
 - **Behaviour changes beyond the plan**: its `summary` must **open** with a `Behaviour changes beyond the plan` list — or the single line `None` — followed by the itemised applied-vs-skipped report.
 - The list holds any change to what the code does for a user or caller that the approved plan did not contain (a new rejection, a changed default, output, error, or side effect).
 
@@ -159,7 +160,7 @@ The developer does **not** pre-select fixes here; their manual review after this
 **11. Re-verify (agent).**
 Re-invoke `implementation-verifier` (same scoping rules as step 8, re-deciding whether the change touches UI from the current paths): step 10 may have changed the code, and the tests — and the UI check, when it applies — are the gate.
 - **`status: success`** → continue to step 12.
-- **`status: failure`, retries remaining (< 2 done)** → re-invoke `full-stack-dev` with the verifier's failure output to fix it (instructing it to report any behaviour change beyond the plan that the fix makes), then re-invoke `implementation-verifier`. At most **twice** (initial run + 2 fix-and-reverify cycles) — the same policy as step 8.
+- **`status: failure`, retries remaining (< 2 done)** → re-invoke `full-stack-dev` with the verifier's failure output to fix it (instructing it to report any behaviour change beyond the plan that the fix makes, and restating step 10's set-up rule), then re-invoke `implementation-verifier`. At most **twice** (initial run + 2 fix-and-reverify cycles) — the same policy as step 8.
 - **`status: failure`, retries exhausted** → **STOP**: print the hand-off in its step-12 shape with `Result: failure`, exactly as in step 8.
 
 Do **not** re-run the review agents in this loop, or anywhere else in this invocation: the deep review runs **exactly once** per `/paf:implement-issue` run. The second look at the code is the developer's manual review, backed by `/paf:check-out`'s safety-net review whenever the branch's content changed after the hand-off.
@@ -201,6 +202,12 @@ Next: run /paf:check-out once the tests pass
 - `UI not verified: no UI check command defined` — when the change touches UI (as last decided at step 8 or 11) and the project instructions define no UI check command. The UI was never rendered, so the hand-off must not imply it was verified.
 - `Behaviour changes beyond the plan:` — when step 10 ran and `full-stack-dev`'s list is not `None`, plus any behaviour change a step-11 fix run reported.
 - `Skipped error:` — one line per `severity: error` finding `full-stack-dev` skipped, a skip resting on a contradiction with a Decision or Constraint saying so in its reason. Skipped warnings are never listed.
+
+**What the run set up.** For every hand-off for built code (`How to test` is not `none — nothing was built`), on a success and a failure alike, this governs whatever the main thread or any agent of this run set up to check the work — for example sample records, copied files, or a started service:
+- What the `How to test` steps rely on stays in place: the run never removes or stops it. What may stay is files git ignores, records in a local database, and running services.
+- A set-up file that git reports as untracked (listed by `git ls-files --others --exclude-standard`) is never left in the working tree: remove it as soon as the check that needed it is done, and in any case before the review input file is written (step 9) and before the hand-off. When testing needs such a file, the `How to test` step says how to create it.
+- The `How to test` steps name what is already set up — for example, that the site is running and which sample record to open — within their three steps and with no extra line.
+- The run removes or stops only what it set up itself and the `How to test` steps do not rely on (scratch files, sample records, a started service), and never anything it did not set up itself.
 
 **Worktree detection.** Before printing a hand-off for built code, run:
 
