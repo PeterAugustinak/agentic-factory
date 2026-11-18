@@ -4,11 +4,11 @@ Agent definition files for PAF. Each file defines one specialist agent: its mode
 
 ## What belongs here
 
-One `.md` file per agent, containing YAML frontmatter and a system prompt. Agents are specialists — they own cognitive work (analysis, review, planning) but do not orchestrate other agents.
+One `.md` file per agent, containing YAML frontmatter and a system prompt. Agents are specialists — they own cognitive work (synthesis, building, review, verification) but do not orchestrate other agents.
 
 ## File naming
 
-`<agent-name>.md` — lowercase, hyphenated. Examples: `code-explorer.md`, `issue-writer.md`, `full-stack-dev.md`.
+`<agent-name>.md` — lowercase, hyphenated. Examples: `issue-writer.md`, `full-stack-dev.md`.
 
 The agent's identity is determined by its `name` frontmatter field, not the filename — keep them consistent.
 
