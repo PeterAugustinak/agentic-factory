@@ -499,7 +499,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **One caller-framed safety net**
 
-- **Decision:** `senior-engineer-reviewer` runs as a high-level confirmation pass framed at the call site, never in the agent definition: the diff was already deep-reviewed, so it looks for critical regressions, especially in the developer's hand-edits, reports them as `error`, and reports no warnings. Like the deep reviewers it reads the issue body verbatim from the review input file (§4, Input delivery), and what the issue decides or places out of scope is not a finding — for an issue without the agent section, whatever its body states. `check-out` has no triage, so its gate counts every parsed `error`, and a decided item wrongly flagged as `error` stops the run for the developer to decide. As implemented: the safety-net step of `skills/paf-check-out/SKILL.md`.
+- **Decision:** `senior-engineer-reviewer` runs as a high-level confirmation pass framed at the call site, never in the agent definition: the diff was already deep-reviewed, so it looks for critical regressions, especially in the developer's hand-edits, reports them as `error`, and reports no warnings — except in a no-issue run (No-issue run, below). Like the deep reviewers it reads the issue body verbatim from the review input file (§4, Input delivery), and what the issue decides or places out of scope is not a finding — for an issue without the agent section, whatever its body states. `check-out` has no triage, so its gate counts every parsed `error`, and a decided item wrongly flagged as `error` stops the run for the developer to decide. As implemented: the safety-net step of `skills/paf-check-out/SKILL.md`.
 - **Why:** A permanent "be shallow" instruction in the agent would damage the same agent's deep use in `implement-issue`, and agents are caller-agnostic (§2). The net's purpose is the one slice of code no agent has seen: the developer's hand-edits. `check-out` has no fixer, so a warning could neither be acted on nor usefully printed.
 - **Source:** PAF design choice; no external source.
 - **Accepted risk:** Accepted gap — only the functional lens is applied; the complexity, security, test-coverage, and conformance reviews are not repeated.
@@ -539,9 +539,15 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **The gate is computed by the skill, from severity**
 
-- **Decision:** The skill branches on the parsed `issues[].severity`, not on the agent's `status`: `error` stops the run; a `warning` returned despite the framing is dropped, never printed.
+- **Decision:** The skill branches on the parsed `issues[].severity`, not on the agent's `status`: `error` stops the run; a `warning` returned despite the framing is dropped, never printed — except in a no-issue run, where warnings are listed (No-issue run, below).
 - **Why:** A review agent reports `success` on completion regardless of findings (§4), and this one is not a final-gate agent.
 - **Source:** PAF design choice; no external source.
+
+**No-issue run**
+
+- **Decision:** On a branch with no issue number (not `feature/<n>-...`, and no numeric issue passed), `check-out` prints an INFO line and continues, with no stop and no question. It skips every step that needs an issue — the issue fetch, the hand-off fingerprint check, the acceptance check, and the convention suggestions — and always runs the safety net, framed as a full functional review: real defects are `error` and stop the run as usual, while `warning` findings are listed in the final output. The reviewer reads the review input file as in every run, keyed by a hash of the branch name. The commit and the MR/PR are written from the change, with no issue reference. Behaviour with an issue number is unchanged. As implemented: `skills/paf-check-out/SKILL.md` and `skills/paf-shared/paf-review-input.py`.
+- **Why:** Not every feature has an issue — work done outside PAF, by another developer, or by hand. Without a defined flow, the run stopped at the review input, and an agent told to proceed improvised by pasting the reviewer input into the prompt. Nothing has reviewed such code, so the safety net is its only review and must be a full one, and a warning is the only way the developer learns of a minor defect, so it is listed rather than dropped. A hash of the branch name gives a valid file name for any branch, including one the cost ledger's key rejects and the empty name of a detached HEAD.
+- **Source:** §4 (Input delivery), which routes every code reviewer through the review input file; §5 (Keyed by issue number, or by branch when there is none), which already keys a feature without an issue by its branch; #151.
 
 **No fix loop, no retry — failures STOP and escalate**
 

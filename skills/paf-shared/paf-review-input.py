@@ -19,7 +19,10 @@ marker-delimited blocks —
 
 It lives under the user's `~/.claude/paf/review-input/`, never in the project
 (docs/architecture.md §5), keyed by a hash of the repository root — the same key
-`paf-fingerprint.py` uses, so each worktree gets its own — and the issue number.
+`paf-fingerprint.py` uses, so each worktree gets its own — and the issue number, or,
+in a run with no issue (`check-out` on a branch without one, #151), a hash of the
+branch name, so any branch name — even an empty one on a detached HEAD — gives a
+valid file name. In that mode the issue block states that no issue is linked.
 The agent-guard hook allows an agent `Read` of exactly that folder without a
 prompt (§3). `write` replaces any leftover; `clear` removes the file once the
 reviewers have finished, and each skill also runs it at the start of a run to
@@ -29,6 +32,8 @@ leaves no file: the calling skill stops (§4, Input delivery).
 Usage:
   paf-vcs view-issue <n> | paf-review-input.py write --issue <n> --base <ref>
   paf-review-input.py clear --issue <n>
+  paf-review-input.py write --branch <name> --base <ref>     (no issue; stdin unused)
+  paf-review-input.py clear --branch <name>
 """
 
 import argparse
@@ -83,6 +88,12 @@ Every created and modified file is named here; `Read` each created file and each
 """
 
 
+NO_ISSUE_TEXT = (
+    b"No issue is linked to this change. There are no decisions, scope, or acceptance\n"
+    b"criteria to review it against: review the change on its own.\n"
+)
+
+
 class ReviewInputError(Exception):
     """The review input file cannot be written (git failure, bad input)."""
 
@@ -90,6 +101,18 @@ class ReviewInputError(Exception):
 def _validate_issue(value: str) -> None:
     if not re.fullmatch(r"[0-9]+", value):
         raise ReviewInputError(f"invalid --issue value {value!r}")
+
+
+def _file_key(args):
+    """The file's stem and a label for messages: the issue number when `--issue` is
+    given (validated), otherwise a hash of `--branch` — the no-issue mode."""
+    if args.issue is not None:
+        _validate_issue(args.issue)
+        return args.issue, f"issue {args.issue}"
+    if args.branch is not None:
+        digest = hashlib.sha256(os.fsencode(args.branch)).hexdigest()[:16]
+        return f"branch-{digest}", f"branch {args.branch!r}"
+    raise ReviewInputError("either --issue or --branch is required")
 
 
 def _git(root, *args) -> bytes:
@@ -108,10 +131,10 @@ def repo_root() -> str:
     return os.fsdecode(_git(None, "rev-parse", "--show-toplevel").strip())
 
 
-def input_path(root: str, issue: str) -> Path:
+def input_path(root: str, stem: str) -> Path:
     # Keyed exactly like paf-fingerprint.py's records: distinct roots never share one.
     key = hashlib.sha256(os.fsencode(root)).hexdigest()[:16]
-    return INPUT_ROOT / key / f"{issue}.md"
+    return INPUT_ROOT / key / f"{stem}.md"
 
 
 def _block(name: str, content: bytes, empty: str) -> bytes:
@@ -144,13 +167,16 @@ def build(root: str, base: str, issue_text: bytes) -> bytes:
 
 
 def cmd_write(args) -> None:
-    _validate_issue(args.issue)
-    issue_text = sys.stdin.buffer.read()
-    if not issue_text.strip():
-        raise ReviewInputError("no issue text on stdin (did `paf-vcs view-issue` fail?)")
+    stem, _ = _file_key(args)
+    if args.issue is not None:
+        issue_text = sys.stdin.buffer.read()
+        if not issue_text.strip():
+            raise ReviewInputError("no issue text on stdin (did `paf-vcs view-issue` fail?)")
+    else:
+        issue_text = NO_ISSUE_TEXT
     root = repo_root()
     content = build(root, args.base, issue_text)
-    path = input_path(root, args.issue)
+    path = input_path(root, stem)
     path.parent.mkdir(parents=True, exist_ok=True)
     # mkstemp creates the file readable only by its owner; write-then-rename means a
     # reader never sees a half-written file, and any leftover is replaced whole.
@@ -166,14 +192,14 @@ def cmd_write(args) -> None:
 
 
 def cmd_clear(args) -> None:
-    _validate_issue(args.issue)
-    path = input_path(repo_root(), args.issue)
+    stem, label = _file_key(args)
+    path = input_path(repo_root(), stem)
     path.unlink(missing_ok=True)
     try:
-        path.parent.rmdir()  # only when no other issue's file remains
+        path.parent.rmdir()  # only when no other file remains
     except OSError:
         pass
-    print(f"Review input for issue {args.issue} cleared.")
+    print(f"Review input for {label} cleared.")
 
 
 def main() -> None:
@@ -181,12 +207,14 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     wr = sub.add_parser("write", help="write the review input file (issue text on stdin)")
-    wr.add_argument("--issue", required=True)
+    wr.add_argument("--issue", help="the issue number (digits only)")
+    wr.add_argument("--branch", help="the file key when there is no issue")
     wr.add_argument("--base", required=True)
     wr.set_defaults(func=cmd_write, action="written")
 
     clr = sub.add_parser("clear", help="remove the review input file")
-    clr.add_argument("--issue", required=True)
+    clr.add_argument("--issue", help="the issue number (digits only)")
+    clr.add_argument("--branch", help="the file key when there is no issue")
     clr.set_defaults(func=cmd_clear, action="cleared")
 
     args = parser.parse_args()

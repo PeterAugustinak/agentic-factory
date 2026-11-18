@@ -8,25 +8,30 @@ Ship a reviewed feature: run the final checks, then commit, push, and open the M
 
 ## How to invoke
 
-Run `/paf:check-out [optional issue-number]` on the feature branch once you have reviewed the change. Invoking it is the go-ahead; it asks no confirmation. The issue number comes from the branch name (`feature/<issue>-<…>`); pass it only to override.
+Run `/paf:check-out [optional issue-number]` on the feature branch once you have reviewed the change. Invoking it is the go-ahead; it asks no confirmation. The issue number comes from the branch name (`feature/<issue>-<…>`); pass it only to override. On a branch with no issue number (work done outside PAF or by hand) it prints `INFO: This feature has no issue connected, improvising check-out.` and runs the **no-issue flow** described in each step below, without stopping or asking.
 
 ## How it works
 
-1. **Gather.** The skill reads the issue, computes the change as the branch's diff against the base (committed or not), and compares the branch with `/paf:implement-issue`'s hand-off fingerprint.
+1. **Gather.** The skill reads the issue, computes the change as the branch's diff against the base (committed or not), and compares the branch with `/paf:implement-issue`'s hand-off fingerprint. Without an issue, it reads no issue and checks no fingerprint.
 2. **Safety net.** Only when the content changed since the hand-off (or the fingerprint cannot confirm it did not): `senior-engineer-reviewer` runs as a high-level pass over the whole diff, looking for regressions in your hand-edits. It is asked to report only critical regressions, as errors, and no warnings. It reads the issue verbatim and the change manifest from the review input file, which a helper writes under `~/.claude/paf/review-input/` (never in the project) and deletes once the review is done; a helper failure stops the run. What its Decisions and Constraints, with the binding Approach and Acceptance criteria, decide or put out of scope is not a finding (for an issue without the agent section, whatever its body states). An `error` stops the run. On a fingerprint match it is skipped, silently.
-   Alongside it, when a hand-off snapshot and a project instructions file (`CLAUDE.md` or `AGENTS.md`) exist, `convention-suggester` reads the diff between `/paf:implement-issue`'s hand-off snapshot and the current code, from an input file of its own under `~/.claude/paf/review-input/`, and suggests at most three general conventions your hand-edits show that the instructions do not state yet. It is advisory: if its input cannot be produced, or it fails or returns malformed output, the suggestions are skipped and the run continues.
-3. **Spec check.** Only when the content changed (the same condition as step 2): `quality-assurer` confirms every acceptance criterion; an unmet one stops the run. For an issue with no acceptance criteria (a missing or empty section), it checks against the issue body instead, silently. On a fingerprint match it is skipped, silently: `/paf:implement-issue`'s own acceptance check already passed on that exact content. Once every criterion is met, each convention suggestion is asked as its own question — what was noticed and the suggested sentence — with **Add** (the sentence is written into the project instructions file and committed with the feature) or **Skip** (nothing is written; so is a dismissed question). The fingerprint covers the branch content, not the issue, so criteria edited after the hand-off mean re-running `/paf:implement-issue`.
+   Without an issue it always runs, as a **full functional review**, since nothing reviewed this code before: its review input file says no issue is linked and is keyed by a hash of the branch name, so any branch name works. An `error` stops the run; warnings do not, and are listed in the output.
+   Alongside it, when a hand-off snapshot and a project instructions file (`CLAUDE.md` or `AGENTS.md`) exist, `convention-suggester` reads the diff between `/paf:implement-issue`'s hand-off snapshot and the current code, from an input file of its own under `~/.claude/paf/review-input/`, and suggests at most three general conventions your hand-edits show that the instructions do not state yet. It is advisory: if its input cannot be produced, or it fails or returns malformed output, the suggestions are skipped and the run continues. Without an issue it is skipped.
+3. **Spec check.** Skipped without an issue: there are no acceptance criteria. Otherwise, only when the content changed (the same condition as step 2): `quality-assurer` confirms every acceptance criterion; an unmet one stops the run. For an issue with no acceptance criteria (a missing or empty section), it checks against the issue body instead, silently. On a fingerprint match it is skipped, silently: `/paf:implement-issue`'s own acceptance check already passed on that exact content. Once every criterion is met, each convention suggestion is asked as its own question — what was noticed and the suggested sentence — with **Add** (the sentence is written into the project instructions file and committed with the feature) or **Skip** (nothing is written; so is a dismissed question). The fingerprint covers the branch content, not the issue, so criteria edited after the hand-off mean re-running `/paf:implement-issue`.
 4. **Pre-merge.** The project's full pre-merge command runs. On failure, the project's optional auto-fix command runs once and the check re-runs once. If only named tests still fail, each is re-run on its own once with the project's test command: all passing continues, one still failing stops the run and names it. Any other failure stops the run.
-5. **Commit & push.** Whatever is still uncommitted is committed; the branch is pushed.
+5. **Commit & push.** Whatever is still uncommitted is committed (without an issue, with a message written from the change, no issue reference); the branch is pushed.
 6. **Cost.** The run's cost goes into the feature's cost ledger.
-7. **MR/PR.** The skill totals the feature's cost, removes the hand-off fingerprint and snapshot, and opens the MR/PR from a fixed description template, written to a temporary file so the cost table stays verbatim. Its Deviations section names only what the issue's Approach, Decisions, Constraints, or acceptance criteria state and the code does differently.
-8. **Output.** On success: `Result: success`, the MR/PR link, and one line per deviation from the standard run, only when it applies (the safety-net review ran, the pre-merge auto-fix ran and what it changed, the convention suggestions were skipped), then this run's cost. On any stop: `Result: failure`, `Blocker:`, `Next:`, then the failing findings verbatim, one per line. A blank line separates every field. Nothing else.
+7. **MR/PR.** The skill totals the feature's cost, removes the hand-off fingerprint and snapshot, and opens the MR/PR from a fixed description template, written to a temporary file so the cost table stays verbatim. Its Deviations section names only what the issue's Approach, Decisions, Constraints, or acceptance criteria state and the code does differently. Without an issue there is no `Closes` line and no Deviations section, the title's description is written from the change, and no fingerprint or snapshot is removed; the cost section is keyed by the branch.
+8. **Output.** On success: `Result: success`, the MR/PR link, and one line per deviation from the standard run, only when it applies (the safety-net review ran, the pre-merge auto-fix ran and what it changed, the convention suggestions were skipped), then this run's cost. Without an issue there is no `Safety-net review ran:` line; instead, just before the cost, one line each for what was skipped because there is no issue (issue fetch, fingerprint check, spec check, convention suggestions) and one line per reviewer warning. On any stop: `Result: failure`, `Blocker:`, `Next:`, then the failing findings verbatim, one per line. A blank line separates every field. Nothing else.
 
 ```text
 /paf:check-out
       |
       v
   [skill] read issue, diff vs base, fingerprint check
+      |--- no issue --> INFO line, [agent] senior-engineer-reviewer (full review) --- error --> STOP
+      |                       | (no spec check, no suggestions)
+      |                       v
+      |                [skill] pre-merge (below)
       |--- changed --> [agent] senior-engineer-reviewer --- error --> STOP
       |                + [agent] convention-suggester (advisory, alongside)
       |                       |
@@ -51,9 +56,9 @@ Legend: `[skill]` = orchestration and external I/O done by the skill itself in t
 
 | Agent | Step(s) | What it does here |
 | --- | --- | --- |
-| [`senior-engineer-reviewer`](../../agents/senior-engineer-reviewer.md) | 2 | Safety net, only when the content changed since the hand-off: a high-level review of your hand-edits that reports only critical regressions. |
+| [`senior-engineer-reviewer`](../../agents/senior-engineer-reviewer.md) | 2 | Safety net, only when the content changed since the hand-off: a high-level review of your hand-edits that reports only critical regressions. Without an issue it always runs, as a full functional review. |
 | [`convention-suggester`](../../agents/convention-suggester.md) | 2, 3 | Advisory, alongside the safety net, only when the content changed, the issue number is a plain number, and a hand-off snapshot and a project instructions file exist: suggests at most three conventions your hand-edits show (2), each asked as Add/Skip (3). |
-| [`quality-assurer`](../../agents/quality-assurer.md) | 3 | Spec check, only when the content changed: confirms every acceptance criterion is met. |
+| [`quality-assurer`](../../agents/quality-assurer.md) | 3 | Spec check, only when the content changed: confirms every acceptance criterion is met. Skipped without an issue. |
 
 ## Human interception points
 
