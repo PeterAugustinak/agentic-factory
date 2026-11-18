@@ -265,6 +265,109 @@ class ReviewInputTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn(b"ERROR: review input not cleared", proc.stderr)
 
+    # --- no-issue mode (--branch) ---------------------------------------------
+
+    ODD_BRANCHES = ("feature/x", "we ird;$(x)`\"", "a/./b", "../..", ".", "")
+
+    def branch_path(self, branch):
+        stem = "branch-" + hashlib.sha256(os.fsencode(branch)).hexdigest()[:16]
+        return self.expected_path().parent / f"{stem}.md"
+
+    def test_branch_write_states_no_issue_and_keeps_the_change(self):
+        proc = self.run_helper("write", "--branch", "feature/x", "--base", "develop")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        path = self.branch_path("feature/x")
+        self.assertEqual(proc.stdout.decode().strip(), f"REVIEW_INPUT={path}")
+        content = path.read_bytes()
+        self.assertIn(b"No issue is linked to this change", self.block(content, "ISSUE"))
+        self.assertEqual(self.block(content, "CREATED FILES"), b"new file.py\n")
+        self.assertIn(b"-old line\n", self.block(content, "CHANGE MANIFEST"))
+
+    def test_branch_write_ignores_stdin(self):
+        proc = self.run_helper("write", "--branch", "feature/x", "--base", "develop",
+                               stdin=ISSUE_TEXT)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        with_stdin = self.block(self.branch_path("feature/x").read_bytes(), "ISSUE")
+        self.assertNotIn(b"Add a thing", with_stdin)
+        self.assertEqual(self.run_helper("write", "--branch", "feature/x", "--base",
+                                         "develop").returncode, 0)
+        self.assertEqual(with_stdin,
+                         self.block(self.branch_path("feature/x").read_bytes(), "ISSUE"))
+
+    def test_issue_wins_over_branch_when_both_are_given(self):
+        proc = self.run_helper("write", "--issue", ISSUE, "--branch", "x", "--base",
+                               "develop", stdin=ISSUE_TEXT)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.decode().strip(), f"REVIEW_INPUT={self.expected_path()}")
+        self.assertIn(b"Add a thing", self.expected_path().read_bytes())
+        self.assertFalse(self.branch_path("x").exists())
+
+    def test_clear_messages(self):
+        proc = self.run_helper("clear", "--issue", ISSUE)
+        self.assertEqual(proc.stdout.decode().strip(), f"Review input for issue {ISSUE} cleared.")
+        proc = self.run_helper("clear", "--branch", "feature/x")
+        self.assertEqual(proc.stdout.decode().strip(),
+                         "Review input for branch 'feature/x' cleared.")
+
+    def test_any_branch_name_gives_a_hashed_file_in_the_repo_folder(self):
+        folder = self.expected_path().parent
+        seen = set()
+        for branch in self.ODD_BRANCHES:
+            with self.subTest(branch=branch):
+                proc = self.run_helper("write", "--branch", branch, "--base", "develop")
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                path = self.branch_path(branch)
+                self.assertTrue(path.is_file())
+                self.assertEqual(path.parent, folder)
+                self.assertRegex(path.name, r"^branch-[0-9a-f]{16}\.md$")
+                seen.add(path)
+        self.assertEqual(len(seen), len(self.ODD_BRANCHES))
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), sorted(p.name for p in seen))
+
+    def test_branch_clear_removes_the_file_and_its_empty_folder(self):
+        for branch in self.ODD_BRANCHES:
+            with self.subTest(branch=branch):
+                self.assertEqual(self.run_helper("write", "--branch", branch, "--base",
+                                                 "develop").returncode, 0)
+                proc = self.run_helper("clear", "--branch", branch)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertFalse(self.branch_path(branch).exists())
+                self.assertFalse(self.expected_path().parent.exists())
+
+    def test_branch_and_issue_files_sit_side_by_side(self):
+        self.write_input()
+        self.assertEqual(self.run_helper("write", "--branch", "x", "--base",
+                                         "develop").returncode, 0)
+        conventions = self.expected_path().parent / "7-conventions.md"
+        conventions.write_bytes(b"x")
+        self.assertEqual(self.run_helper("clear", "--branch", "x").returncode, 0)
+        self.assertFalse(self.branch_path("x").exists())
+        self.assertTrue(self.expected_path().exists())
+        self.assertTrue(conventions.exists())
+        self.assertEqual(self.run_helper("write", "--branch", "x", "--base",
+                                         "develop").returncode, 0)
+        self.assertEqual(self.run_helper("clear", "--issue", ISSUE).returncode, 0)
+        self.assertFalse(self.expected_path().exists())
+        self.assertTrue(self.branch_path("x").exists())
+
+    def test_neither_issue_nor_branch_fails(self):
+        proc = self.run_helper("write", "--base", "develop", stdin=ISSUE_TEXT)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn(b"ERROR: review input not written", proc.stderr)
+        self.assertFalse((self.home / ".claude" / "paf" / "review-input").exists())
+        proc = self.run_helper("clear")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn(b"ERROR: review input not cleared", proc.stderr)
+
+    def test_invalid_issue_is_rejected_even_with_a_branch(self):
+        for command, extra in (("write", ["--base", "develop"]), ("clear", [])):
+            with self.subTest(command=command):
+                proc = self.run_helper(command, "--issue", "12a", "--branch", "x", *extra,
+                                       stdin=ISSUE_TEXT)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn(b"invalid --issue", proc.stderr)
+                self.assertFalse((self.home / ".claude" / "paf" / "review-input").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
