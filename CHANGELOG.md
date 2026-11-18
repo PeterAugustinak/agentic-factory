@@ -5,6 +5,33 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.0] - 2026-11-18
+
+### Added
+
+- `/paf:check-out` runs on a branch with no issue number (work done outside PAF or by hand). It
+  prints an `INFO` line and continues without stopping or asking: the safety-net review always runs
+  as a full functional review, the issue fetch, fingerprint check, spec check and convention
+  suggestions are skipped, and the MR/PR has no `Closes` line or Deviations section, with its cost
+  keyed by the branch (#151).
+- Every skill page in `docs/skills/` has an "Agents used" section listing each agent, the steps it
+  runs in and what it does there (#149).
+
+### Changed
+
+- The agent output contract describes the agent's report, not the channel that delivers it: skills
+  parse the report Claude Code hands back, whichever way it arrives (#144).
+
+### Removed
+
+- The unused `code-explorer` and `implementation-planner` agents, with the `PreToolUse` hook's
+  read-only-Bash rules that only they used (`READ_ONLY_AGENTS`).
+
+### Fixed
+
+- An agent report without an `artifacts` key no longer stops the run: the key is read as `[]`
+  (#145).
+
 ## [0.36.0] - 2026-11-17
 
 ### Added
