@@ -49,14 +49,8 @@ A record contains no step-by-step flow, no output format, and no command line.
 
 **Categories drive scope and payload**
 
-- **Decision:** Agents fall into a few stable shapes — Analysis / read, Synthesis, Builder, Review / validation, Verification — and the category drives the agent's tool scope (§3) and its output field usage (§4, Field usage by agent category).
+- **Decision:** Agents fall into a few stable shapes — Synthesis, Builder, Review / validation, Verification — and the category drives the agent's tool scope (§3) and its output field usage (§4, Field usage by agent category).
 - **Why:** Scope and payload follow from the shape of the work, so they are derived from the category rather than decided agent by agent.
-- **Source:** PAF design choice; no external source.
-
-**Analysis / read**
-
-- **Decision:** Explores or reasons over code and returns a summary or plan. Read, plus **read-only Bash** for codebase exploration (§3).
-- **Why:** The work reads and searches code and never changes it.
 - **Source:** PAF design choice; no external source.
 
 **Synthesis**
@@ -258,7 +252,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 **Why the hook is required and not redundant**
 
 - **Decision:** The sub-tool restrictions live in the `PreToolUse` hook (layer 3), not in frontmatter.
-- **Why:** Frontmatter can allow or deny a tool *as a whole* but cannot restrict it conditionally. An agent granted Bash for read-only exploration, and `full-stack-dev` (project-path-only writes), need command- and path-level rules that only a `PreToolUse` hook inspecting `tool_input` can apply.
+- **Why:** Frontmatter can allow or deny a tool *as a whole* but cannot restrict it conditionally. Agents granted Bash (no external I/O, no git-state changes), and `full-stack-dev` (project-path-only writes), need command- and path-level rules that only a `PreToolUse` hook inspecting `tool_input` can apply.
 - **Source:** (4) (7)
 
 **How the hook identifies the active agent**
@@ -300,8 +294,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 **Default-deny allowlist, derived from the agent's category**
 
 - **Decision:** An agent's tool scope is declared as a `tools` **allowlist** containing only what its job needs; every other tool — including all MCP tools — is denied by omission. The allowlist is derived from the agent's category (§1):
-  - **Read / analysis / synthesis / review** → `Read` only; plus `WebSearch`, `WebFetch` only if the job needs external lookups; plus `Grep`, `Glob` when the job requires validating claims against the codebase, or checking a change against it (e.g. finding the nearest existing pattern), rather than reading paths it is already given. The hook path-contains an agent's reads (Project-path containment of reads, below).
-  - **Exploration / planning** → also `Bash`, which the hook restricts to read-only commands (Read-only Bash, below).
+  - **Synthesis / review / validation** → `Read` only; plus `WebSearch`, `WebFetch` only if the job needs external lookups; plus `Grep`, `Glob` when the job requires validating claims against the codebase, or checking a change against it (e.g. finding the nearest existing pattern), rather than reading paths it is already given. The hook path-contains an agent's reads (Project-path containment of reads, below).
   - **Builder** → also `Edit`, `Write`, `Bash`; the hook confines `Edit`/`Write` to the project root, and `Bash` carries no path restriction (Build/test Bash, below).
   - **Verification** → also `Bash` for running tests and the UI check command; no `Edit`/`Write`.
 
@@ -317,17 +310,11 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 - **Why:** The rules as implemented live only in the file that runs them and its human explanation (introduction).
 - **Source:** #124.
 
-**Explicit agent sets in the hook**
+**One explicit agent set in the hook**
 
-- **Decision:** The hook holds two short explicit name sets: `PAF_AGENTS`, every PAF agent, and `READ_ONLY_AGENTS`, the agents whose Bash is read-only. Adding any agent means one line in `PAF_AGENTS` plus the hook block in its frontmatter, and one line in `READ_ONLY_AGENTS` when it uses Bash for exploration only. Every other pattern needs no change when an agent is added.
-- **Why:** The read-only-vs-build/test Bash distinction has **no** runtime-visible discriminator in `tools:` — `code-explorer`, `implementation-planner`, and `implementation-verifier` all declare identical `Read, Bash` — so the hook is the *sole* place that distinction can live. Adding a Bash-using agent is a rare event for PAF's stable, first-party set of agents, so a short explicit set is kept deliberately, rather than a mechanism deriving it from frontmatter.
+- **Decision:** The hook holds one short explicit name set, `PAF_AGENTS`, every PAF agent. Adding an agent means one line in it plus the hook block in its frontmatter; every other pattern needs no change.
+- **Why:** Every PAF agent that holds Bash gets the same Bash rules (Build/test Bash, below), so no per-agent distinction is needed beyond membership. An agent that needs Bash restricted to read-only commands would need a second set: `tools:` cannot express it. PAF had one, with a read-only command allowlist, while it shipped an exploration agent and a planner agent; both were removed once no skill invoked them.
 - **Source:** PAF design choice; no external source.
-
-**Read-only Bash**
-
-- **Decision:** An agent granted Bash for exploration only may run only an explicit set of read-only commands — an **allowlist (default-deny)** — and every other Bash command is denied. The allowlist applies to **every segment** of a compound command, the body of a command substitution included. Output redirection to anywhere but the null device, and a command's **own write flags**, are denied; a command the hook cannot lex is denied. As implemented: `hooks/PreToolUse-agent-guard.py`, explained in `hooks/README.md`.
-- **Why:** Default-deny is required because a denylist of mutating commands inevitably leaks. The allowlist alone is not sufficient, because a command's *first word* does not determine what it runs or writes (#41). Segment boundaries are recognized by a property of the token, not a list of known operators: the lexer returns a run of shell punctuation as one token, so an enumeration silently missed every operator it did not name — four bypasses of the first attempt at this fix — while under the property rule, syntax nobody anticipated still splits the segment and what follows must clear the allowlist on its own. A redirection or a write flag writes however read-only the command is, and what the guard cannot read, it cannot clear.
-- **Source:** #41; PAF design choice.
 
 **Project-path containment of writes**
 
@@ -341,7 +328,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 - **Decision:** An agent's `Read`/`Grep`/`Glob` is allowed inside the project root, in the session's own `tool-results/` directory, and — `Read` only, never `Grep`/`Glob` — on a file under PAF's review input folder, `~/.claude/paf/review-input/`; no other path under `~/.claude/paf/` is opened up. Anything reaching outside all three gets **`ask`**, a forced human permission prompt, not `deny`. How the hook resolves and bounds a read's path is in `hooks/README.md`.
 - **Why:** Claude Code saves a tool result too large to return inline into the session directory and has the model read it back from there, a subagent's into the main session's directory, outside the project root(12). The review input file is the one input every code reviewer of a run reads (§4, Input delivery), kept in user scope so the project stays untouched (§5); a hook `allow` skips the prompt(16), and `.claude` is protected against writes, not reads(15). `ask` is the deliberate choice over `deny` because the hook payload carries no list of the directories added with `--add-dir`/`permissions.additionalDirectories`: a hard deny would make them unreadable to agents, while with `ask` they still work, one prompt at a time. Auto mode's classifier can deny an `ask` but cannot approve it silently(7). Without the hook, an out-of-root read would already prompt in Manual mode(11) — the change is that the decision is now the hook's, explicit, and not one a classifier can make alone. The containment matters most for an agent holding read tools alongside `WebFetch` (currently only `issue-validator`) — the read-plus-outbound shape that would carry data off the machine if it were ever driven to.
 - **Source:** (7) (11) (12) (15) (16), #62, #120.
-- **Accepted risk:** (a) how a hook's `ask` behaves under `bypassPermissions` is undocumented; (b) the root falls back to the payload `cwd` when the exported project directory is unset (writes share this), so an agent that moved the working directory to `/` would widen it — the variable is documented as exported to hooks, so this is a fallback only; (c) secrets inside the root (`.env`) are readable without a prompt; (d) the tool-results directory is located from the payload's `transcript_path` and `session_id`, which is trustworthy only because both fields are set by the harness; (e) `Grep`'s `glob` parameter is not checked, which holds only if ripgrep's `--glob` cannot widen the search root; (f) the read-only *Bash* an exploration agent runs is checked for command names and redirections, not file-argument paths, so it can still read outside the root — the trust model (cooperating Claude sub-agents, not an external adversary) and the agent-level rule that file content is data, never instructions, are the compensating controls; (g) case-variant paths on a case-insensitive filesystem fail safe to `ask`; (h) the review input folder is located from `HOME`, and any file under it is readable by an agent without a prompt — it holds only what the review input helper writes there, which agents already see through the reviewers. These are accepted limits of a lightweight hook, not closed holes.
+- **Accepted risk:** (a) how a hook's `ask` behaves under `bypassPermissions` is undocumented; (b) the root falls back to the payload `cwd` when the exported project directory is unset (writes share this), so an agent that moved the working directory to `/` would widen it — the variable is documented as exported to hooks, so this is a fallback only; (c) secrets inside the root (`.env`) are readable without a prompt; (d) the tool-results directory is located from the payload's `transcript_path` and `session_id`, which is trustworthy only because both fields are set by the harness; (e) `Grep`'s `glob` parameter is not checked, which holds only if ripgrep's `--glob` cannot widen the search root; (f) an agent's Bash is not path-checked (Build/test Bash, below), so it can still read outside the root — the trust model (cooperating Claude sub-agents, not an external adversary) and the agent-level rule that file content is data, never instructions, are the compensating controls; (g) case-variant paths on a case-insensitive filesystem fail safe to `ask`; (h) the review input folder is located from `HOME`, and any file under it is readable by an agent without a prompt — it holds only what the review input helper writes there, which agents already see through the reviewers. These are accepted limits of a lightweight hook, not closed holes.
 
 **No external I/O**
 

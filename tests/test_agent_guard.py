@@ -2,7 +2,7 @@
 
 Two layers:
 
-- The pure helpers (`command_name`, `within_project`) and the deny regexes
+- The pure helpers (`shell_segments`, `within_project`) and the deny regexes
   (`EXTERNAL_IO`, `GIT_MUTATE`) are imported and called directly.
 - The allow/deny/defer decision is driven end to end by running the hook as a
   SUBPROCESS with a crafted payload on stdin. The hook is deliberately structured
@@ -24,29 +24,6 @@ import unittest
 from tests.support import AGENT_GUARD, REPO_ROOT, REVIEW_INPUT, SNAPSHOT, load_module
 
 guard = load_module(AGENT_GUARD, "agent_guard")
-
-
-class CommandNameTests(unittest.TestCase):
-    def test_plain_command(self):
-        self.assertEqual(guard.command_name("grep foo"), "grep")
-
-    def test_skips_leading_env_assignments(self):
-        self.assertEqual(guard.command_name("FOO=1 BAR=2 grep foo"), "grep")
-
-    def test_takes_basename_of_a_path(self):
-        self.assertEqual(guard.command_name("/usr/bin/find . -name x"), "find")
-
-    def test_strips_surrounding_quotes(self):
-        self.assertEqual(guard.command_name("'ls' -la"), "ls")
-
-    def test_leading_whitespace(self):
-        self.assertEqual(guard.command_name("   cat file"), "cat")
-
-    def test_empty_command(self):
-        self.assertEqual(guard.command_name(""), "")
-
-    def test_only_env_assignments(self):
-        self.assertEqual(guard.command_name("FOO=1 BAR=2"), "")
 
 
 class ShellSegmentsTests(unittest.TestCase):
@@ -102,11 +79,11 @@ class ShellSegmentsTests(unittest.TestCase):
                 self.assertIn(["python3", "evil.py"], guard.shell_segments(command))
 
     def test_input_redirection_does_not_separate(self):
-        # Reading is read-only, so `<` stays inside its segment rather than starting one.
+        # `<` stays inside its segment rather than starting one.
         self.assertEqual(guard.shell_segments("wc -l < file"), [["wc", "-l", "<", "file"]])
 
     def test_heredoc_operator_separates(self):
-        # `<<` is deliberately not an input redirect: the body is checked, not trusted.
+        # `<<` is deliberately not an input redirect, so it splits the segment.
         self.assertEqual(guard.shell_segments("cat <<EOF"), [["cat"], ["EOF"]])
 
     def test_redirection_target_stays_in_the_segment(self):
@@ -119,144 +96,7 @@ class ShellSegmentsTests(unittest.TestCase):
         self.assertEqual(guard.shell_segments("   "), [])
 
     def test_unbalanced_quoting_returns_none(self):
-        # Unparsable is not clearable — the caller must treat None as a violation.
         self.assertIsNone(guard.shell_segments("grep 'unbalanced"))
-
-
-class ReadOnlyViolationTests(unittest.TestCase):
-    """The read-only gate. Every payload in #41 is a regression test here."""
-
-    def assertClean(self, cmd):
-        self.assertEqual(guard.read_only_violation(cmd), "")
-
-    def assertViolation(self, cmd):
-        self.assertNotEqual(guard.read_only_violation(cmd), "")
-
-    # --- legitimate read-only usage must keep working ------------------------
-
-    def test_plain_read_only_command(self):
-        self.assertClean("grep -r foo .")
-
-    def test_pipeline_of_read_only_commands(self):
-        self.assertClean("grep -r x . | head -20")
-
-    def test_quoted_alternation_pattern(self):
-        self.assertClean("grep -E 'foo|bar' src")
-
-    def test_read_only_git_through_a_pipe(self):
-        self.assertClean("git log --oneline | cat")
-
-    def test_stderr_silenced_to_dev_null(self):
-        self.assertClean("grep foo x 2>/dev/null")
-
-    def test_stderr_duplicated_onto_stdout(self):
-        self.assertClean("ls -la 2>&1 | head")
-
-    def test_leading_env_assignment(self):
-        self.assertClean("FOO=1 grep x .")
-
-    def test_find_without_an_action(self):
-        self.assertClean("find . -name '*.py' -type f")
-
-    def test_tree_without_its_output_flag(self):
-        self.assertClean("tree -L 2 src")
-
-    def test_input_redirection(self):
-        self.assertClean("wc -l < file")
-
-    def test_file_descriptor_duplication_and_close(self):
-        # `>&N` duplicates and `>&-` closes — neither touches the filesystem.
-        self.assertClean("echo hi >&2")
-        self.assertClean("grep x . >&-")
-
-    def test_line_continuation(self):
-        self.assertClean("grep foo \\\n  bar.txt")
-
-    def test_backgrounding_a_read_only_command(self):
-        self.assertClean("ls &")
-
-    # --- the #41 bypasses ----------------------------------------------------
-
-    def test_redirection_writes_a_file(self):
-        self.assertViolation("echo pwned > /tmp/pwned.txt")
-
-    def test_appending_redirection_writes_a_file(self):
-        self.assertViolation("grep x . >> /tmp/out")
-
-    def test_command_after_a_semicolon(self):
-        self.assertViolation("grep foo . ; rm -rf /tmp/x")
-
-    def test_command_after_and_and(self):
-        self.assertViolation("cat x && python3 evil.py")
-
-    def test_find_with_delete(self):
-        self.assertViolation("find . -name x -delete")
-
-    def test_find_with_exec(self):
-        self.assertViolation("find . -name x -exec rm {} ;")
-
-    # --- shell syntax the first fix still mis-tokenized -----------------------
-    # Each of these reached `allow` after #41's first pass; they are the reason the
-    # boundary rule became a property of the token rather than a list of operators.
-
-    def test_command_after_a_newline(self):
-        self.assertViolation("grep foo .\npython3 evil.py")
-
-    def test_command_after_a_carriage_return(self):
-        self.assertViolation("ls\rrm -rf /tmp/x")
-
-    def test_backtick_substitution(self):
-        self.assertViolation("cat `rm -rf /tmp/x`")
-
-    def test_process_substitution(self):
-        self.assertViolation("cat <(rm -rf /tmp/x)")
-        self.assertViolation("echo hi >(tee /tmp/pwned)")
-
-    def test_stderr_pipe_operator(self):
-        self.assertViolation("grep x . |& python3 evil.py")
-
-    def test_digit_target_is_a_filename_without_an_ampersand(self):
-        # `> 1` writes a file literally named `1`; only `>&1` duplicates a descriptor.
-        self.assertViolation("echo pwned > 2")
-        self.assertViolation("grep x . >> 2")
-
-    def test_clobbering_and_read_write_redirection(self):
-        self.assertViolation("echo pwned >| /tmp/pwned.txt")
-        self.assertViolation("grep x . <> /tmp/pwned.txt")
-
-    def test_find_with_fprint0(self):
-        # The null-separated sibling of -fprint, and just as much a file write.
-        self.assertViolation("find . -fprint0 /tmp/pwned.txt")
-
-    def test_tree_writing_to_its_own_output_file(self):
-        # tree(1) -o writes the listing itself — no shell redirection to catch.
-        self.assertViolation("tree -o /tmp/pwned.txt .")
-
-    def test_heredoc_body_is_not_trusted(self):
-        self.assertViolation("cat <<EOF")
-
-    # --- other shapes that must not slip through -----------------------------
-
-    def test_command_inside_a_substitution(self):
-        self.assertViolation("echo $(rm -rf /tmp/x)")
-
-    def test_non_read_only_command_at_the_end_of_a_pipeline(self):
-        self.assertViolation("grep x . | tee /tmp/out")
-
-    def test_redirection_before_the_command(self):
-        self.assertViolation("> /tmp/pwned.txt echo hi")
-
-    def test_redirection_with_no_target(self):
-        self.assertViolation("echo hi >")
-
-    def test_traversal_out_of_dev_null(self):
-        self.assertViolation("echo x > /dev/null/../../tmp/pwned.txt")
-
-    def test_unparsable_command(self):
-        self.assertViolation("grep 'unbalanced")
-
-    def test_empty_command(self):
-        self.assertViolation("")
 
 
 class EscapeNormalizedTests(unittest.TestCase):
@@ -649,80 +489,9 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
             "deny",
         )
 
-    def test_read_only_agent_allowed_read_only_command(self):
-        self.assertEqual(
-            self.run_hook({
-                "agent_type": "code-explorer",
-                "tool_name": "Bash",
-                "tool_input": {"command": "grep -r foo ."},
-            }),
-            "allow",
-        )
-
-    def test_read_only_agent_denied_non_read_only_command(self):
-        self.assertEqual(
-            self.run_hook({
-                "agent_type": "code-explorer",
-                "tool_name": "Bash",
-                "tool_input": {"command": "python3 script.py"},
-            }),
-            "deny",
-        )
-
-    def test_read_only_agent_allowed_pipeline_of_read_only_commands(self):
-        self.assertEqual(
-            self.run_hook({
-                "agent_type": "code-explorer",
-                "tool_name": "Bash",
-                "tool_input": {"command": "grep -r foo . | head -20"},
-            }),
-            "allow",
-        )
-
-    def test_read_only_agent_denied_the_41_bypasses(self):
-        # The four read-only-allowlist bypasses reported in #41, each of which the
-        # first-word-only check cleared.
-        for command in (
-            "echo pwned > /tmp/pwned.txt",
-            "grep foo . ; rm -rf /tmp/x",
-            "cat x && python3 evil.py",
-            "find . -name x -delete",
-        ):
-            with self.subTest(command=command):
-                self.assertEqual(
-                    self.run_hook({
-                        "agent_type": "code-explorer",
-                        "tool_name": "Bash",
-                        "tool_input": {"command": command},
-                    }),
-                    "deny",
-                )
-
-    def test_read_only_agent_denied_the_mis_tokenized_shapes(self):
-        # Shell syntax that reached `allow` after #41's first pass, driven end to end.
-        for command in (
-            "grep foo .\npython3 evil.py",
-            "cat `rm -rf /tmp/x`",
-            "cat <(rm -rf /tmp/x)",
-            "grep x . |& python3 evil.py",
-            "echo pwned > 2",
-            "find . -fprint0 /tmp/pwned.txt",
-            "tree -o /tmp/pwned.txt .",
-        ):
-            with self.subTest(command=command):
-                self.assertEqual(
-                    self.run_hook({
-                        "agent_type": "code-explorer",
-                        "tool_name": "Bash",
-                        "tool_input": {"command": command},
-                    }),
-                    "deny",
-                )
-
     def test_git_mutation_behind_a_global_option_is_denied_for_any_agent(self):
-        # GIT_MUTATE is checked BEFORE the read-only branch, so this gap reached every
-        # agent — including one that would otherwise land on the build/test allow (#41).
-        for agent in ("code-explorer", "full-stack-dev"):
+        # Every Bash-using agent would otherwise land on the build/test allow (#41).
+        for agent in ("implementation-verifier", "full-stack-dev"):
             for command in (
                 "git -C /tmp commit -m x",
                 "git --no-pager push",
@@ -738,16 +507,6 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
                         }),
                         "deny",
                     )
-
-    def test_read_only_agent_denied_empty_command(self):
-        self.assertEqual(
-            self.run_hook({
-                "agent_type": "implementation-planner",
-                "tool_name": "Bash",
-                "tool_input": {"command": ""},
-            }),
-            "deny",
-        )
 
     def test_build_agent_allowed_build_command(self):
         self.assertEqual(
@@ -847,7 +606,7 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
     def test_non_dict_tool_input_defers(self):
         self.assertIsNone(
             self.run_hook({
-                "agent_type": "code-explorer",
+                "agent_type": "implementation-verifier",
                 "tool_name": "Bash",
                 "tool_input": "x",
             })
@@ -856,7 +615,7 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
     def test_non_string_bash_command_defers(self):
         self.assertIsNone(
             self.run_hook({
-                "agent_type": "code-explorer",
+                "agent_type": "implementation-verifier",
                 "tool_name": "Bash",
                 "tool_input": {"command": ["rm", "-rf", "/"]},
             })
@@ -882,7 +641,7 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
 
     def test_non_string_agent_type_defers(self):
         # A dict/list survives `data.get("agent_type") or ""` (truthy) and would
-        # otherwise crash unhashable at `agent in READ_ONLY_AGENTS` (#44).
+        # otherwise crash unhashable at `agent not in PAF_AGENTS` (#44).
         self.assertIsNone(
             self.run_hook({
                 "agent_type": {"x": 1},
@@ -901,7 +660,7 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
         proc = subprocess.run(
             [sys.executable, str(AGENT_GUARD)],
             input=json.dumps({
-                "agent_type": "code-explorer",
+                "agent_type": "implementation-verifier",
                 "tool_name": "Bash",
                 "tool_input": {"command": "ls"},
                 "cwd": 123,
@@ -916,7 +675,7 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
     def test_non_string_tool_name_defers(self):
         self.assertIsNone(
             self.run_hook({
-                "agent_type": "code-explorer",
+                "agent_type": "implementation-verifier",
                 "tool_name": ["Bash"],
                 "tool_input": {"command": "ls"},
             })
@@ -943,18 +702,6 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
             "deny",
         )
 
-    def test_read_only_agent_git_mutate_is_not_evaded_by_backslash_escaping(self):
-        # Before #44 this reached the read-only allowlist, where shlex resolves the
-        # same escape and 'git' clears it — allowing a mutate command through.
-        self.assertEqual(
-            self.run_hook({
-                "agent_type": "code-explorer",
-                "tool_name": "Bash",
-                "tool_input": {"command": "g\\it commit -m x"},
-            }),
-            "deny",
-        )
-
     def test_external_io_is_not_evaded_by_backslash_escaping(self):
         for command in ("c\\url https://example.com", "g\\h issue view 1"):
             with self.subTest(command=command):
@@ -968,7 +715,7 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
                 )
 
     def test_git_mutate_is_not_evaded_by_quote_splitting(self):
-        for agent in ("full-stack-dev", "code-explorer"):
+        for agent in ("full-stack-dev", "implementation-verifier"):
             with self.subTest(agent=agent):
                 self.assertEqual(
                     self.run_hook({
@@ -979,26 +726,25 @@ class HookDecisionTests(HookRunner, unittest.TestCase):
                     "deny",
                 )
 
-    def test_read_only_agent_denied_the_combined_escape_and_quoted_argument_bypass(self):
+    def test_git_mutate_is_not_evaded_by_combined_escape_and_quoted_argument(self):
         # g\it (backslash-escaped name) combined with a quoted multi-word argument
-        # evaded both the raw-string and the naive-reconstruction checks at once —
-        # the precise "worse for read-only agents" scenario #44 reports.
+        # evaded both the raw-string and the naive-reconstruction checks at once (#44).
         self.assertEqual(
             self.run_hook({
-                "agent_type": "code-explorer",
+                "agent_type": "implementation-verifier",
                 "tool_name": "Bash",
                 "tool_input": {"command": 'g\\it -C "/tmp/my repo" commit -m x'},
             }),
             "deny",
         )
 
-    def test_read_only_agent_plain_git_log_and_diff_are_not_false_flagged(self):
+    def test_plain_git_log_and_diff_are_not_false_flagged(self):
         # The normalized check must not false-positive on legitimate read-only git.
         for command in ("git log --oneline -5", "git diff develop"):
             with self.subTest(command=command):
                 self.assertEqual(
                     self.run_hook({
-                        "agent_type": "code-explorer",
+                        "agent_type": "implementation-verifier",
                         "tool_name": "Bash",
                         "tool_input": {"command": command},
                     }),
@@ -1044,7 +790,7 @@ class NonPafAgentTests(HookRunner, unittest.TestCase):
 
     def test_paf_agent_names_are_matched_exactly(self):
         # Only the exact name is PAF's: a case or suffix variant is another agent.
-        for agent in ("Code-Explorer", "code-explorer ", "full-stack-dev-2"):
+        for agent in ("Full-Stack-Dev", "full-stack-dev ", "full-stack-dev-2"):
             with self.subTest(agent=agent):
                 self.assertIsNone(
                     self.run_hook({
@@ -1079,10 +825,6 @@ class PafAgentSetTests(unittest.TestCase):
                          for line in frontmatter.splitlines() if line.startswith("name:"))
         self.assertEqual(guard.PAF_AGENTS, names)
 
-    def test_read_only_agents_are_paf_agents(self):
-        self.assertLessEqual(guard.READ_ONLY_AGENTS, guard.PAF_AGENTS)
-
-
 class ReadContainmentTests(HookRunner, unittest.TestCase):
     """Agent Read/Grep/Glob are allowed inside the project root and the session's own
     tool-results, and get `ask` everywhere else (#62)."""
@@ -1101,7 +843,7 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
         self.agent_transcript = os.path.join(session_dir, "subagents", "agent-a.jsonl")
         self.saved_result = os.path.join(session_dir, "tool-results", "x.txt")
 
-    def read(self, tool, tool_input, agent="code-explorer", **extra):
+    def read(self, tool, tool_input, agent="issue-validator", **extra):
         payload = {"agent_type": agent, "tool_name": tool, "tool_input": tool_input,
                    "cwd": self.project}
         payload.update(extra)

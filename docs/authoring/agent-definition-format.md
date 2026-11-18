@@ -21,7 +21,7 @@ A PAF agent file begins with YAML frontmatter using exactly these fields, in thi
 
 | Field | Required | Value in PAF |
 |---|---|---|
-| `name` | Yes | The agent name, matching the file name (e.g. `code-explorer`). Received by hooks as `agent_type`.(2) |
+| `name` | Yes | The agent name, matching the file name (e.g. `issue-writer`). Received by hooks as `agent_type`.(2) |
 | `description` | Yes | One sentence stating what the agent does. PAF agents are invoked **explicitly by name** from skills, so this is documentation, not an auto-delegation trigger. |
 | `model` | No (defaults to `inherit`) | The alias from `architecture.md` §1: `haiku`, `sonnet`, or `opus`. Aliases are used, not full model IDs, so the factory tracks model upgrades automatically.(3) |
 | `tools` | No (inherits all if omitted) | The **allowlist** derived per `architecture.md` §3 (Scoping an agent), comma-separated. Only listed tools are available; every other tool — including all MCP tools — is denied.(4) |
@@ -31,7 +31,7 @@ A PAF agent file begins with YAML frontmatter using exactly these fields, in thi
 
 `architecture.md` §3 (Scoping an agent) derives the tools each agent is allowed from its category. PAF encodes them as the `tools` allowlist because the allowlist is default-deny: only what is listed is available, everything else is blocked.(4) This matches the architecture's intent exactly and is more robust than a denylist (a denylist must enumerate every tool to block and silently admits any tool added to Claude Code later). The blocked tools therefore need no encoding — they are the complement of the allowlist, and are preserved in each file's **Constraints** section as documentation.
 
-Sub-tool restrictions the allowlist cannot express (read-only Bash; writes confined to the project; no `gh`) are enforced by the centralized `PreToolUse` hook, per `architecture.md` §3 — not in frontmatter.
+Sub-tool restrictions the allowlist cannot express (writes confined to the project; no `gh`; no git-state changes) are enforced by the centralized `PreToolUse` hook, per `architecture.md` §3 — not in frontmatter.
 
 ### Fields deliberately not used
 
@@ -59,7 +59,7 @@ Every PAF agent body has the same five sections, in this order:
 
 ## Output contract
 
-This is the **canonical copy** of the output contract. `skills/paf-shared/output-contract.md` holds the same schema with the rules a skill parses it by; the decisions behind it are in `architecture.md` §4. Because Claude Code does not expand `@path` imports inside an agent body — the body is delivered as a raw system prompt, verified empirically (an agent given `@file` syntax in its body sees the literal string, never the file's content)(5) — the contract block cannot be referenced from a shared file at runtime. Each agent file therefore reproduces the block below. The opening instruction sentence and the schema's fields and their ordering are copied exactly; the `agent:` value is set to that agent's own name (e.g. `agent: "code-explorer"`) instead of the `"<agent-name>"` placeholder; and an agent may add its own payload sentence after the opening sentence (e.g. "Your primary payload is …") and adapt the schema comments to its own output. If the contract ever changes, it changes here and in `skills/paf-shared/output-contract.md`, and the agent files are updated to match.
+This is the **canonical copy** of the output contract. `skills/paf-shared/output-contract.md` holds the same schema with the rules a skill parses it by; the decisions behind it are in `architecture.md` §4. Because Claude Code does not expand `@path` imports inside an agent body — the body is delivered as a raw system prompt, verified empirically (an agent given `@file` syntax in its body sees the literal string, never the file's content)(5) — the contract block cannot be referenced from a shared file at runtime. Each agent file therefore reproduces the block below. The opening instruction sentence and the schema's fields and their ordering are copied exactly; the `agent:` value is set to that agent's own name (e.g. `agent: "issue-writer"`) instead of the `"<agent-name>"` placeholder; and an agent may add its own payload sentence after the opening sentence (e.g. "Your primary payload is …") and adapt the schema comments to its own output. If the contract ever changes, it changes here and in `skills/paf-shared/output-contract.md`, and the agent files are updated to match.
 
 Every agent body's **`## Output`** section contains exactly this instruction and block (with `agent:` set to the file's own name):
 
@@ -83,7 +83,6 @@ Each agent's **Output** section names which field carries its primary payload, b
 
 - **Builder** → `artifacts` is the primary payload; `issues` usually `[]`.
 - **Review / validation** → `issues` is the primary payload; `artifacts` is `[]`. `status` is `success` on completion regardless of what was found. The one exception is a **final gate** review (a spec-conformance check that the skill treats as a STOP point): it sets `status: failure` when the work does not meet the criteria, and states this in its own Output section.
-- **Analysis / read** → `summary` is the primary payload; `artifacts` and `issues` usually `[]`.
 - **Synthesis** → the produced document is the `summary` payload; no write access, so `artifacts` is `[]`.
 - **Verification** → `status` plus `issues` (the failures) are the primary payload.
 
