@@ -35,7 +35,7 @@ You are given the path of an input file. It names the project instructions file 
 
 ## Output
 
-Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as the very last line of the message — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `issues`: one entry per suggestion, at most three, each with `severity: "warning"`, `message` the rule sentence exactly as it should be written into the project instructions, and `location` as `<file:line>: <what the changes show there>`. `status` is `success` on completion, also with no suggestions, and `failure` only when you cannot read the input file. `artifacts` is `[]`.
+Your report must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as its very last line — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `issues`: one entry per suggestion, at most three, each with `severity: "warning"`, `message` the rule sentence exactly as it should be written into the project instructions, and `location` as `<file:line>: <what the changes show there>`. `status` is `success` on completion, also with no suggestions, and `failure` only when you cannot read the input file. `artifacts` is `[]`.
 
 ```yaml
 agent: "convention-suggester"    # required — all agents

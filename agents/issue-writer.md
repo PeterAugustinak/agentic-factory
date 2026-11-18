@@ -69,7 +69,7 @@ If every subsection would be empty, the section holds the single line `None.`
 
 ## Output
 
-Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as the very last line of the message — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `summary`: place the **full drafted issue** there — the title plus the complete body defined in *Task → Issue template* above, and suggested labels — formatted as markdown, not a meta-description of it. `issues` holds one `warning` per `Undecided:` decision, or `[]`. `artifacts` is `[]`.
+Your report must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as its very last line — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `summary`: place the **full drafted issue** there — the title plus the complete body defined in *Task → Issue template* above, and suggested labels — formatted as markdown, not a meta-description of it. `issues` holds one `warning` per `Undecided:` decision, or `[]`. `artifacts` is `[]`.
 
 ```yaml
 agent: "issue-writer"            # required — all agents

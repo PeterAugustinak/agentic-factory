@@ -63,7 +63,7 @@ Then list every **decision** the issue needs that the developer has not stated o
 Invoke the `issue-writer` agent explicitly by name, passing the clarified idea, the relevant discussion, and the developer's answers — confirmed input only. It has no tools beyond Read and does not post anything — it returns a draft only. In a split run, invoke it once per part, passing that part's idea, discussion and confirmed answers.
 
 **3. Parse the agent output (skill).**
-Apply the shared parsing rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md` to the agent's final message: extract the **last** fenced ` ```yaml ` block (an unclosed one runs to the end of the message and is flagged), validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure — never proceed on a guessed parse. The drafted issue (title, body, suggested labels) is in `summary`.
+Apply the shared parsing rules in `${CLAUDE_SKILL_DIR}/../paf-shared/output-contract.md` to the agent's report: extract the **last** fenced ` ```yaml ` block (an unclosed one runs to the end of the report and is flagged), validate its keys and enum values, and **STOP + escalate** (quoting the raw output) on any failure — never proceed on a guessed parse. The drafted issue (title, body, suggested labels) is in `summary`.
 
 `Undecided:` warnings are not asked now and the draft is not redrafted; step 5 routes them with the validator's findings. Go straight to validation.
 
