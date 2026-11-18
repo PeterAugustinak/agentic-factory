@@ -52,6 +52,20 @@ Run `/paf:implement-issue <issue-number>`.
 
 Legend: `[skill]` = orchestration and external I/O done by the skill itself in the main thread; `[agent]` = work delegated to a specialist agent; `[agents]` = several agents; `[skill + human]` = a skill step that pauses for your input; `STOP` = the run halts and hands back to you, to fix the cause and re-run the skill. The diagram reads top to bottom.
 
+## Agents used
+
+| Agent | Step(s) | What it does here |
+| --- | --- | --- |
+| [`issue-validator`](../../agents/issue-validator.md) | 2 | Only for an issue without the `## For implementation agent` line: checks the approach's technical validity against official docs and the repository, and its completeness. |
+| [`implementation-verifier`](../../agents/implementation-verifier.md) | 7, 10, 11 | Runs the project's test command scoped to the changed area, plus the UI check command for a UI change; re-runs after each fix. |
+| [`senior-engineer-reviewer`](../../agents/senior-engineer-reviewer.md) | 8 | Reviews functional correctness. |
+| [`code-simplifier`](../../agents/code-simplifier.md) | 8 | Reviews for unnecessary complexity. |
+| [`security-engineer`](../../agents/security-engineer.md) | 8 | Reviews security. |
+| [`test-coverage-reviewer`](../../agents/test-coverage-reviewer.md) | 8 | Reviews for meaningful test coverage. |
+| [`conformance-reviewer`](../../agents/conformance-reviewer.md) | 8 | Reviews conformance to project rules, framework features and repository patterns. |
+| [`full-stack-dev`](../../agents/full-stack-dev.md) | 9, 10 | Triages the review findings and applies the worthwhile ones (9); fixes a re-verify failure (10). |
+| [`quality-assurer`](../../agents/quality-assurer.md) | 11 | Checks every acceptance criterion against the changed files. |
+
 ## Human interception points
 
 - **Factual validator blocker** (`AskUserQuestion`): only for an issue without the agent section; an uncovered case stops without asking.

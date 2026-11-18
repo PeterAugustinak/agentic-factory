@@ -47,6 +47,14 @@ Run `/paf:check-out [optional issue-number]` on the feature branch once you have
 
 Legend: `[skill]` = orchestration and external I/O done by the skill itself in the main thread; `[agent]` = work delegated to a specialist agent; `[skill + human]` = a skill step that pauses for your input; `STOP` = the run halts and hands back to you, to fix the cause and re-run the skill. The diagram reads top to bottom.
 
+## Agents used
+
+| Agent | Step(s) | What it does here |
+| --- | --- | --- |
+| [`senior-engineer-reviewer`](../../agents/senior-engineer-reviewer.md) | 2 | Safety net, only when the content changed since the hand-off: a high-level review of your hand-edits that reports only critical regressions. |
+| [`convention-suggester`](../../agents/convention-suggester.md) | 2, 3 | Advisory, alongside the safety net, only when the content changed, the issue number is a plain number, and a hand-off snapshot and a project instructions file exist: suggests at most three conventions your hand-edits show (2), each asked as Add/Skip (3). |
+| [`quality-assurer`](../../agents/quality-assurer.md) | 3 | Spec check, only when the content changed: confirms every acceptance criterion is met. |
+
 ## Human interception points
 
 - **Skill boundary before it**: you review `/paf:implement-issue`'s output; running `/paf:check-out` is the go-ahead.

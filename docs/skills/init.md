@@ -44,6 +44,10 @@ It takes no argument. The installer ends with the same hint: *"Using PAF in a re
 
 `init` does not report cost. It is on the exemption list in [`architecture.md` §5](../architecture.md#cost-reporting), because it has no issue to attribute cost to.
 
+## Agents used
+
+`init` calls no agents.
+
 ## Which instructions file loads
 
 This follows [the Claude Code memory docs](https://code.claude.com/docs/en/memory#agents-md):
