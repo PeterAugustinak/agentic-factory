@@ -422,7 +422,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **Uniform schema**
 
-- **Decision:** One schema for every agent: every field is always present, and collections are `[]` when not applicable. The schema itself is in [`agent-definition-format.md`](authoring/agent-definition-format.md) (Output contract) and `skills/paf-shared/output-contract.md`.
+- **Decision:** One schema for every agent: every field is always present, and collections are `[]` when not applicable. The schema itself is in [`agent-definition-format.md`](authoring/agent-definition-format.md) (Output contract) and `skills/paf-shared/output-contract.md`. A skill reading a report defaults only a missing `artifacts` key (§5, Malformed-contract escalation).
 - **Why:** It keeps parsing predictable and improves agent adherence — a fixed template is followed more reliably than conditional fields.
 - **Source:** PAF design choice; no external source.
 
@@ -668,9 +668,15 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **Defensive parsing**
 
-- **Decision:** The skill extracts the **last** fenced YAML block from an agent's report and validates its required keys and enum values; on any missing block, parse error, missing key, or invalid enum value it **stops and escalates to the developer, including the agent's raw output**. It never proceeds on a partial or guessed parse. As implemented: `skills/paf-shared/output-contract.md`.
+- **Decision:** The skill extracts the **last** fenced YAML block from an agent's report and validates its required keys and enum values; on any missing block, parse error, missing required key, or invalid enum value it **stops and escalates to the developer, including the agent's raw output**. It never proceeds on a partial or guessed parse. As implemented: `skills/paf-shared/output-contract.md`.
 - **Why:** The whole pipeline depends on the contract, and the raw output makes the failure diagnosable.
 - **Source:** PAF design choice; no external source.
+
+**Missing `artifacts` defaults to `[]`**
+
+- **Decision:** A report without an `artifacts` key is read as `artifacts: []`, silently — no notice and no deviation line. It is the only key defaulted; `agent`, `status`, `summary` and `issues` stay required, and agents are still told to always include `artifacts`. As implemented: `skills/paf-shared/output-contract.md`.
+- **Why:** No skill reads `artifacts`, so nothing is lost when it is missing, yet the omission stopped a run after the code was built, tested and reviewed; prompting with the full schema has not prevented it. `issues` is not defaulted because, as the last key, its absence is how a report cut off before it is caught (Unclosed fence, below).
+- **Source:** #145 (developer's decision), from saved transcripts: of about 104 agent reports (2026-10-10 to 2026-11-17), 2 omitted a required key, both `artifacts`, both from a read-only agent.
 
 **Advisory exception — `convention-suggester`**
 
