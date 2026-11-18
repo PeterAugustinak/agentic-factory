@@ -392,11 +392,11 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 ### Delivery mechanism
 
-**Final message as the return channel**
+**Agent report as the return contract**
 
-- **Decision:** Every agent returns its result as one machine-parseable YAML block in its final message, and the **skill (main thread)** extracts, parses, and validates it. Malformed or missing output fails loudly and escalates to the developer ([Section 5](#5-loop-cap-escalation-and-cost-reporting)), with one advisory exception there. As implemented: the `## Output` section of every agent ([`agent-definition-format.md`](authoring/agent-definition-format.md), Output contract) and the parsing rules in `skills/paf-shared/output-contract.md`.
-- **Why:** Claude Code has **no native typed return channel** for subagents — a subagent returns results as its final assistant message in plain text — and there is no native schema validation. The contract is machine-checkable only because the skill parses and validates it.
-- **Source:** (2)
+- **Decision:** Every agent returns its result as one machine-parseable YAML block — its report — and the **skill (main thread)** extracts, parses, and validates it. The contract defines what the report is, never the channel that delivers it. Malformed or missing output fails loudly and escalates to the developer ([Section 5](#5-loop-cap-escalation-and-cost-reporting)), with one advisory exception there. As implemented: the `## Output` section of every agent ([`agent-definition-format.md`](authoring/agent-definition-format.md), Output contract) and the parsing rules in `skills/paf-shared/output-contract.md`.
+- **Why:** Claude Code has **no native typed return channel** for subagents and no native schema validation: a subagent's result reaches its caller as plain text, through `SubagentHandback` in auto mode — provided only there, to subagents the Agent tool runs locally other than forks — and as its last assistant message otherwise. A contract that named one channel conflicted with the other: in auto mode an agent got two delivery instructions and once handed back a placeholder with no report (#144). The contract is machine-checkable only because the skill parses and validates it.
+- **Source:** (2), (29)
 
 ### Input delivery
 
@@ -668,7 +668,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **Defensive parsing**
 
-- **Decision:** The skill extracts the **last** fenced YAML block from an agent's final message and validates its required keys and enum values; on any missing block, parse error, missing key, or invalid enum value it **stops and escalates to the developer, including the agent's raw output**. It never proceeds on a partial or guessed parse. As implemented: `skills/paf-shared/output-contract.md`.
+- **Decision:** The skill extracts the **last** fenced YAML block from an agent's report and validates its required keys and enum values; on any missing block, parse error, missing key, or invalid enum value it **stops and escalates to the developer, including the agent's raw output**. It never proceeds on a partial or guessed parse. As implemented: `skills/paf-shared/output-contract.md`.
 - **Why:** The whole pipeline depends on the contract, and the raw output makes the failure diagnosable.
 - **Source:** PAF design choice; no external source.
 
@@ -680,7 +680,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **Unclosed fence**
 
-- **Decision:** A block with no closing fence runs to the end of the message, so it is extracted and validated, not treated as missing; if it passes, the run continues and the developer is told the report may be truncated, here and in the run's final report. As implemented: `skills/paf-shared/output-contract.md`.
+- **Decision:** A block with no closing fence runs to the end of the report, so it is extracted and validated, not treated as missing; if it passes, the run continues and the developer is told the report may be truncated, here and in the run's final report. As implemented: `skills/paf-shared/output-contract.md`.
 - **Why:** That is what CommonMark specifies for an unclosed fence, so it is not a guess at the block's boundary; stopping on one threw away complete reports.
 - **Source:** (19)
 - **Accepted risk:** The closing fence is the only sign a report was not cut off. `issues` is the last key, so a cut before it fails on a missing key and a cut inside a quoted value fails to parse, but a cut between two `issues` entries validates with findings lost. Telling the developer surfaces that case rather than closing it.
@@ -866,3 +866,4 @@ Decisions are grounded in the official Claude Code documentation or an establish
 26. git-rev-parse — `--git-dir`, `--git-common-dir`, `--show-toplevel`, and `--path-format=absolute` (the printed paths are absolute and canonical). https://git-scm.com/docs/git-rev-parse
 27. git-worktree — Details (within a linked worktree `$GIT_DIR` points to its private directory and `$GIT_COMMON_DIR` back to the main worktree's `$GIT_DIR`). https://git-scm.com/docs/git-worktree#_details
 28. git-switch — `--ignore-other-worktrees` (`git switch` refuses when the wanted branch is already checked out by another worktree). https://git-scm.com/docs/git-switch
+29. Tools reference — `SubagentHandback` (delivers a subagent's final report to the conversation that receives its result; provided only in auto mode, to subagents the Agent tool runs locally other than forks). https://code.claude.com/docs/en/tools-reference

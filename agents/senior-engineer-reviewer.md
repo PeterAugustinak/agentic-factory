@@ -33,7 +33,7 @@ You are given the implemented change to review — the relevant files and/or dif
 
 ## Output
 
-Your final message must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as the very last line of the message — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `issues` (your findings); `artifacts` is `[]`.
+Your report must be **exactly one fenced ` ```yaml ` block** conforming to the schema below, closed by a ` ``` ` line as its very last line — no prose before or after it. Every field is always present; collections are `[]` when not applicable. Your primary payload is `issues` (your findings); `artifacts` is `[]`.
 
 ```yaml
 agent: "senior-engineer-reviewer" # required — all agents
