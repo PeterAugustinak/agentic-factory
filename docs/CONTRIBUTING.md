@@ -13,7 +13,7 @@
 2. Add `skills/<skill-name>/SKILL.md` following `docs/authoring/skill-definition-format.md`
 3. Required frontmatter: `description` (what + when), `disable-model-invocation: true` — factory skills are explicit-invocation only — and the `hooks` block that registers the `PreToolUse` hook (copy it from any PAF skill; `hooks/README.md`). Never set `context: fork` (a forked skill runs as a subagent and cannot orchestrate agents).
 4. Skills are orchestrators — they invoke agents, enforce human gates, and handle VCS I/O. Every skill also reports cost, except those exempted in `docs/architecture.md` §5. No cognitive work in skill files, except the main-thread exceptions documented in `docs/architecture.md` §2.
-5. Document the new skill in `skills/README.md`, and add its human-facing explanation (diagram, flow) in `docs/skills/<skill-name>.md`
+5. Document the new skill in `skills/README.md`, and add its human-facing explanation (diagram, flow) in `docs/skills/<skill-name>.md`, with an `## Agents used` section directly after `## How it works`: a table of every agent the skill invokes (agent linked to its file, the page's step numbers that call it, what it does in this skill), or one line saying the skill calls no agents
 
 Invoke after install: `/skill-name`
 

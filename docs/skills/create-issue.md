@@ -49,6 +49,13 @@ idea discussed --> /paf:create-issue
 
 Legend: `[skill]` = orchestration and external I/O done by the skill itself in the main thread; `[agent]` = work delegated to a specialist agent; `[human]` and `[skill + human]` = a point where you are asked; `STOP` = the run halts and hands back to you, to fix the cause and re-run the skill. The diagram reads top to bottom.
 
+## Agents used
+
+| Agent | Step(s) | What it does here |
+| --- | --- | --- |
+| [`issue-writer`](../../agents/issue-writer.md) | 3, 5 | Drafts the issue from confirmed input only (3), and redrafts it once per update with your answers and the fixes (5). |
+| [`issue-validator`](../../agents/issue-validator.md) | 4, 5 | Checks the draft's factual claims against official docs and the repository, and that every behaviour case is covered (4); re-checks only the changed claims after a redraft (5). |
+
 ## Human interception points
 
 - **Split confirmation**: when the skill proposes a split, you confirm it, change it, or keep one issue.

@@ -29,6 +29,10 @@ If any command fails, the skill prints its output and stops without running the 
 
 Out of scope: the remote branch is not deleted, and there is no merge check, platform query, or confirmation prompt.
 
+## Agents used
+
+`clean-up` calls no agents.
+
 ## Orchestration
 
 ```text
