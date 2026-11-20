@@ -5,6 +5,23 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.0] - 2026-11-20
+
+### Changed
+
+- `/paf:implement-issue` starts every agent except `full-stack-dev` as a headless
+  `claude -p --agent` run (new `paf-headless.py`); the agents of one step run side by side from one
+  Bash call. A run that is stopped, fails or is denied is re-run once through the Agent tool, and
+  without `claude` on `PATH` every agent uses the Agent tool. Headless runs are priced into the run
+  that started them, and the `PreToolUse` hook governs them like the same agent as a subagent
+  (#154).
+- `/paf:implement-issue` records its end-of-run bookkeeping (worktree check, fingerprint, snapshot,
+  cost) in one Bash call (#155).
+- `/paf:create-issue` asks only about crucial decisions, those that change the Goal or the
+  acceptance criteria. Other choices go into a new `### Open decisions` subsection, which never
+  blocks posting; `/paf:implement-issue` settles them in plan mode and lists them in the plan
+  (#156).
+
 ## [0.37.0] - 2026-11-18
 
 ### Added
