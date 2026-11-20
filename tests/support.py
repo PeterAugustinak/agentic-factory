@@ -8,7 +8,8 @@ the installer ships. `skills/paf-shared/paf-vcs` is a Bash script, and
 `skills/paf-shared/paf-fingerprint.py`, `skills/paf-shared/paf-review-input.py` and
 `skills/paf-shared/paf-snapshot.py` are defined by what git reports in a real
 repository, so their tests run the shipped file as a subprocess rather than
-loading it.
+loading it. `skills/paf-shared/paf-headless.py` starts and signals processes, so
+its tests run it as a subprocess too, against a stub `claude` on `PATH`.
 """
 
 import importlib.util
@@ -23,6 +24,7 @@ FINGERPRINT = REPO_ROOT / "skills" / "paf-shared" / "paf-fingerprint.py"
 REVIEW_INPUT = REPO_ROOT / "skills" / "paf-shared" / "paf-review-input.py"
 SNAPSHOT = REPO_ROOT / "skills" / "paf-shared" / "paf-snapshot.py"
 READINESS = REPO_ROOT / "skills" / "paf-shared" / "paf-readiness.py"
+HEADLESS = REPO_ROOT / "skills" / "paf-shared" / "paf-headless.py"
 INSTALL = REPO_ROOT / "scripts" / "install.sh"
 UNINSTALL = REPO_ROOT / "scripts" / "uninstall.sh"
 

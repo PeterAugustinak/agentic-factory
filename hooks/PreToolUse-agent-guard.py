@@ -4,7 +4,9 @@
 
 Registered by the frontmatter `hooks` field of the PAF skills and the PAF agents,
 never by settings.json, so it runs only where PAF runs: for the main thread once a
-PAF skill was invoked, and for a PAF agent's own calls (#122).
+PAF skill was invoked, and for a PAF agent's own calls (#122) — as a subagent, or as
+a headless `claude -p --agent <name>` session, where `agent_type` is set on every
+call, so the same agent rules apply (#154).
 
 Keyed on the `agent_type` field of the PreToolUse payload, it returns an explicit
 permission decision for every call it recognizes, so vetted factory calls run

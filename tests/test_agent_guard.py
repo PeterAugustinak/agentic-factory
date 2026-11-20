@@ -1134,5 +1134,57 @@ class ReadContainmentTests(HookRunner, unittest.TestCase):
                 )
 
 
+class HeadlessAgentSessionTests(HookRunner, unittest.TestCase):
+    """A headless `claude -p --agent <name>` session (#154) is its own session: its
+    transcript is `<project-dir>/<session_id>.jsonl` and `agent_type` is set on every
+    call. The hook applies the same rules to it as to that agent as a subagent."""
+
+    def setUp(self):
+        super().setUp()
+        sessions = tempfile.TemporaryDirectory()
+        self.addCleanup(sessions.cleanup)
+        self.session_id = "0b6e1c1e-headless"
+        session_dir = os.path.join(os.path.realpath(sessions.name), self.session_id)
+        os.makedirs(os.path.join(session_dir, "tool-results"))
+        self.transcript = session_dir + ".jsonl"
+        self.saved_result = os.path.join(session_dir, "tool-results", "x.txt")
+
+    def call(self, tool, tool_input, agent="code-simplifier"):
+        return self.run_hook({
+            "agent_type": agent, "tool_name": tool, "tool_input": tool_input,
+            "cwd": self.project, "session_id": self.session_id,
+            "transcript_path": self.transcript,
+        })
+
+    def test_read_inside_the_project_is_allowed(self):
+        self.assertEqual(self.call("Read", {"file_path": os.path.join(self.project, "a.py")}), "allow")
+
+    def test_read_of_its_own_saved_tool_results_is_allowed(self):
+        self.assertEqual(self.call("Read", {"file_path": self.saved_result}), "allow")
+
+    def test_read_outside_the_project_asks(self):
+        self.assertEqual(self.call("Read", {"file_path": "/etc/hosts"}), "ask")
+
+    def test_read_of_the_review_input_folder_is_allowed(self):
+        path = os.path.join(self.home, ".claude", "paf", "review-input", "54.md")
+        self.assertEqual(self.call("Read", {"file_path": path}), "allow")
+
+    def test_git_state_change_is_denied(self):
+        self.assertEqual(
+            self.call("Bash", {"command": "git stash list"}, agent="implementation-verifier"), "deny"
+        )
+
+    def test_external_io_is_denied(self):
+        self.assertEqual(
+            self.call("Bash", {"command": "gh issue list"}, agent="implementation-verifier"), "deny"
+        )
+
+    def test_test_command_is_allowed(self):
+        self.assertEqual(
+            self.call("Bash", {"command": "python3 -m unittest"}, agent="implementation-verifier"),
+            "allow",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

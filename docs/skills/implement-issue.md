@@ -12,7 +12,7 @@ Run `/paf:implement-issue <issue-number>`.
 
 ## How it works
 
-1. **Read.** The skill fetches the issue via `paf-vcs`. An issue with no acceptance criteria (a missing or empty section) stops the run at once with `Result: failure`.
+1. **Read.** The skill fetches the issue via `paf-vcs`. An issue with no acceptance criteria (a missing or empty section) stops the run at once with `Result: failure`. It also checks whether `claude` is on `PATH`, and reads the Bash timeout limit for the agent steps.
 2. **Validate.** Only for an issue without the `## For implementation agent` line: `issue-validator` checks it, and the skill posts its findings and asks you whether a factual blocker is folded into the plan or stops the run. An uncovered behaviour case always stops it.
 3. **Plan.** In plan mode the skill starts from the agent section's Context and Scope of changes as a hint (the real code wins where they differ, unreported), and sweeps every place a changed fact is stated. It builds only what the issue states; a must-have item the issue missed is listed in its own plan part for your approval. Only something the code makes impossible stops the run with `Result: failure`.
 4. **Approve.** The plan opens with a short summary (what changes and where), then any must-have items beyond the issue, with the exact edits below it. You approve it or ask for changes.
@@ -25,6 +25,8 @@ Run `/paf:implement-issue <issue-number>`.
 11. **Acceptance check.** `quality-assurer` checks every acceptance criterion. An unmet one is fixed in the main thread and re-verified, at most twice; then the run stops with `Result: failure`. If the fix needs a must-have item beyond the issue, you are asked whether to add it; no (or no answer) stops the run.
 12. **Hand off.** The changes stay uncommitted. The skill prints Result, How to test (at most three steps), one line each only when they apply (code location, UI not verified, behaviour changes beyond the plan, each skipped error), and Next last, with a blank line between fields. Nothing else. The code location line, `Code location: <worktree top-level folder> (git worktree)`, comes directly after How to test, only when the run is in a linked git worktree and something was built, on a success or a failure; if the detection fails the line is left out and the run continues. What the run set up for How to test (ignored files, local database records, running services) stays in place, and How to test names it; a set-up file git reports as untracked is removed before the review, with How to test saying how to create it. The run removes or stops only what it set up itself and testing does not need, never anything else, on a success or a failure. It records a fingerprint so `/paf:check-out` can skip its safety-net review when nothing changed, and saves a snapshot of the code under `~/.claude/paf/` (never in the project) so `/paf:check-out` can suggest conventions from what you change afterwards. A failure of either prints its error and the run continues.
 13. **Cost.** The run's cost goes into the feature's cost ledger.
+
+**How agents are started.** Every agent except `full-stack-dev` is started as a headless `claude -p --agent <name>` run by [`paf-headless.py`](../../skills/paf-shared/paf-headless.py). All agents of one step run side by side from one Bash call, and their reports come back together in the same turn, with the same prompts and input as through the Agent tool. Each run is prompt-free and limited to its agent's tools, and it is stopped before the Bash time limit and when you interrupt the call. A run that is stopped, fails, or hits a permission denial is re-run once through the Agent tool, so you get the same prompt as before. When `claude` is not on `PATH`, every agent is started through the Agent tool. `full-stack-dev` is always started through the Agent tool.
 
 ```text
 /paf:implement-issue <n>
@@ -77,12 +79,13 @@ When verification, or the acceptance check, still fails after its cap, the run s
 
 ## Cost reporting
 
-The run is priced from its start mark onward and appended to the per-feature ledger that `/paf:check-out` totals. A run that stops early is still recovered into the ledger as an `implement-issue-stopped` row. How it is priced: [`paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py); design rationale: [`architecture.md` §5, Cost reporting](../architecture.md#cost-reporting).
+The run is priced from its start mark onward, its headless agent runs included, and appended to the per-feature ledger that `/paf:check-out` totals. A run that stops early is still recovered into the ledger as an `implement-issue-stopped` row. How it is priced: [`paf-report-cost.py`](../../skills/paf-shared/paf-report-cost.py); design rationale: [`architecture.md` §5, Cost reporting](../architecture.md#cost-reporting).
 
 ## Related files
 
 - [`agents/`](../../agents/): `issue-validator`, `implementation-verifier`, the five reviewers, `full-stack-dev`, and `quality-assurer`.
 - [`skills/paf-shared/output-contract.md`](../../skills/paf-shared/output-contract.md): how agent output is parsed.
+- [`skills/paf-shared/paf-headless.py`](../../skills/paf-shared/paf-headless.py): starts agents as headless runs.
 - [`skills/paf-shared/paf-review-input.py`](../../skills/paf-shared/paf-review-input.py): the reviewers' shared input file.
 - [`skills/paf-shared/paf-fingerprint.py`](../../skills/paf-shared/paf-fingerprint.py): the hand-off fingerprint.
 - [`skills/paf-shared/paf-snapshot.py`](../../skills/paf-shared/paf-snapshot.py): the hand-off snapshot.
