@@ -45,6 +45,14 @@ later starts there. A marker with no feature key (create-issue before posting,
 or a legacy bare-timestamp marker) cannot be attributed to a ledger and is
 discarded.
 
+Headless agent runs are part of the run that started them. An agent started by
+`paf-headless.py` as a `claude -p --agent` run is a session of its own, with its
+own transcript. Its id is logged under the parent session before it starts
+(`register_child`), and `transcript_paths` returns its transcripts with the
+parent's, so `record` and a stopped row price it into the parent run's row, at
+the same pricing.json rates as every other message — never from the run's own
+`total_cost_usd`.
+
 The feature key. A feature is keyed by its issue number when it has one, and by
 its branch name otherwise — not every feature has an issue, and a missing or
 malformed issue number never stops a command: it falls back to the branch, and
@@ -106,7 +114,7 @@ def _is_number(value) -> bool:
     return isinstance(value, str) and value.isascii() and value.isdigit()
 
 
-def _is_safe(value) -> bool:
+def is_safe(value) -> bool:
     """A `_SAFE` name that is not '.' or '..', which would escape the ledger directory."""
     return isinstance(value, str) and bool(_SAFE.match(value)) and value not in (".", "..")
 
@@ -114,7 +122,7 @@ def _is_safe(value) -> bool:
 def _validate(name: str, value: str, digits_only: bool = False) -> None:
     if value is None:
         return
-    ok = _is_number(value) if digits_only else _is_safe(value)
+    ok = _is_number(value) if digits_only else is_safe(value)
     if not ok:
         sys.exit(f"ERROR: invalid --{name} value {value!r}")
 
@@ -200,13 +208,35 @@ def load_config() -> dict:
     return {"models": models, "usd_to_eur": cfg["usd_to_eur"]}
 
 
-def transcript_paths(session_id: str) -> list[Path]:
-    """Return the session's transcripts: the main one PLUS every subagent
-    transcript — or an empty list when the session has none. Claude Code stores a
-    spawned subagent's messages in a SEPARATE file under
-    <project>/<session-id>/subagents/... — not in the main transcript — so pricing
-    only the main file would miss all subagent (reviewer, builder, verifier, ...)
-    token usage, which typically dominates a skill run."""
+def child_path(session: str) -> Path:
+    """The session's child-session log — one session id per headless agent run
+    `paf-headless.py` started from it. Not a `*.start` file, so the marker sweeps
+    never pick it up."""
+    return MARK_ROOT / f"{session}.children"
+
+
+def register_child(session: str, child: str) -> None:
+    """Record `child` as a headless run of `session`, so its transcript is priced
+    into `session`'s runs. Called before the run starts, so a run that is stopped
+    and records no result is still priced."""
+    if not (is_safe(session) and is_safe(child)):
+        raise ValueError(f"invalid session id {session!r} or {child!r}")
+    path = child_path(session)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as fh:
+        fh.write(child + "\n")
+
+
+def read_children(session: str) -> list[str]:
+    """The session's registered child session ids, in order; unsafe lines are skipped."""
+    path = child_path(session)
+    if not path.exists():
+        return []
+    return [line.strip() for line in path.read_text().splitlines() if is_safe(line.strip())]
+
+
+def _session_files(session_id: str) -> list[Path]:
+    """One session's own transcripts: its main file plus every subagent file."""
     mains = glob.glob(str(Path.home() / ".claude" / "projects" / "*" / f"{session_id}.jsonl"))
     if not mains:
         return []
@@ -216,6 +246,24 @@ def transcript_paths(session_id: str) -> list[Path]:
     # Subagent transcripts (recursively, in case of nested subagents).
     subs = glob.glob(os.path.join(project, session_id, "**", "*.jsonl"), recursive=True)
     return [Path(main)] + [Path(s) for s in subs]
+
+
+def transcript_paths(session_id: str) -> list[Path]:
+    """Return the session's transcripts: the main one PLUS every subagent
+    transcript PLUS those of its headless agent runs — or an empty list when the
+    session has no main transcript. Claude Code stores a spawned subagent's
+    messages in a SEPARATE file under <project>/<session-id>/subagents/... — not
+    in the main transcript — so pricing only the main file would miss all
+    subagent (reviewer, builder, verifier, ...) token usage, which typically
+    dominates a skill run. A headless `claude -p --agent` run is a session of its
+    own, persisted under its own id, which `register_child` logged; the time slice
+    then keeps each of its messages in the run that started it."""
+    paths = _session_files(session_id)
+    if not paths:
+        return []
+    for child in read_children(session_id):
+        paths.extend(_session_files(child))
+    return paths
 
 
 def find_transcripts(session_id: str) -> list[Path]:
@@ -528,7 +576,7 @@ def close_marker(path: Path, config: dict, now: datetime) -> None:
     attributable = (
         m["start"] is not None and m["start"].tzinfo is not None
         and key is not None
-        and all(_is_safe(m[k]) for k in ("session", "skill", "project"))
+        and all(is_safe(m[k]) for k in ("session", "skill", "project"))
     )
     if not attributable:
         print(f"NOTE: open marker {path.name} carries no valid attribution (issue or branch, session, skill, project or start missing or malformed) — its stopped run's cost cannot be attributed; discarded.")

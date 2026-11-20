@@ -1165,6 +1165,110 @@ class StoppedRunTests(CliTestCase):
         self.assertIn("No cost ledger found", out)
         self.assertFalse(cost.mark_path("gone", "implement-issue").exists())
 
+class ChildSessionTests(CliTestCase):
+    """Headless agent runs (#154) are sessions of their own, logged under the parent
+    session; their transcripts are priced into the parent run's row, sliced by time
+    like every other message. `Path.home()` is redirected so transcripts are found
+    under a scratch `~/.claude/projects/`."""
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.dir / "home"
+        self.projects = self.home / ".claude" / "projects" / "proj"
+        self.projects.mkdir(parents=True)
+        self.now = None
+        for target, name, value in ((Path, "home", lambda: self.home),
+                                    (cost, "utc_now", lambda: self.now)):
+            patcher = mock.patch.object(target, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def transcript(self, relpath, *messages):
+        path = self.projects / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as fh:
+            for i, (ts, inp) in enumerate(messages):
+                fh.write(json.dumps(record(ts, "claude-sonnet-5", mid=f"{relpath}-{i}", input_tokens=inp)) + "\n")
+        return path
+
+    def at(self, ts):
+        self.now = cost.parse_ts(ts)
+
+    def rows(self):
+        path = cost.ledger_path(self.PROJECT, self.ISSUE)
+        if not path.exists():
+            return []
+        return [(e["skill"], e["tokens"]["input"]) for e in map(json.loads, path.read_text().splitlines())]
+
+    def test_register_and_read_children(self):
+        cost.register_child("parent", "child-1")
+        cost.register_child("parent", "child-2")
+        self.assertEqual(cost.read_children("parent"), ["child-1", "child-2"])
+        self.assertEqual(cost.read_children("other"), [])
+
+    def test_unsafe_ids_are_rejected(self):
+        for session, child in (("../x", "c"), ("p", "a/b"), ("p", ".."), ("p", "")):
+            with self.subTest(session=session, child=child):
+                with self.assertRaises(ValueError):
+                    cost.register_child(session, child)
+
+    def test_a_registered_child_adds_no_stopped_row_and_is_not_counted_twice(self):
+        self.transcript("parent.jsonl", ("2026-11-20T09:00:00+00:00", 1),
+                        ("2026-11-20T10:00:30+00:00", 2))
+        self.transcript("child-1.jsonl", ("2026-11-20T10:01:00+00:00", 10))
+        cost.register_child("parent", "child-1")
+        cost.register_child("parent", "child-1")
+        self.at("2026-11-20T10:00:00+00:00")
+        self.run_command(cost.cmd_mark, session="parent", skill="implement-issue",
+                         issue=self.ISSUE, project=self.PROJECT)
+        self.at("2026-11-20T10:05:00+00:00")
+        self.run_command(cost.cmd_record, session="parent", skill="implement-issue",
+                         issue=self.ISSUE, project=self.PROJECT, since=None)
+        self.assertEqual(self.rows(), [("implement-issue", 12)])
+
+    def test_transcript_paths_include_children_and_their_subagents(self):
+        main = self.transcript("parent.jsonl", ("2026-11-20T10:00:00+00:00", 1))
+        child = self.transcript("child-1.jsonl", ("2026-11-20T10:01:00+00:00", 10))
+        nested = self.transcript("child-1/subagents/agent-a.jsonl", ("2026-11-20T10:02:00+00:00", 100))
+        cost.register_child("parent", "child-1")
+        cost.register_child("parent", "missing-child")  # never started: no transcript, skipped
+        self.assertEqual(sorted(cost.transcript_paths("parent")), sorted([main, child, nested]))
+
+    def test_no_main_transcript_means_none(self):
+        self.transcript("child-1.jsonl", ("2026-11-20T10:01:00+00:00", 10))
+        cost.register_child("parent", "child-1")
+        self.assertEqual(cost.transcript_paths("parent"), [])
+
+    def test_record_prices_a_child_run_into_the_parent_row(self):
+        self.transcript("parent.jsonl", ("2026-11-20T09:00:00+00:00", 1),
+                        ("2026-11-20T10:00:30+00:00", 2))
+        self.transcript("child-1.jsonl", ("2026-11-20T10:01:00+00:00", 10))
+        cost.register_child("parent", "child-1")
+        self.at("2026-11-20T10:00:00+00:00")
+        self.run_command(cost.cmd_mark, session="parent", skill="implement-issue",
+                         issue=self.ISSUE, project=self.PROJECT)
+        self.at("2026-11-20T10:05:00+00:00")
+        self.run_command(cost.cmd_record, session="parent", skill="implement-issue",
+                         issue=self.ISSUE, project=self.PROJECT, since=None)
+        self.assertEqual(self.rows(), [("implement-issue", 12)])
+
+    def test_a_stopped_run_includes_its_child_runs(self):
+        self.transcript("parent.jsonl", ("2026-11-20T10:00:30+00:00", 1),
+                        ("2026-11-20T11:00:30+00:00", 1000))
+        self.transcript("child-1.jsonl", ("2026-11-20T10:01:00+00:00", 10))
+        self.transcript("child-2.jsonl", ("2026-11-20T11:01:00+00:00", 100))
+        cost.register_child("parent", "child-1")
+        cost.register_child("parent", "child-2")
+        for ts in ("2026-11-20T10:00:00+00:00", "2026-11-20T11:00:00+00:00"):
+            self.at(ts)
+            self.run_command(cost.cmd_mark, session="parent", skill="implement-issue",
+                             issue=self.ISSUE, project=self.PROJECT)
+        self.at("2026-11-20T11:05:00+00:00")
+        self.run_command(cost.cmd_record, session="parent", skill="implement-issue",
+                         issue=self.ISSUE, project=self.PROJECT, since=None)
+        self.assertEqual(self.rows(), [("implement-issue-stopped", 11), ("implement-issue", 1100)])
+
+
 class SplitEquallyTests(unittest.TestCase):
     def test_remainder_goes_to_the_first_share(self):
         self.assertEqual(cost.split_equally(10, 3), [4, 3, 3])

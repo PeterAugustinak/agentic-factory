@@ -51,7 +51,7 @@ PAF skill bodies are **imperative and step-numbered** — the architecture requi
 2. **Preconditions & arguments** — what must be true to start; how the argument (e.g. `$issue`, via the `arguments` frontmatter / `$ARGUMENTS`) is used.(8)
 3. **Numbered steps** — the orchestration, one step per architecture-diagram box, each explicitly tagged as either:
    - **skill step** — external I/O the main thread performs (`gh`, git, running tests, appending to the cost ledger). All I/O is skill-owned (`architecture.md` §2).
-   - **agent step** — an explicit, **by-name** invocation of a specialist agent (`@agent-<name>` / Agent tool), passing the required context and then parsing the returned output contract.(9)
+   - **agent step** — an explicit, **by-name** invocation of a specialist agent (`@agent-<name>` / Agent tool, or a headless `claude -p --agent <name>` run through `skills/paf-shared/paf-headless.py`), passing the required context and then parsing the returned output contract.(9)
    - **human gate** — a pause for developer input (plan-approval, or `AskUserQuestion`).
 4. **Output-contract handling** — after every agent step, extract the **last** ` ```yaml ` block (an unclosed one runs to the end of the report and is flagged), validate it against the schema and enums (`skills/paf-shared/output-contract.md`), and **STOP and escalate** on any malformed/missing output.
 5. **Loop & escalation** — retry caps and STOP behaviour exactly as `architecture.md` §5 fixes them.

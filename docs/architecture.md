@@ -103,7 +103,7 @@ A record contains no step-by-step flow, no output format, and no command line.
 
 **Explicit invocation by name**
 
-- **Decision:** Each agent is invoked explicitly by name (via the Agent tool / `@agent-<name>`), never by autonomous natural-language delegation.
+- **Decision:** Each agent is invoked explicitly by name (via the Agent tool / `@agent-<name>`, or, in `implement-issue`, as a headless `claude -p --agent <name>` run — Headless agent runs, below), never by autonomous natural-language delegation.
 - **Why:** Explicit invocation guarantees the named subagent runs; natural-language naming only lets Claude decide whether to delegate.
 - **Source:** (3)
 
@@ -145,6 +145,29 @@ A record contains no step-by-step flow, no output format, and no command line.
 - **Decision:** The deep review — the review agents, a builder agent's triage of their findings, and re-verification — sits in `implement-issue`, before the hand-off, not in `check-out` (`skills/paf-implement-issue/SKILL.md`, steps 9–11). Its two fix loops have two owners: the verify-fix loop stays in the main thread, and the review-fix loop is delegated to a builder agent. The acceptance loop that closes the run (§5) stays in the main thread. `implement-issue` owns producing correct, clean, reviewed code; `check-out` owns confirming and shipping it (§5).
 - **Why:** A deliberate reversal of the original sequencing: placed in `check-out`, the automated review ran after the developer's manual review of the implemented code, so its fixes changed code the developer had already signed off, forcing them to re-review and re-test it. Reviewing before the hand-off means the manual review lands on already-reviewed-and-fixed code. The two owners follow one rule — keep work in-context when losing the context would cost re-derivation, delegate it when it would not. The verify-fix loop repairs the build itself, and that context still holds the plan and the exact edits, so a cold builder agent would only re-derive them. Applying a discrete list of findings is not a re-build: each finding names its own location and remedy, so nothing must be re-derived; delegating it also returns those writes to the hook's agent-scoped path containment (§3). An unmet acceptance criterion is a gap in executing the approved plan, so the main thread that holds the plan fixes it.
 - **Source:** PAF design choice; no external source.
+
+**Headless agent runs in `implement-issue`**
+
+- **Decision:** `implement-issue` starts `issue-validator`, `implementation-verifier`, the five reviewers and `quality-assurer` as headless `claude -p --agent <name>` runs. All agents of one step start from one Bash call, through `skills/paf-shared/paf-headless.py`. The agents, their prompts and inputs, the output contract and its parsing stay the same. `full-stack-dev` stays on the Agent tool. Each run that is stopped, fails, or hits a permission denial is re-run once through the Agent tool, and so is every agent when `claude` is not on `PATH`. `create-issue` and `check-out` keep the Agent tool. As implemented: the "Starting agents" section of `skills/paf-implement-issue/SKILL.md` and the helper.
+- **Why:**
+  - A background subagent's result reaches the main thread as a notification in a later turn(2), and every turn re-sends the whole context. In the measured #151 run (EUR 3.41, of which the main thread was EUR 2.91, with 40 main-thread turns and 84k–194k tokens of context), 9 turns did nothing but react to an agent finishing, at about EUR 0.42. Headless runs started from one Bash call come back as one tool result, in the turn that started them. Measured, two reviewers ran in parallel in about 22 s at about the same cost as Agent-tool subagents.
+  - `full-stack-dev` edits files, so a stopped or failed headless run would leave half-applied edits for its fallback re-run.
+  - `claude` is found on `PATH`, which is documented. The undocumented `CLAUDE_CODE_EXECPATH` is not used.
+  - **Timeout.** A foreground Bash call that reaches its timeout moves to the background, and is not stopped(12). Its timeout applies to the whole call. The effective maximum is the larger of `BASH_MAX_TIMEOUT_MS` (default 10 minutes) and `BASH_DEFAULT_TIMEOUT_MS`(31). The helper reports that limit, the skill passes it as the call's timeout, and the helper stops its own runs before the limit is reached, so the call never moves to the background.
+  - **Permissions.** Each run starts with `--permission-mode dontAsk`, `--permission-prompts none`, and `--allowedTools` set to the agent's `tools` list(30)(32). A CLI permission mode overrides the user's `defaultMode`, so the run is prompt-free and limited to the agent's tools whatever mode the user's settings name. Anything that would still prompt — the hook's `ask` — is denied and listed in the result's `permission_denials`. That is a fallback, so the developer gets the same prompt as today.
+  - **Same input.** An `--agent` session loads the project instructions and auto memory as an Agent-tool subagent does, but starts without the git status snapshot(2). The helper therefore builds the same snapshot from git and appends it to the system prompt. The prompt itself is unchanged.
+  - **Cost.** Each run is a session of its own(31), so its id is fixed with `--session-id` before it starts. A run stopped with SIGTERM records no result(30) but is still priced (§5, Measured from the transcript).
+- **Source:** (2) (12) (30) (31) (32), #151, #154. Verified empirically on Claude Code 2.1.327, in the desktop app with the hook installed:
+  - An out-of-root `Read` by a headless reviewer was denied and listed in `permission_denials` of `--output-format json`, which is not stated for that format.
+  - In a headless `full-stack-dev` session with `defaultMode: plan` in its settings, `git stash list` was denied by the hook ("Agents never change git state"), while `python3 -c "print(42)"` ran.
+  - A headless reviewer and an Agent-tool subagent both reported the project `CLAUDE.md` and the auto memory index in their context. Only the subagent had the git status snapshot, and with the helper's appended snapshot the headless run had it too.
+  - SIGTERM, SIGINT and SIGHUP to the helper, and SIGKILL of the shell that ran it, each left no `claude --agent` process.
+  - A run's transcript was persisted as `~/.claude/projects/<project>/<session-id>.jsonl`.
+- **Accepted risk:**
+  - **Interrupts are handled by the helper, not by Claude Code.** How a developer interrupt of a Bash call signals its process tree is undocumented. The runs stay in the helper's process group, so a signal to the call's whole process group — a SIGKILL included — reaches them too. A run in a group of its own survived exactly that, verified. The helper stops each run's whole process tree, read from `ps` before signalling (SIGTERM, then SIGKILL), so the commands an agent started die with it. It stops its runs on SIGTERM, SIGINT and SIGHUP, and when its parent shell disappears. A SIGKILL sent to the helper alone would leave its runs to finish on their own.
+  - **The git status snapshot is rebuilt, not native.** It carries the fields a subagent's snapshot showed when observed (current branch, the `origin` default branch, git user, short status, the last five commits). Claude Code's own derivation of these fields is undocumented, and the snapshot sits in the system prompt instead of the first message.
+  - **A fallback pays twice.** A run that falls back is paid for both as a headless run and as an Agent-tool run.
+  - **Large reports.** A step whose reports exceed Bash's output limit gets its output saved to a file, which the main thread reads back.
 
 #### Main-thread readiness check (`init`)
 
@@ -287,6 +310,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
   - An agent-frontmatter hook fired for that agent's own calls, with `agent_type` set, also in a session where no skill was invoked, and not for the main thread's calls. (The agent was passed with `--agents`; hooks of user-level agents in `~/.claude/agents/`, where PAF installs, and of `--agents` definitions run without workspace trust, while a project agent's need it and a `-p` run does not grant it(22).)
   - The registered command expanded to `$HOME/.claude` with `CLAUDE_CONFIG_DIR` unset and reached the installed script; the unit tests run it through `sh -c` with the variable set and unset.
   - In a session where no skill was invoked, neither the main thread's calls nor a `general-purpose` subagent's reached the hook.
+  - In a headless `claude -p --agent <PAF agent>` session (Claude Code 2.1.327, §2, Headless agent runs), the agent's own hook fired with `agent_type` set and applied the agent rules: it denied a git-state command and asked on an out-of-root read. A headless run's transcript sits at `<project>/<session-id>.jsonl`, so its saved tool results are found as a main session's are.
 - **Accepted risk:** An agent from a higher-priority scope (managed, `--agents`, project) with the same name as a PAF agent replaces PAF's definition(22) and so runs without PAF's hook.
 
 ### Scoping an agent
@@ -382,7 +406,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 **Agent report as the return contract**
 
 - **Decision:** Every agent returns its result as one machine-parseable YAML block — its report — and the **skill (main thread)** extracts, parses, and validates it. The contract defines what the report is, never the channel that delivers it. Malformed or missing output fails loudly and escalates to the developer ([Section 5](#5-loop-cap-escalation-and-cost-reporting)), with one advisory exception there. As implemented: the `## Output` section of every agent ([`agent-definition-format.md`](authoring/agent-definition-format.md), Output contract) and the parsing rules in `skills/paf-shared/output-contract.md`.
-- **Why:** Claude Code has **no native typed return channel** for subagents and no native schema validation: a subagent's result reaches its caller as plain text, through `SubagentHandback` in auto mode — provided only there, to subagents the Agent tool runs locally other than forks — and as its last assistant message otherwise. A contract that named one channel conflicted with the other: in auto mode an agent got two delivery instructions and once handed back a placeholder with no report (#144). The contract is machine-checkable only because the skill parses and validates it.
+- **Why:** Claude Code has **no native typed return channel** for subagents and no native schema validation: a subagent's result reaches its caller as plain text, through `SubagentHandback` in auto mode — provided only there, to subagents the Agent tool runs locally other than forks — and as its last assistant message otherwise; a headless `--agent` run's report arrives as the `result` of its JSON output (§2, Headless agent runs). A contract that named one channel conflicted with the other: in auto mode an agent got two delivery instructions and once handed back a placeholder with no report (#144). The contract is machine-checkable only because the skill parses and validates it.
 - **Source:** (2), (29)
 
 ### Input delivery
@@ -698,8 +722,8 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 
 **Measured from the transcript, not self-reported**
 
-- **Decision:** Agents do not report cost; the skill computes it from the session transcript, which records per-message `usage` (input, output, cache-read, and cache-creation tokens) and `model`, so every message is priced at its own model's rates. The mechanism for attributing usage to individual agents is an implementation detail; the architecture requires only that the final total is reported. As implemented: `skills/paf-shared/paf-report-cost.py`.
-- **Why:** An agent cannot reliably count its own tokens (§4, No cost block), while the transcript holds exact per-message counts.
+- **Decision:** Agents do not report cost; the skill computes it from the session transcript, which records per-message `usage` (input, output, cache-read, and cache-creation tokens) and `model`, so every message is priced at its own model's rates. The mechanism for attributing usage to individual agents is an implementation detail; the architecture requires only that the final total is reported. A headless agent run (§2, Headless agent runs) is priced from its own transcript with the same rates, into the row of the run that started it — its stopped row too — never from the run's own `total_cost_usd`, and never as a row of its own. As implemented: `skills/paf-shared/paf-report-cost.py`.
+- **Why:** An agent cannot reliably count its own tokens (§4, No cost block), while the transcript holds exact per-message counts. One pricing path keeps every ledger row in the same EUR rates and token columns.
 - **Source:** (7) (9)
 
 **Per-invocation slice, not the whole session**
@@ -797,7 +821,7 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 **Auto-loading is native and not optional**
 
 - **Decision:** Skills never manually inject project-instruction sections into agents.
-- **Why:** Every custom subagent loads the same instruction hierarchy the main conversation loads (user `~/.claude/CLAUDE.md`, project `CLAUDE.md`/`.claude/CLAUDE.md`, project rules, `CLAUDE.local.md`, managed policy, and any `AGENTS.md` loaded as project instructions). Only the built-in `Explore` and `Plan` agents skip it, and a custom agent whose frontmatter sets `omitClaudeMd: true`; no PAF agent sets it.
+- **Why:** Every custom subagent loads the same instruction hierarchy the main conversation loads (user `~/.claude/CLAUDE.md`, project `CLAUDE.md`/`.claude/CLAUDE.md`, project rules, `CLAUDE.local.md`, managed policy, and any `AGENTS.md` loaded as project instructions). Only the built-in `Explore` and `Plan` agents skip it, and a custom agent whose frontmatter sets `omitClaudeMd: true`; no PAF agent sets it. A headless `claude -p --agent` session loads it through the normal message flow(2) (verified, §2, Headless agent runs).
 - **Source:** (6) (8)
 
 **It depends on launch location, not agent config**
@@ -848,7 +872,7 @@ Decisions are grounded in the official Claude Code documentation or an establish
 9. Manage costs effectively. https://code.claude.com/docs/en/costs
 10. Model ids and versions — the id grammar `claude-{name}-{major}[-{minor}]` (4.6 and later) and `claude-{name}-{major}-{minor}-{YYYYMMDD}` (before it), which is what makes a trailing 8-digit segment a snapshot date rather than a version. https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions
 11. Permissions — Permission system (read-only tools need no approval within the working directory and additional directories) / Working directories. https://code.claude.com/docs/en/permissions#working-directories
-12. Tools reference — Read, Grep, and Glob behavior (they prompt outside the working directories), and large tool results saved to the session directory for Claude to read back. https://code.claude.com/docs/en/tools-reference
+12. Tools reference — Read, Grep, and Glob behavior (they prompt outside the working directories), large tool results saved to the session directory for Claude to read back, and Bash "Foreground commands that move to the background" (a foreground command that reaches its timeout is moved to the background, not stopped). https://code.claude.com/docs/en/tools-reference
 13. Pricing — model pricing table, prompt-caching multipliers, and long context (prompt-length) pricing. https://platform.claude.com/docs/en/about-claude/pricing
 14. Prompting best practices — Optimize parallel tool calling. https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#optimize-parallel-tool-calling
 15. Permission modes — Protected paths (`.claude` among them; writes never auto-approved outside `bypassPermissions`) and critical paths. https://code.claude.com/docs/en/permission-modes#protected-paths
@@ -866,3 +890,6 @@ Decisions are grounded in the official Claude Code documentation or an establish
 27. git-worktree — Details (within a linked worktree `$GIT_DIR` points to its private directory and `$GIT_COMMON_DIR` back to the main worktree's `$GIT_DIR`). https://git-scm.com/docs/git-worktree#_details
 28. git-switch — `--ignore-other-worktrees` (`git switch` refuses when the wanted branch is already checked out by another worktree). https://git-scm.com/docs/git-switch
 29. Tools reference — `SubagentHandback` (delivers a subagent's final report to the conversation that receives its result; provided only in auto mode, to subagents the Agent tool runs locally other than forks). https://code.claude.com/docs/en/tools-reference
+30. Run Claude Code programmatically (headless) — `claude -p`, `--output-format json`, the permission mode of `-p` runs, `--permission-prompts none` and `permission_denials`, auto-approving tools with `--allowedTools`, and stopping a run with SIGTERM (no result is recorded). https://code.claude.com/docs/en/headless
+31. Environment variables — `BASH_MAX_TIMEOUT_MS`, `BASH_DEFAULT_TIMEOUT_MS`, `CLAUDECODE` and `CLAUDE_CODE_CHILD_SESSION` (set in Bash subprocesses), and persisted `claude -p` sessions. https://code.claude.com/docs/en/env-vars
+32. CLI reference — `--agent`, `--session-id`, `--permission-mode`, `--permission-prompts`, `--allowedTools`, `--append-system-prompt`. https://code.claude.com/docs/en/cli-reference

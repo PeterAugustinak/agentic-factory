@@ -28,7 +28,7 @@ It reads the hook payload as JSON on stdin and prints a `permissionDecision` obj
 
 The details behind the rules above, as `PreToolUse-agent-guard.py` implements them. Why each rule exists, and the risks accepted with it, is in `docs/architecture.md` §3.
 
-- **Identity.** The main thread is the *absence* of `agent_type` from the payload. A key that is present but empty, null, or unknown is never the main thread: it falls to the agent branch and gets no decision as not PAF's. The main thread gets `allow` for every call, `WebSearch`/`WebFetch` included.
+- **Identity.** The main thread is the *absence* of `agent_type` from the payload. A headless `claude -p --agent <PAF agent>` session carries `agent_type` on every call, so it is governed exactly like that agent as a subagent. Its transcript is its own `<session_id>.jsonl`, so its saved tool results are found the same way. A key that is present but empty, null, or unknown is never the main thread: it falls to the agent branch and gets no decision as not PAF's. The main thread gets `allow` for every call, `WebSearch`/`WebFetch` included.
 - **Agent set.** `PAF_AGENTS` names every PAF agent. A new agent adds a line to it.
 - **External I/O and git state.** Denied for every PAF agent: `gh`, `glab`, the `paf-vcs` adapter, network commands, and git-state changes. The git-state pattern skips a run of git's documented global options before matching the subcommand, so `git -C /tmp commit` and `git --no-pager push` are caught; options that take a **separate** argument are named explicitly, because git accepts `--work-tree /tmp` as readily as `--work-tree=/tmp`, and an argument may be quoted and contain a space. Both patterns also run against an escape-normalized reconstruction of the command (`escape_normalized()`), built by lexing the command with `shlex` quote-aware and splitting it into its shell segments (a run of shell punctuation that is not a redirection, a newline, a `$(...)` or backtick substitution), so a command name split by backslash-escaping or quote concatenation (`g\it commit`, `c\url`) is caught. A token that itself contains whitespace is re-quoted before rejoining (`_requote()`), so a quoted multi-word argument stays one argument and `g\it -C "/tmp/my repo" commit -m x` is caught too.
 - **Web lookups.** `WebSearch`/`WebFetch` are allowed for any PAF agent whose call reaches the hook, with no agent-name check: only an agent that lists them in `tools:` can make the call.
@@ -38,7 +38,7 @@ The details behind the rules above, as `PreToolUse-agent-guard.py` implements th
 
 ## Registration
 
-The hook is **not** in `settings.json`, which would run it in every session of every project. The frontmatter `hooks` field of each PAF skill (`skills/paf-*/SKILL.md`) and each PAF agent (`agents/*.md`) registers it with the same block, so it runs only where PAF runs: for the main thread once a PAF skill was invoked in the session, and for a PAF agent's own calls (`docs/architecture.md` §3, "Where the hook runs"):
+The hook is **not** in `settings.json`, which would run it in every session of every project. The frontmatter `hooks` field of each PAF skill (`skills/paf-*/SKILL.md`) and each PAF agent (`agents/*.md`) registers it with the same block, so it runs only where PAF runs: for the main thread once a PAF skill was invoked in the session, and for a PAF agent's own calls, whether as a subagent or as a headless `claude -p --agent` session (`docs/architecture.md` §3, "Where the hook runs"):
 
 ```yaml
 hooks:
