@@ -13,15 +13,15 @@ Discuss the idea in the conversation first (freely, or with `/grill-me`), then r
 ## The issue it writes
 
 - **Human part**: Problem, Goal, Approach, and Acceptance criteria. It is short, with no code and no file lists.
-- **`## For implementation agent`**: the technical context (Context, Decisions, Constraints, Scope of changes, Pitfalls, References). Empty subsections are left out. It is context, not a plan; planning happens in `/paf:implement-issue`.
+- **`## For implementation agent`**: the technical context (Context, Decisions, Open decisions, Constraints, Scope of changes, Pitfalls, References). Open decisions are choices that do not change the Goal or the acceptance criteria; `/paf:implement-issue` settles them in plan mode. Empty subsections are left out. It is context, not a plan; planning happens in `/paf:implement-issue`.
 
 ## How it works
 
 1. **Split?** The skill judges, from the conversation, whether the topic should be several issues (INVEST: each part delivered and tested on its own). If not, you see nothing about it. If so, it shows a `Why split:` line and one line per part, and you choose `Split as shown`, `Keep as one issue`, or type changes (the revised split is shown again until you choose). In a split run every step below runs for each part.
-2. **Ask.** If the idea is unclear, the skill asks a few questions. It then asks you about every decision it would otherwise make itself, so the issue holds only what you confirmed. In a split run, the decisions of all parts are asked in one round, grouped by part.
-3. **Draft.** `issue-writer` drafts the issue once. A decision nobody made is kept for the question phase after validation.
-4. **Validate.** `issue-validator` checks the factual claims against official docs and the repository, and that every behaviour case a Decision or acceptance criterion touches is covered.
-5. **Ask and update.** Each finding goes to exactly one place: a wrong fact with its correct value is fixed in place, a new fact the implementer needs goes into Context, an open choice (an undecided decision, an uncovered case, a correction needing your choice) is asked, and anything else is dropped. With nothing to ask, the fixes are applied directly. Otherwise you get all the questions in one phase, one by one; then the writer redrafts once and only the changed claims are re-checked. A new open choice from that starts another phase, at most two updates; after that the run **stops and posts nothing**. In a split run, the questions of all parts are asked in the one phase, grouped by part, and a part still blocked means nothing is posted.
+2. **Ask.** If the idea is unclear, the skill asks a few questions. It then asks you only about a **crucial** decision the discussion did not settle — one that changes the Goal or the acceptance criteria (what you would observe or check when done, or what is in or out of scope). Every other choice (how to build it, a default, edge-case behaviour within scope, a choice between equivalent approaches, anything that needs the codebase) is not asked: it goes into the issue's Open decisions. When the discussion settled every crucial decision, you get no question at all. In a split run, the crucial decisions of all parts are asked in one round, grouped by part.
+3. **Draft.** `issue-writer` drafts the issue once. A crucial decision nobody made is kept for the question phase after validation; a non-crucial one goes into Open decisions.
+4. **Validate.** `issue-validator` checks the factual claims against official docs and the repository, and that every behaviour case a Decision or acceptance criterion touches is covered. An uncovered case that changes the Goal or the acceptance criteria is a blocker; any other is an open decision.
+5. **Ask and update.** Each finding goes to exactly one place: a wrong fact with its correct value is fixed in place, a new fact the implementer needs, or a wrong fact whose correct value is not stated, goes into Context (as a claim to verify during implementation), a non-crucial open choice goes into Open decisions, a crucial one (an undecided decision, an uncovered case, a correction needing your choice) is asked, and anything else is dropped. An open decision never stops the run or blocks posting. With nothing crucial to ask, the fixes are applied directly and there is no prompt. Otherwise you get the crucial questions in one phase, one by one; then the writer redrafts once and only the changed claims are re-checked. A new crucial choice from that starts another phase, at most two updates; after that the run **stops and posts nothing**. In a split run, the questions of all parts are asked in the one phase, grouped by part, and a part still blocked means nothing is posted.
 6. **Post.** The skill posts the issue directly, with **no review gate**, and prints its URL. In a split run, it posts only after every part has passed validation, in dependency order, adding a `Depends on #N` line (a part that depends on another) or `Related to #N` lines (an independent part, for the siblings already posted) to each part's human part, and lists every URL in order. If posting fails part-way, it stops and prints the URLs already posted and the bodies of the unposted parts.
 7. **Cost.** The run's cost goes into the feature's cost ledger — in a split run, in equal shares across the posted issues.
 
@@ -32,7 +32,7 @@ idea discussed --> /paf:create-issue
   [skill + human] split triage -- split? --> confirm / change parts
                         |                    (every step below per part)
                         v
-  [skill + human] clarity + decision questions
+  [skill + human] clarity + crucial decision questions
                         |
                         v
   [agent] issue-writer (draft once)
@@ -41,7 +41,7 @@ idea discussed --> /paf:create-issue
   [agent] issue-validator
                         |
                         v
-  [skill] route findings -- open choice? --> [human] one question phase
+  [skill] route findings -- crucial choice? --> [human] one question phase
                         |                     --> redraft + delta check (max 2 updates) --> still open: STOP
                         v
   [skill] apply fixes --> post via paf-vcs (all parts, in dependency order) --> cost
@@ -53,13 +53,13 @@ Legend: `[skill]` = orchestration and external I/O done by the skill itself in t
 
 | Agent | Step(s) | What it does here |
 | --- | --- | --- |
-| [`issue-writer`](../../agents/issue-writer.md) | 3, 5 | Drafts the issue from confirmed input only (3), and redrafts it once per update with your answers and the fixes (5). |
+| [`issue-writer`](../../agents/issue-writer.md) | 3, 5 | Drafts the issue from the discussion, your answers and the open decisions (3), and redrafts it once per update with your answers and the fixes (5). |
 | [`issue-validator`](../../agents/issue-validator.md) | 4, 5 | Checks the draft's factual claims against official docs and the repository, and that every behaviour case is covered (4); re-checks only the changed claims after a redraft (5). |
 
 ## Human interception points
 
 - **Split confirmation**: when the skill proposes a split, you confirm it, change it, or keep one issue.
-- **Questions before drafting and after validation**: clarity questions and every open decision up front, then one phase per update for every open choice the draft and validation leave (undecided decisions, uncovered cases, corrections needing your choice).
+- **Questions before drafting and after validation**: clarity questions and the crucial decisions up front, then one phase per update for every crucial choice the draft and validation leave (undecided decisions, uncovered cases, corrections needing your choice). Non-crucial choices are never asked.
 - **Skill boundary**: you review the posted issue (or issues), then decide when to run `/paf:implement-issue`.
 
 `/paf:implement-issue` sees the `## For implementation agent` heading and skips re-validation. Issues without it (hand-written ones) are validated there. Design rationale: [`architecture.md` → issue-validator escalation](../architecture.md#issue-validator-escalation).

@@ -26,3 +26,8 @@ categories) and deliberately keeps no roster; how to write one, output contract 
 One agent is advisory: `convention-suggester` only suggests rules for the project instructions, so a
 caller continues when it fails or returns malformed output (`docs/architecture.md` §5, Malformed-contract
 escalation).
+
+`issue-writer` and `issue-validator` never settle an open choice. A crucial one — it changes the Goal or
+the acceptance criteria — is reported for the developer (`Undecided:` / `Uncovered:`); any other is left
+for `/paf:implement-issue` to settle in plan mode (`### Open decisions` in the issue / an `Open decision:`
+warning).
