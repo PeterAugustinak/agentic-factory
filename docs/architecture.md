@@ -134,6 +134,13 @@ A record contains no step-by-step flow, no output format, and no command line.
 - **Why:** This phase is the factory's longest main-thread stretch. Every turn resends the whole conversation, and everything that enters the main-thread context is billed as a cache write and then as a cache read on every later turn, so both the number of turns and the size of what enters the context multiply cost. A measured run spent 30% of its cost on main-thread cache writes, with the same sweep run three times and three large saved tool outputs read back whole.
 - **Source:** (13), (14)
 
+**End-of-run call in `implement-issue`**
+
+- **Decision:** On a success, worktree detection, the fingerprint record, the snapshot save and the cost record run as one Bash call; failure hand-offs keep worktree detection as a call of its own. As implemented: `skills/paf-implement-issue/SKILL.md`, steps 12–13.
+- **Why:** The four are independent bookkeeping, and every extra turn resends the whole context — about EUR 0.04–0.05 per turn at the end of the measured #151 run (40 turns, 84k–194k tokens). Earlier steps (the QA changed-paths listing, set-up file removal, branch creation) stay separate because they must follow checks that can create files, or must succeed before edits land.
+- **Source:** (13), (14)
+- **Accepted risk:** The cost record runs before the hand-off is printed, so the hand-off's output tokens fall into the final turn, which the record could never price (it already holds the cost summary).
+
 **The main-thread sweep**
 
 - **Decision:** The main-thread implementer carries the builder's sweep obligation (§1, Builder): a fact, rule, or name the change touches is updated in every place the repository states it, located while planning and applied with the rest of the approved plan. In the review-fix loop the delegated builder agent carries it.
