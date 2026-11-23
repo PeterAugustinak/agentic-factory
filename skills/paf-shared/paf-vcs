@@ -12,9 +12,11 @@
 # (ssh.github.com and altssh.gitlab.com are the providers' port-443 SSH hosts.)
 # The host is matched exactly (not a loose substring), and any other host is a
 # clear, non-silent failure — self-hosted/custom-domain instances, SSH host
-# aliases, and an explicit provider override are out of scope. Every `glab`
-# call names the project explicitly with `-R https://gitlab.com/<path>`, the
-# path taken from the origin remote.
+# aliases, and an explicit provider override are out of scope. The project path
+# is taken from the origin remote: the `glab` issue verbs name the project with
+# `-R https://gitlab.com/<path>`, and `create-change-request` POSTs to the
+# gitlab.com REST API through `glab api --hostname gitlab.com` with the
+# URL-encoded path, so no git remote is consulted.
 #
 # Usage:
 #   paf-vcs provider
@@ -27,7 +29,9 @@
 #
 # `create-issue` and `create-change-request` print machine-parseable
 # `NUMBER=<n>` / `URL=<url>` lines, a `---` separator, then the raw provider
-# output. Every other verb passes the provider CLI's output through as-is.
+# output — for a GitLab merge request, the MR URL only, since the API response
+# echoes the whole description. Every other verb passes the provider CLI's
+# output through as-is.
 
 set -euo pipefail
 
@@ -80,15 +84,78 @@ detect_provider() {
   esac
 }
 
-# The `-R` value every glab call gets: the full gitlab.com URL of the origin's
-# project, so glab never resolves the project from the remotes itself.
-glab_repo() {
+# The origin's GitLab project path (e.g. group/sub/project).
+glab_path() {
   local url path
   url="$(origin_url)"
   path="$(remote_path "$url")"
   [ -n "$path" ] \
     || err "could not read the project path from the origin remote; expected e.g. git@gitlab.com:group/project.git."
+  printf '%s\n' "$path"
+}
+
+# The `-R` value every glab issue verb gets: the full gitlab.com URL of the
+# origin's project, so glab never resolves the project from the remotes itself.
+glab_repo() {
+  local path
+  # `|| exit`: a command substitution does not inherit `set -e`.
+  path="$(glab_path)" || exit
   printf 'https://gitlab.com/%s\n' "$path"
+}
+
+# The REST API `:id` of the origin's project: its path URL-encoded. The path
+# must be group/project segments of the characters GitLab allows in a path, so
+# encoding is only `/` -> `%2F` and nothing else can reach the endpoint.
+glab_project_id() {
+  local path
+  # `|| exit`: a command substitution does not inherit `set -e`.
+  path="$(glab_path)" || exit
+  [[ "$path" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$ ]] \
+    || err "the origin remote's project path is not a gitlab.com project path (group/project, segments of letters, digits, '.', '_' or '-')."
+  printf '%s\n' "${path//\//%2F}"
+}
+
+# The create-MR request body: one JSON document, so no glab field conversion
+# can alter a value. argv: source branch, target branch, title; stdin: description,
+# read as bytes so carriage returns are not folded into newlines.
+MR_REQUEST_PY='import json, sys
+json.dump({"source_branch": sys.argv[1], "target_branch": sys.argv[2],
+           "title": sys.argv[3],
+           "description": sys.stdin.buffer.read().decode("utf-8")}, sys.stdout)'
+
+# Reads the create-MR response on stdin and prints the NUMBER=/URL=/--- lines
+# from its `iid` and `web_url`; exits 1 when either is missing or malformed.
+MR_RESPONSE_PY='import json, sys
+try:
+    mr = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+if not isinstance(mr, dict):
+    sys.exit(1)
+iid, url = mr.get("iid"), mr.get("web_url")
+if type(iid) is not int or iid <= 0:
+    sys.exit(1)
+if not isinstance(url, str) or not url or any(c.isspace() for c in url):
+    sys.exit(1)
+sys.stdout.write("NUMBER=%d\nURL=%s\n---\n%s\n" % (iid, url, url))'
+
+# Create a GitLab MR through glab's direct API call to gitlab.com. Unlike
+# `glab mr create`, `glab api --hostname` never resolves the git remotes.
+# glab's stderr goes straight to the caller; only stdout is parsed.
+glab_create_mr() {
+  local base="$1" source="$2" title="$3" body="$4" id payload output rc=0
+  id="$(glab_project_id)"
+  payload="$(printf '%s' "$body" | python3 -I -c "$MR_REQUEST_PY" "$source" "$base" "$title")"
+  output="$(printf '%s' "$payload" | glab api --hostname gitlab.com --method POST \
+    -H "Content-Type: application/json" "projects/${id}/merge_requests" --input -)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$output" >&2
+    exit "$rc"
+  fi
+  printf '%s' "$output" | python3 -I -c "$MR_RESPONSE_PY" || {
+    printf '%s\n' "$output" >&2
+    err "could not read the MR's iid and web_url from the GitLab API response above; not guessing the identifier."
+  }
 }
 
 require_cli() {
@@ -252,14 +319,12 @@ cmd_create_change_request() {
   local source
   source="$(git rev-parse --abbrev-ref HEAD)"
 
-  local output rc=0
-  if [ "$provider" = "gh" ]; then
-    output="$(printf '%s' "$body" | gh pr create --base "$base" --title "$title" --body-file - 2>&1)" || rc=$?
-  else
-    local repo
-    repo="$(glab_repo)"
-    output="$(glab mr create -R "$repo" --yes --target-branch "$base" --source-branch "$source" --title "$title" --description "$body" </dev/null 2>&1)" || rc=$?
+  if [ "$provider" = "glab" ]; then
+    glab_create_mr "$base" "$source" "$title" "$body"
+    return
   fi
+  local output rc=0
+  output="$(printf '%s' "$body" | gh pr create --base "$base" --title "$title" --body-file - 2>&1)" || rc=$?
   finish_create "$rc" "$output"
 }
 
