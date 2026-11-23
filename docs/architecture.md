@@ -219,9 +219,9 @@ A record contains no step-by-step flow, no output format, and no command line.
 
 **VCS provider abstraction**
 
-- **Decision:** The skills call one shared adapter, `skills/paf-shared/paf-vcs`, instead of `gh`/`glab` directly. It auto-detects the provider per project from the `origin` remote's host — `github.com` and `gitlab.com` only, and any other host fails clearly, with no silent fallback — and exposes provider-neutral verbs. Self-hosted/custom-domain instances and an explicit provider override are out of scope.
-- **Why:** The two CLIs' flag differences are normalised in one place, so the skills stay provider-neutral.
-- **Source:** PAF design choice; no external source.
+- **Decision:** The skills call one shared adapter, `skills/paf-shared/paf-vcs`, instead of `gh`/`glab` directly. It auto-detects the provider per project from the `origin` remote's host, matched exactly — `github.com` or `ssh.github.com` selects `gh`, `gitlab.com` or `altssh.gitlab.com` selects `glab`, and any other host fails clearly, with no silent fallback — and exposes provider-neutral verbs. Every `glab` call names the project explicitly, taken from the `origin` remote. Self-hosted/custom-domain instances, SSH host aliases, and an explicit provider override are out of scope.
+- **Why:** The two CLIs' flag differences are normalised in one place, so the skills stay provider-neutral. `ssh.github.com` and `altssh.gitlab.com` are each provider's documented SSH endpoint on port 443, so an origin cloned through them is the same project (34) (35). `glab` otherwise resolves the project from the git remotes after `~/.ssh/config` is applied, so GitLab's documented alternative-SSH-port setup makes it see `altssh.gitlab.com`, which it does not know, and fail; naming the project removes that dependency on the user's SSH configuration (36) (37). `gh` resolves the project correctly under GitHub's equivalent setup, so it is left as is (verified empirically).
+- **Source:** (34) (35) (36) (37).
 
 ### Human interception model
 
@@ -907,3 +907,7 @@ Decisions are grounded in the official Claude Code documentation or an establish
 31. Environment variables — `BASH_MAX_TIMEOUT_MS`, `BASH_DEFAULT_TIMEOUT_MS`, `CLAUDECODE` and `CLAUDE_CODE_CHILD_SESSION` (set in Bash subprocesses), and persisted `claude -p` sessions. https://code.claude.com/docs/en/env-vars
 32. CLI reference — `--agent`, `--session-id`, `--permission-mode`, `--permission-prompts`, `--allowedTools`, `--append-system-prompt`. https://code.claude.com/docs/en/cli-reference
 33. Bill Wake, "INVEST in Good Stories, and SMART Tasks", 2003 — Negotiable: a good story is not an explicit contract for features; its details are co-created during development. https://xp123.com/articles/invest-in-good-stories-and-smart-tasks/
+34. GitLab — GitLab.com settings, Alternative SSH port (`altssh.gitlab.com`, port 443). https://docs.gitlab.com/user/gitlab_com/#alternative-ssh-port
+35. GitHub — Using SSH over the HTTPS port (`ssh.github.com`, port 443). https://docs.github.com/en/authentication/troubleshooting-ssh/using-ssh-over-the-https-port
+36. GitLab CLI — `glab issue create` (`-R, --repo`: OWNER/REPO, GROUP/NAMESPACE/REPO, the full URL or Git URL; `--template` loads from the local repository only). https://docs.gitlab.com/cli/issue/create/
+37. GitLab CLI — `glab mr create` (`-R, --repo`). https://docs.gitlab.com/cli/mr/create/

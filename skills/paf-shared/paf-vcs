@@ -7,11 +7,14 @@
 # GitLab projects without any per-skill provider branching.
 #
 # Provider detection is automatic, per project, from the git `origin` remote:
-#   github.com -> gh (GitHub CLI)
-#   gitlab.com -> glab (GitLab CLI)
+#   github.com, ssh.github.com    -> gh (GitHub CLI)
+#   gitlab.com, altssh.gitlab.com -> glab (GitLab CLI)
+# (ssh.github.com and altssh.gitlab.com are the providers' port-443 SSH hosts.)
 # The host is matched exactly (not a loose substring), and any other host is a
-# clear, non-silent failure — self-hosted/custom-domain instances and an
-# explicit provider override are out of scope.
+# clear, non-silent failure — self-hosted/custom-domain instances, SSH host
+# aliases, and an explicit provider override are out of scope. Every `glab`
+# call names the project explicitly with `-R https://gitlab.com/<path>`, the
+# path taken from the origin remote.
 #
 # Usage:
 #   paf-vcs provider
@@ -41,19 +44,51 @@ remote_host() {
   printf '%s' "$1" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##; s#^[^@/]*@##; s#[:/].*$##'
 }
 
+# Project path of a git remote URL — everything after the host (and port) in
+# the scheme form, after the first ':' in the SSH (git@host:path) form — with
+# one leading '/', one trailing '/' and one trailing '.git' dropped. Credentials never reach it.
+remote_path() {
+  local url="$1" rest path=""
+  case "$url" in
+    *://*)
+      rest="${url#*://}"
+      case "$rest" in */*) path="${rest#*/}" ;; esac
+      ;;
+    *:*) path="${url#*:}" ;;
+  esac
+  path="${path#/}"
+  path="${path%/}"
+  path="${path%.git}"
+  printf '%s' "$path"
+}
+
+origin_url() {
+  git remote get-url origin 2>/dev/null </dev/null \
+    || err "could not read the 'origin' remote — are you inside a git repository that has an 'origin' remote? paf-vcs auto-detects the VCS provider from 'git remote get-url origin'."
+}
+
 detect_provider() {
   local url host
-  if ! url="$(git remote get-url origin 2>/dev/null </dev/null)"; then
-    err "could not read the 'origin' remote — are you inside a git repository that has an 'origin' remote? paf-vcs auto-detects the VCS provider from 'git remote get-url origin'."
-  fi
+  url="$(origin_url)"
   host="$(remote_host "$url")"
   case "$host" in
-    github.com) echo "gh" ;;
-    gitlab.com) echo "glab" ;;
+    github.com|ssh.github.com) echo "gh" ;;
+    gitlab.com|altssh.gitlab.com) echo "glab" ;;
     *)
-      err "unsupported VCS host '${host}' in the origin remote. paf-vcs supports github.com (gh) and gitlab.com (glab) only; self-hosted/custom-domain GitHub Enterprise or GitLab instances are out of scope — no silent fallback."
+      err "unsupported VCS host '${host}' in the origin remote. paf-vcs supports github.com / ssh.github.com (gh) and gitlab.com / altssh.gitlab.com (glab) only; self-hosted/custom-domain GitHub Enterprise or GitLab instances and SSH host aliases are out of scope — no silent fallback."
       ;;
   esac
+}
+
+# The `-R` value every glab call gets: the full gitlab.com URL of the origin's
+# project, so glab never resolves the project from the remotes itself.
+glab_repo() {
+  local url path
+  url="$(origin_url)"
+  path="$(remote_path "$url")"
+  [ -n "$path" ] \
+    || err "could not read the project path from the origin remote; expected e.g. git@gitlab.com:group/project.git."
+  printf 'https://gitlab.com/%s\n' "$path"
 }
 
 require_cli() {
@@ -145,9 +180,10 @@ cmd_create_issue() {
     fi
     output="$(printf '%s' "$body" | gh "${args[@]}" 2>&1)" || rc=$?
   else
-    # glab's stdin/body-file support is unverified here; pass --description on argv per the
-    # validated mapping. Revisit body-on-stdin during the post-merge GitLab validation (issue #14).
-    local args=(issue create --yes --template "" --title "$title" --description "$body")
+    # glab 1.97.0 has no --description-file (checked in `issue create --help`), so the body goes on argv via --description.
+    local repo
+    repo="$(glab_repo)"
+    local args=(issue create -R "$repo" --yes --title "$title" --description "$body")
     if [ "${#labels[@]}" -gt 0 ]; then
       for l in "${labels[@]}"; do args+=(--label "$l"); done
     fi
@@ -164,7 +200,9 @@ cmd_view_issue() {
   if [ "$provider" = "gh" ]; then
     gh issue view "$id" </dev/null
   else
-    glab issue view "$id" </dev/null
+    local repo
+    repo="$(glab_repo)"
+    glab issue view -R "$repo" "$id" </dev/null
   fi
 }
 
@@ -178,7 +216,9 @@ cmd_comment_issue() {
   if [ "$provider" = "gh" ]; then
     printf '%s' "$msg" | gh issue comment "$id" --body-file -
   else
-    glab issue note "$id" --message "$msg" </dev/null
+    local repo
+    repo="$(glab_repo)"
+    glab issue note -R "$repo" "$id" --message "$msg" </dev/null
   fi
 }
 
@@ -188,7 +228,9 @@ cmd_list_labels() {
   if [ "$provider" = "gh" ]; then
     gh label list </dev/null
   else
-    glab label list </dev/null
+    local repo
+    repo="$(glab_repo)"
+    glab label list -R "$repo" </dev/null
   fi
 }
 
@@ -214,7 +256,9 @@ cmd_create_change_request() {
   if [ "$provider" = "gh" ]; then
     output="$(printf '%s' "$body" | gh pr create --base "$base" --title "$title" --body-file - 2>&1)" || rc=$?
   else
-    output="$(glab mr create --yes --template "" --target-branch "$base" --source-branch "$source" --title "$title" --description "$body" </dev/null 2>&1)" || rc=$?
+    local repo
+    repo="$(glab_repo)"
+    output="$(glab mr create -R "$repo" --yes --target-branch "$base" --source-branch "$source" --title "$title" --description "$body" </dev/null 2>&1)" || rc=$?
   fi
   finish_create "$rc" "$output"
 }

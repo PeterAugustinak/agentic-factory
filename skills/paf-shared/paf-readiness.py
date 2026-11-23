@@ -23,7 +23,8 @@ repository file and must never reach a shell or a version-control option.
 
 Checks:
   git-repo        the launch directory is inside a git repository
-  origin          `paf-vcs provider` — the origin host is exactly github.com or gitlab.com
+  origin          `paf-vcs provider` — the origin host is exactly github.com,
+                  ssh.github.com, gitlab.com or altssh.gitlab.com
   vcs-cli         `paf-vcs auth-status` — the matching gh/glab is installed and authenticated
   python3         `python3` is on PATH
   claude-version  `claude --version` >= 2.1.277 (reads AGENTS.md natively); < 2.1.281 warns

@@ -51,6 +51,8 @@ sys.exit(int(os.environ.get("PAF_STUB_RC", "0")))
 GITHUB = "https://github.com/o/r.git"
 GITLAB = "https://gitlab.com/o/r.git"
 ORIGINS = {"gh": GITHUB, "glab": GITLAB}
+# The `-R` value every glab call gets for the GITLAB origin.
+GLAB_REPO = "https://gitlab.com/o/r"
 BRANCH = "feature/7-x"
 
 # A body that would break any quoting/word-splitting/expansion mistake: quotes,
@@ -74,6 +76,9 @@ SIMPLE_ARGS = {
     "create-change-request": ("--base", "develop", "--title", "T"),
 }
 
+# The verbs whose glab call is told the project with `-R`.
+GLAB_REPO_VERBS = [v for v in SIMPLE_ARGS if v != "auth-status"]
+
 # verb -> (full-featured args, the exact argv each provider CLI must receive).
 CASES = {
     "create-issue": (
@@ -81,24 +86,25 @@ CASES = {
         {
             "gh": ["issue", "create", "--title", NASTY_TITLE, "--body-file", "-",
                    "--label", "bug", "--label", "two words"],
-            "glab": ["issue", "create", "--yes", "--template", "", "--title", NASTY_TITLE,
+            "glab": ["issue", "create", "-R", GLAB_REPO, "--yes", "--title", NASTY_TITLE,
                      "--description", NASTY_BODY, "--label", "bug", "--label", "two words"],
         },
     ),
-    "view-issue": (("61",), {"gh": ["issue", "view", "61"], "glab": ["issue", "view", "61"]}),
+    "view-issue": (("61",), {"gh": ["issue", "view", "61"],
+                            "glab": ["issue", "view", "-R", GLAB_REPO, "61"]}),
     "comment-issue": (
         ("61",),
         {
             "gh": ["issue", "comment", "61", "--body-file", "-"],
-            "glab": ["issue", "note", "61", "--message", NASTY_BODY],
+            "glab": ["issue", "note", "-R", GLAB_REPO, "61", "--message", NASTY_BODY],
         },
     ),
-    "list-labels": ((), {"gh": ["label", "list"], "glab": ["label", "list"]}),
+    "list-labels": ((), {"gh": ["label", "list"], "glab": ["label", "list", "-R", GLAB_REPO]}),
     "create-change-request": (
         ("--base", "develop", "--title", NASTY_TITLE),
         {
             "gh": ["pr", "create", "--base", "develop", "--title", NASTY_TITLE, "--body-file", "-"],
-            "glab": ["mr", "create", "--yes", "--template", "", "--target-branch", "develop",
+            "glab": ["mr", "create", "-R", GLAB_REPO, "--yes", "--target-branch", "develop",
                      "--source-branch", BRANCH, "--title", NASTY_TITLE, "--description", NASTY_BODY],
         },
     ),
@@ -162,9 +168,10 @@ class VcsRunner:
     def set_origin(self, url):
         self.git("remote", "add", "origin", url)
 
-    def use(self, provider):
-        """Origin on the provider's host, its CLI stubbed, a named branch checked out."""
-        self.set_origin(ORIGINS[provider])
+    def use(self, provider, origin=None):
+        """Origin on the provider's host (or `origin`), its CLI stubbed, a named
+        branch checked out."""
+        self.set_origin(origin or ORIGINS[provider])
         self.install_stub(provider)
         self.git("-c", "user.name=t", "-c", "user.email=t@example.com",
                  "commit", "-q", "--allow-empty", "-m", "init")
@@ -184,10 +191,10 @@ class VcsRunner:
             capture_output=True, text=True, env=self.env(),
         )
 
-    def run_verb(self, provider, verb, args=None, stdin="body", output=None, **stub_env):
-        """`use(provider)` then run `verb`. Create verbs get a valid URL as stdout
+    def run_verb(self, provider, verb, args=None, stdin="body", output=None, origin=None, **stub_env):
+        """`use(provider, origin)` then run `verb`. Create verbs get a valid URL as stdout
         unless `output` is given; `stub_env` sets further PAF_STUB_* variables."""
-        self.use(provider)
+        self.use(provider, origin)
         if output is None:
             output = CREATE_URL[verb][provider] + "\n" if verb in CREATE_VERBS else ""
         self.stub_env["PAF_STUB_OUTPUT"] = output
@@ -220,12 +227,14 @@ class ProviderDetectionTests(VcsRunner, unittest.TestCase):
         return self.vcs("provider")
 
     def test_supported_hosts_in_every_remote_shape(self):
-        for host, provider in (("github.com", "gh"), ("gitlab.com", "glab")):
+        for host, provider in (("github.com", "gh"), ("ssh.github.com", "gh"),
+                               ("gitlab.com", "glab"), ("altssh.gitlab.com", "glab")):
             for url in (
                 f"https://{host}/o/r.git",
                 f"git@{host}:o/r.git",
                 f"ssh://git@{host}/o/r",
                 f"ssh://git@{host}:22/o/r",
+                f"ssh://git@{host}:443/o/r.git",
                 f"https://user:tok@{host}/o/r",
             ):
                 with self.subTest(url=url):
@@ -238,7 +247,9 @@ class ProviderDetectionTests(VcsRunner, unittest.TestCase):
 
     def test_lookalike_hosts_are_rejected_not_substring_matched(self):
         for host in ("notgithub.com", "github.com.evil.example", "gitlab.com.evil.example",
-                     "evilgitlab.com", "example.com"):
+                     "evilgitlab.com", "example.com", "ssh.github.com.evil.example",
+                     "altssh.gitlab.com.evil.example", "evilssh.github.com", "altssh.github.com",
+                     "ssh.gitlab.com"):
             with self.subTest(host=host):
                 self.fresh()
                 proc = self.detect(f"https://{host}/o/r.git")
@@ -259,6 +270,11 @@ class ProviderDetectionTests(VcsRunner, unittest.TestCase):
                 proc = self.detect(url)
                 self.assertFailed(proc, f"unsupported VCS host '{host}'")
                 self.assertEqual(proc.stdout, "")
+
+    def test_ssh_host_alias_is_rejected(self):
+        proc = self.detect("work-gl:group/repo")
+        self.assertFailed(proc, "unsupported VCS host 'work-gl'")
+        self.assertEqual(proc.stdout, "")
 
     def test_unsupported_host_is_rejected_by_every_provider_verb(self):
         for verb, args in SIMPLE_ARGS.items():
@@ -324,6 +340,47 @@ class ArgvTests(VcsRunner, unittest.TestCase):
                 proc = self.run_verb(provider, "create-issue")
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertNotIn("--label", self.provider_call()["argv"])
+
+
+class RepoResolutionTests(VcsRunner, unittest.TestCase):
+    """glab is always told the project via `-R`; gh never is."""
+
+    def test_every_glab_verb_gets_the_gitlab_url_of_the_origin_project(self):
+        for origin in (
+            "git@gitlab.com:g/sub/r.git",
+            "https://user:SECRET@gitlab.com/g/sub/r.git",
+            "ssh://git@altssh.gitlab.com:443/g/sub/r.git",
+            "git@altssh.gitlab.com:g/sub/r",
+            "https://gitlab.com/g/sub/r/",
+            "https://gitlab.com/g/sub/r.git/",
+            "ssh://git@gitlab.com:22/g/sub/r.git",
+            "git@gitlab.com:/g/sub/r.git",
+        ):
+            for verb in GLAB_REPO_VERBS:
+                with self.subTest(origin=origin, verb=verb):
+                    self.fresh()
+                    proc = self.run_verb("glab", verb, origin=origin)
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    argv = self.provider_call()["argv"]
+                    self.assertEqual(argv[2:4], ["-R", "https://gitlab.com/g/sub/r"], argv)
+                    self.assertNotIn("SECRET", json.dumps(argv))
+
+    def test_origin_without_a_project_path_fails_before_calling_glab(self):
+        for origin in ("https://gitlab.com/", "https://gitlab.com", "git@gitlab.com:"):
+            for verb in GLAB_REPO_VERBS:
+                with self.subTest(origin=origin, verb=verb):
+                    self.fresh()
+                    proc = self.run_verb("glab", verb, origin=origin)
+                    self.assertFailed(proc, "could not read the project path from the origin remote")
+                    self.assertEqual([c["argv"] for c in self.calls()], [["auth", "status"]])
+
+    def test_gh_argv_is_unchanged_on_the_port_443_host(self):
+        for verb, (args, per_provider) in CASES.items():
+            with self.subTest(verb=verb):
+                self.fresh()
+                proc = self.run_verb("gh", verb, args, NASTY_BODY, origin="ssh://git@ssh.github.com:443/o/r.git")
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(self.provider_call()["argv"], per_provider["gh"])
 
 
 class StdinPlumbingTests(VcsRunner, unittest.TestCase):

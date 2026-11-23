@@ -24,7 +24,7 @@ It takes no argument. The installer ends with the same hint: *"Using PAF in a re
 
 1. **Environment check.** [`paf-readiness.py`](../../skills/paf-shared/paf-readiness.py) runs every deterministic check in one call:
    - inside a git repository;
-   - the `origin` host is exactly `github.com` or `gitlab.com`, and the matching `gh`/`glab` is installed and authenticated. Both come from `paf-vcs provider` / `paf-vcs auth-status`, so the rule is the same one every skill uses;
+   - the `origin` host is exactly `github.com` or `gitlab.com`, or their port-443 SSH hosts `ssh.github.com` or `altssh.gitlab.com`, and the matching `gh`/`glab` is installed and authenticated. Both come from `paf-vcs provider` / `paf-vcs auth-status`, so the rule is the same one every skill uses;
    - `python3` is on PATH;
    - Claude Code is v2.1.277 or later, the version that reads `AGENTS.md` natively. Below v2.1.281 it warns that Amazon Bedrock and telemetry-disabled sessions read `CLAUDE.md` only;
    - the base branch named in the instructions exists, locally or on `origin`. The name comes from a repository file, so the skill passes it single-quoted and only if it is a plain branch name (letters, digits, `.`, `_`, `/`, `-`, no leading `-`); the script rejects anything else with a usage error;
