@@ -5,6 +5,17 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.2] - 2026-11-23
+
+### Fixed
+
+- `paf-vcs` creates GitLab merge requests through `glab api --hostname gitlab.com` instead of
+  `glab mr create`, which resolved the git remotes whatever `-R` said and so failed on an `origin`
+  through `altssh.gitlab.com`. The project path is URL-encoded, the request body is sent as one JSON
+  document, and the MR number and URL are read from the response's `iid` and `web_url` (#162).
+- `paf-vcs` checks `glab` authentication for `gitlab.com` only, so a failing login on another
+  configured GitLab instance no longer stops the run (#163).
+
 ## [0.38.1] - 2026-11-23
 
 ### Fixed
