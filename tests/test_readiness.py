@@ -308,6 +308,7 @@ class ReadinessRunTests(Tree, unittest.TestCase):
         self.assertEqual(self.status(out, "origin"), "ok")
         self.assertEqual(self.status(out, "vcs-cli"), "fail")
         self.assertIn("REMEDY vcs-cli 'glab' is not authenticated", out)
+        self.assertIn("glab auth login --hostname gitlab.com", out)
         self.assertIn("VERDICT=not-ready", out)
 
     def test_unsupported_host(self):
