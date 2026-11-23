@@ -162,8 +162,15 @@ require_cli() {
   local cli="$1"
   command -v "$cli" >/dev/null 2>&1 </dev/null \
     || err "'$cli' is required but not installed. Install it (see https://cli.github.com for gh, https://gitlab.com/gitlab-org/cli for glab) and re-run."
-  "$cli" auth status </dev/null >/dev/null 2>&1 \
-    || err "'$cli' is not authenticated. Run '$cli auth login' and re-run."
+  # glab: check only gitlab.com — a bare `glab auth status` fails when any
+  # configured instance fails, even one PAF never uses.
+  if [ "$cli" = "glab" ]; then
+    glab auth status --hostname gitlab.com </dev/null >/dev/null 2>&1 \
+      || err "'glab' is not authenticated to gitlab.com. Run 'glab auth login --hostname gitlab.com' and re-run."
+  else
+    "$cli" auth status </dev/null >/dev/null 2>&1 \
+      || err "'$cli' is not authenticated. Run '$cli auth login' and re-run."
+  fi
 }
 
 # Detect the provider and confirm its CLI is installed + authenticated, then

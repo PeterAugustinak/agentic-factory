@@ -41,7 +41,10 @@ devnull = is_devnull(0)
 data = sys.stdin.read()
 with open(os.environ["PAF_STUB_LOG"], "a") as log:
     log.write(json.dumps({"argv": sys.argv[1:], "stdin": data, "stdin_is_devnull": devnull}) + "\\n")
-if sys.argv[1:] == ["auth", "status"]:
+if sys.argv[1:3] == ["auth", "status"]:
+    # An unscoped probe checks every configured instance, so a failing other host fails it.
+    if sys.argv[1:] == ["auth", "status"] and os.environ.get("PAF_STUB_OTHER_HOST_FAILS"):
+        sys.exit(1)
     sys.exit(int(os.environ.get("PAF_STUB_AUTH_RC", "0")))
 sys.stdout.write(os.environ.get("PAF_STUB_OUTPUT", ""))
 sys.stderr.write(os.environ.get("PAF_STUB_STDERR", ""))
@@ -51,6 +54,8 @@ sys.exit(int(os.environ.get("PAF_STUB_RC", "0")))
 GITHUB = "https://github.com/o/r.git"
 GITLAB = "https://gitlab.com/o/r.git"
 ORIGINS = {"gh": GITHUB, "glab": GITLAB}
+# The auth probe each provider CLI must receive: glab is scoped to gitlab.com.
+AUTH_ARGV = {"gh": ["auth", "status"], "glab": ["auth", "status", "--hostname", "gitlab.com"]}
 # The `-R` value every glab call gets for the GITLAB origin.
 GLAB_REPO = "https://gitlab.com/o/r"
 BRANCH = "feature/7-x"
@@ -188,6 +193,7 @@ class VcsRunner:
     def use(self, provider, origin=None):
         """Origin on the provider's host (or `origin`), its CLI stubbed, a named
         branch checked out."""
+        self.provider = provider
         self.set_origin(origin or ORIGINS[provider])
         self.install_stub(provider)
         self.git("-c", "user.name=t", "-c", "user.email=t@example.com",
@@ -231,7 +237,7 @@ class VcsRunner:
         """The single non-auth call; the auth probe must precede it."""
         calls = self.calls()
         self.assertEqual(len(calls), 2, calls)
-        self.assertEqual(calls[0]["argv"], ["auth", "status"])
+        self.assertEqual(calls[0]["argv"], AUTH_ARGV[self.provider])
         return calls[1]
 
     def assertFailed(self, proc, fragment, code=1):
@@ -351,7 +357,7 @@ class ArgvTests(VcsRunner, unittest.TestCase):
                 proc = self.vcs("auth-status")
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertEqual(proc.stdout, f"provider: {provider} (authenticated)\n")
-                self.assertEqual([c["argv"] for c in self.calls()], [["auth", "status"]])
+                self.assertEqual([c["argv"] for c in self.calls()], [AUTH_ARGV[self.provider]])
 
     def test_create_issue_without_labels_adds_no_label_flag(self):
         for provider in ("gh", "glab"):
@@ -400,7 +406,7 @@ class RepoResolutionTests(VcsRunner, unittest.TestCase):
                     self.fresh()
                     proc = self.run_verb("glab", verb, origin=origin)
                     self.assertFailed(proc, "could not read the project path from the origin remote")
-                    self.assertEqual([c["argv"] for c in self.calls()], [["auth", "status"]])
+                    self.assertEqual([c["argv"] for c in self.calls()], [AUTH_ARGV[self.provider]])
 
     def test_mr_creation_rejects_a_project_path_gitlab_cannot_have(self):
         for origin in ("git@gitlab.com:r.git", "https://gitlab.com/r", "git@gitlab.com:g/r r.git",
@@ -410,7 +416,7 @@ class RepoResolutionTests(VcsRunner, unittest.TestCase):
                 self.fresh()
                 proc = self.run_verb("glab", "create-change-request", origin=origin)
                 self.assertFailed(proc, "is not a gitlab.com project path")
-                self.assertEqual([c["argv"] for c in self.calls()], [["auth", "status"]])
+                self.assertEqual([c["argv"] for c in self.calls()], [AUTH_ARGV[self.provider]])
                 self.assertEqual(proc.stdout, "")
 
     def test_issue_verbs_do_not_validate_the_project_path(self):
@@ -721,8 +727,27 @@ class ProviderCliTests(VcsRunner, unittest.TestCase):
                 self.use(provider)
                 self.stub_env["PAF_STUB_AUTH_RC"] = "1"
                 proc = self.vcs("view-issue", "61")
-                self.assertFailed(proc, f"'{provider}' is not authenticated. Run '{provider} auth login'")
-                self.assertEqual([c["argv"] for c in self.calls()], [["auth", "status"]])
+                expected = {
+                    "gh": "'gh' is not authenticated. Run 'gh auth login'",
+                    "glab": "'glab' is not authenticated to gitlab.com. "
+                            "Run 'glab auth login --hostname gitlab.com'",
+                }[provider]
+                self.assertFailed(proc, expected)
+                self.assertEqual([c["argv"] for c in self.calls()], [AUTH_ARGV[provider]])
+
+    def test_glab_ignores_other_failing_hosts(self):
+        for verb in ("auth-status", "view-issue"):
+            with self.subTest(verb=verb):
+                self.fresh()
+                proc = self.run_verb("glab", verb, PAF_STUB_OTHER_HOST_FAILS="1")
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(self.calls()[0]["argv"], AUTH_ARGV["glab"])
+
+    def test_gh_auth_probe_unchanged(self):
+        self.use("gh")
+        proc = self.vcs("view-issue", "61")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.calls()[0]["argv"], ["auth", "status"])
 
 
 if __name__ == "__main__":
