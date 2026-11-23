@@ -24,7 +24,7 @@ from tests.support import PAF_VCS
 
 # The externals paf-vcs (and its `#!/usr/bin/env bash` shebang) runs. Nothing else
 # is on the PATH the script sees.
-TOOLS = ("bash", "git", "sed", "grep", "tail", "cat")
+TOOLS = ("bash", "git", "sed", "grep", "tail", "cat", "python3")
 
 # The stub is a Python script run through a `#!/bin/sh` exec wrapper, so no
 # interpreter path is ever baked into a shebang (spaces / length limits).
@@ -64,6 +64,23 @@ ISSUE_URL = {"gh": "https://github.com/o/r/issues/42", "glab": "https://gitlab.c
 CHANGE_URL = {"gh": "https://github.com/o/r/pull/17", "glab": "https://gitlab.com/o/r/-/merge_requests/17"}
 CREATE_URL = {"create-issue": ISSUE_URL, "create-change-request": CHANGE_URL}
 CREATE_VERBS = tuple(CREATE_URL)
+
+
+def glab_mr_argv(project_id):
+    """The glab argv that creates an MR through the REST API for `project_id`."""
+    return ["api", "--hostname", "gitlab.com", "--method", "POST",
+            "-H", "Content-Type: application/json",
+            f"projects/{project_id}/merge_requests", "--input", "-"]
+
+
+def mr_json(iid=17, url=CHANGE_URL["glab"], description="body", **extra):
+    """A create-MR API response, compact as glab prints it when piped."""
+    return json.dumps({"iid": iid, "web_url": url, "description": description, **extra})
+
+
+def is_glab_mr(provider, verb):
+    return provider == "glab" and verb == "create-change-request"
+
 STDIN_VERBS = ("create-issue", "comment-issue", "create-change-request")
 
 # Minimal valid arguments per verb. Every verb that touches a provider is here.
@@ -76,8 +93,9 @@ SIMPLE_ARGS = {
     "create-change-request": ("--base", "develop", "--title", "T"),
 }
 
-# The verbs whose glab call is told the project with `-R`.
-GLAB_REPO_VERBS = [v for v in SIMPLE_ARGS if v != "auth-status"]
+# The verbs whose glab call is told the project with `-R` (MR creation uses the API instead).
+GLAB_REPO_VERBS = [v for v in SIMPLE_ARGS if v not in ("auth-status", "create-change-request")]
+GLAB_PROJECT_VERBS = GLAB_REPO_VERBS + ["create-change-request"]
 
 # verb -> (full-featured args, the exact argv each provider CLI must receive).
 CASES = {
@@ -104,8 +122,7 @@ CASES = {
         ("--base", "develop", "--title", NASTY_TITLE),
         {
             "gh": ["pr", "create", "--base", "develop", "--title", NASTY_TITLE, "--body-file", "-"],
-            "glab": ["mr", "create", "-R", GLAB_REPO, "--yes", "--target-branch", "develop",
-                     "--source-branch", BRANCH, "--title", NASTY_TITLE, "--description", NASTY_BODY],
+            "glab": glab_mr_argv("o%2Fr"),
         },
     ),
 }
@@ -196,7 +213,10 @@ class VcsRunner:
         unless `output` is given; `stub_env` sets further PAF_STUB_* variables."""
         self.use(provider, origin)
         if output is None:
-            output = CREATE_URL[verb][provider] + "\n" if verb in CREATE_VERBS else ""
+            if is_glab_mr(provider, verb):
+                output = mr_json()
+            else:
+                output = CREATE_URL[verb][provider] + "\n" if verb in CREATE_VERBS else ""
         self.stub_env["PAF_STUB_OUTPUT"] = output
         self.stub_env.update(stub_env)
         return self.vcs(verb, *(SIMPLE_ARGS[verb] if args is None else args), stdin=stdin)
@@ -364,15 +384,42 @@ class RepoResolutionTests(VcsRunner, unittest.TestCase):
                     argv = self.provider_call()["argv"]
                     self.assertEqual(argv[2:4], ["-R", "https://gitlab.com/g/sub/r"], argv)
                     self.assertNotIn("SECRET", json.dumps(argv))
+            with self.subTest(origin=origin, verb="create-change-request"):
+                self.fresh()
+                proc = self.run_verb("glab", "create-change-request", origin=origin)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                argv = self.provider_call()["argv"]
+                self.assertEqual(argv, glab_mr_argv("g%2Fsub%2Fr"))
+                self.assertNotIn("-R", argv)
+                self.assertNotIn("SECRET", json.dumps(argv))
 
     def test_origin_without_a_project_path_fails_before_calling_glab(self):
         for origin in ("https://gitlab.com/", "https://gitlab.com", "git@gitlab.com:"):
-            for verb in GLAB_REPO_VERBS:
+            for verb in GLAB_PROJECT_VERBS:
                 with self.subTest(origin=origin, verb=verb):
                     self.fresh()
                     proc = self.run_verb("glab", verb, origin=origin)
                     self.assertFailed(proc, "could not read the project path from the origin remote")
                     self.assertEqual([c["argv"] for c in self.calls()], [["auth", "status"]])
+
+    def test_mr_creation_rejects_a_project_path_gitlab_cannot_have(self):
+        for origin in ("git@gitlab.com:r.git", "https://gitlab.com/r", "git@gitlab.com:g/r r.git",
+                       "git@gitlab.com:g/r%2Fx.git", "git@gitlab.com:g/r?x", "git@gitlab.com:g//r",
+                       "git@gitlab.com:g/r#x", "git@gitlab.com:g/$(id)"):
+            with self.subTest(origin=origin):
+                self.fresh()
+                proc = self.run_verb("glab", "create-change-request", origin=origin)
+                self.assertFailed(proc, "is not a gitlab.com project path")
+                self.assertEqual([c["argv"] for c in self.calls()], [["auth", "status"]])
+                self.assertEqual(proc.stdout, "")
+
+    def test_issue_verbs_do_not_validate_the_project_path(self):
+        for verb in GLAB_REPO_VERBS:
+            with self.subTest(verb=verb):
+                self.fresh()
+                proc = self.run_verb("glab", verb, origin="git@gitlab.com:r.git")
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(self.provider_call()["argv"][2:4], ["-R", "https://gitlab.com/r"])
 
     def test_gh_argv_is_unchanged_on_the_port_443_host(self):
         for verb, (args, per_provider) in CASES.items():
@@ -384,7 +431,7 @@ class RepoResolutionTests(VcsRunner, unittest.TestCase):
 
 
 class StdinPlumbingTests(VcsRunner, unittest.TestCase):
-    def test_body_goes_to_stdin_for_gh_and_to_argv_for_glab(self):
+    def test_body_goes_to_stdin_for_gh_and_glab_mrs_and_to_argv_for_glab_issues(self):
         for provider in ("gh", "glab"):
             for verb in STDIN_VERBS:
                 with self.subTest(provider=provider, verb=verb):
@@ -392,7 +439,11 @@ class StdinPlumbingTests(VcsRunner, unittest.TestCase):
                     proc = self.run_verb(provider, verb, stdin=NASTY_BODY)
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     call = self.provider_call()
-                    if provider == "gh":
+                    if is_glab_mr(provider, verb):
+                        self.assertEqual(json.loads(call["stdin"])["description"], NASTY_BODY)
+                        self.assertFalse(call["stdin_is_devnull"])
+                        self.assertNotIn(NASTY_BODY, call["argv"])
+                    elif provider == "gh":
                         self.assertEqual(call["stdin"], NASTY_BODY)
                         self.assertFalse(call["stdin_is_devnull"])
                         self.assertNotIn(NASTY_BODY, call["argv"])  # kept off argv
@@ -411,7 +462,9 @@ class StdinPlumbingTests(VcsRunner, unittest.TestCase):
                     proc = self.run_verb(provider, verb, stdin=sent)
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     call = self.provider_call()
-                    if provider == "gh":
+                    if is_glab_mr(provider, verb):
+                        self.assertEqual(json.loads(call["stdin"])["description"], kept)
+                    elif provider == "gh":
                         self.assertEqual(call["stdin"], kept)
                     else:
                         self.assertIn(kept, call["argv"])
@@ -450,6 +503,8 @@ class OutputContractTests(VcsRunner, unittest.TestCase):
     def test_create_verbs_print_number_url_separator_then_raw_output(self):
         for provider in ("gh", "glab"):
             for verb, number in (("create-issue", "42"), ("create-change-request", "17")):
+                if is_glab_mr(provider, verb):
+                    continue  # GitLabMergeRequestTests
                 with self.subTest(provider=provider, verb=verb):
                     self.fresh()
                     url = CREATE_URL[verb][provider]
@@ -461,6 +516,8 @@ class OutputContractTests(VcsRunner, unittest.TestCase):
     def test_url_printed_only_on_stderr_is_still_found(self):
         for provider in ("gh", "glab"):
             for verb, number in (("create-issue", "42"), ("create-change-request", "17")):
+                if is_glab_mr(provider, verb):
+                    continue  # only the API response on stdout is read
                 with self.subTest(provider=provider, verb=verb):
                     self.fresh()
                     url = CREATE_URL[verb][provider]
@@ -477,6 +534,8 @@ class OutputContractTests(VcsRunner, unittest.TestCase):
     def test_output_without_url_fails_without_guessing(self):
         for provider in ("gh", "glab"):
             for verb in CREATE_VERBS:
+                if is_glab_mr(provider, verb):
+                    continue  # GitLabMergeRequestTests
                 with self.subTest(provider=provider, verb=verb):
                     self.fresh()
                     proc = self.run_verb(provider, verb, output="created, but no link printed\n")
@@ -514,6 +573,94 @@ class OutputContractTests(VcsRunner, unittest.TestCase):
                     self.fresh()
                     proc = self.run_verb(provider, verb, PAF_STUB_RC="4")
                     self.assertEqual(proc.returncode, 4, proc.stderr)
+
+
+class GitLabMergeRequestTests(VcsRunner, unittest.TestCase):
+    """create-change-request on GitLab: one JSON POST through `glab api`."""
+
+    def create(self, output=None, stdin=NASTY_BODY, title="T", origin=None, **stub_env):
+        return self.run_verb("glab", "create-change-request", ("--base", "develop", "--title", title),
+                             stdin=stdin, output=output, origin=origin, **stub_env)
+
+    def test_request_body_carries_every_value_unchanged(self):
+        for title in (NASTY_TITLE, "[wip]", "[a, b]", "true", "123", "@-", "ünïcode — title"):
+            with self.subTest(title=title):
+                self.fresh()
+                proc = self.create(title=title)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(json.loads(self.provider_call()["stdin"]), {
+                    "source_branch": BRANCH, "target_branch": "develop",
+                    "title": title, "description": NASTY_BODY,
+                })
+
+    def test_carriage_returns_in_the_description_are_preserved(self):
+        body = "dos\r\nline\rlone cr\n\r\nend"
+        proc = self.create(stdin=body)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(self.provider_call()["stdin"])["description"], body)
+
+    def test_altssh_origin_reaches_the_api_without_any_remote_lookup(self):
+        proc = self.create(origin="ssh://git@altssh.gitlab.com:443/o/r.git")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.provider_call()["argv"], glab_mr_argv("o%2Fr"))
+
+    def test_success_prints_number_url_separator_then_the_url_only(self):
+        url = CHANGE_URL["glab"]
+        for label, output in (
+            ("compact", mr_json(description=NASTY_BODY)),
+            ("pretty", json.dumps(json.loads(mr_json()), indent=2) + "\n"),
+            ("decoy URLs", mr_json(description="see https://gitlab.com/o/r/-/merge_requests/1\n"
+                                                "https://gitlab.com/o/r/-/merge_requests/999",
+                                   title="https://gitlab.com/o/r/-/merge_requests/5")),
+        ):
+            with self.subTest(output=label):
+                self.fresh()
+                proc = self.create(output=output)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(proc.stdout, f"NUMBER=17\nURL={url}\n---\n{url}\n")
+
+    def test_stderr_notice_does_not_break_parsing(self):
+        proc = self.create(PAF_STUB_STDERR="A new version of glab is available\n")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(proc.stdout.startswith("NUMBER=17\n"))
+        self.assertIn("A new version of glab", proc.stderr)
+
+    def test_gitlab_rejection_exits_non_zero_and_shows_the_error(self):
+        body = json.dumps({"message": ["Another open merge request already exists"]})
+        proc = self.create(output=body, PAF_STUB_STDERR="glab: 409 Conflict\n", PAF_STUB_RC="1")
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout, "")
+        self.assertIn("Another open merge request already exists", proc.stderr)
+        self.assertIn("glab: 409 Conflict", proc.stderr)
+
+    def test_rejection_with_a_success_shaped_body_is_still_a_failure(self):
+        proc = self.create(output=mr_json(), PAF_STUB_RC="2")
+        self.assertEqual(proc.returncode, 2)
+        self.assertEqual(proc.stdout, "")
+
+    def test_response_without_a_usable_iid_and_web_url_fails_without_guessing(self):
+        url = CHANGE_URL["glab"]
+        for label, output in (
+            ("empty", ""),
+            ("not JSON", f"created {url}\n"),
+            ("array", json.dumps([{"iid": 17, "web_url": url}])),
+            ("no iid", json.dumps({"web_url": url})),
+            ("iid string", json.dumps({"iid": "17", "web_url": url})),
+            ("iid bool", json.dumps({"iid": True, "web_url": url})),
+            ("iid zero", json.dumps({"iid": 0, "web_url": url})),
+            ("iid float", json.dumps({"iid": 17.0, "web_url": url})),
+            ("no web_url", json.dumps({"iid": 17})),
+            ("empty web_url", json.dumps({"iid": 17, "web_url": ""})),
+            ("web_url not a string", json.dumps({"iid": 17, "web_url": [url]})),
+            ("multi-line web_url", json.dumps({"iid": 17, "web_url": f"{url}\nURL=https://evil.example"})),
+            ("web_url with space", json.dumps({"iid": 17, "web_url": f"{url} x"})),
+        ):
+            with self.subTest(output=label):
+                self.fresh()
+                proc = self.create(output=output)
+                self.assertFailed(proc, "could not read the MR's iid and web_url")
+                self.assertNotIn("NUMBER=", proc.stdout)
+                self.assertNotIn("URL=", proc.stdout)
 
 
 class FailureTests(VcsRunner, unittest.TestCase):
