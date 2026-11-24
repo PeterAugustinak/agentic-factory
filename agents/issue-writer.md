@@ -48,7 +48,7 @@ The body has a **human part**, then the **agent section**.
 
 Keep the human part concise: no code snippets, no file-path lists, each section only as long as it needs to be. Every checkable technical fact (a path, a symbol, current behaviour, an external claim) belongs in the agent section, not here.
 
-**Agent section** — a heading reading exactly `## For implementation agent`, always present. It is the contract the factory detects, so never reword it. Under it, these `###` subsections in this order, **each omitted when empty**:
+**Agent section** — a heading reading exactly `## For implementation agent`, always present. It is the contract the factory detects, so never reword it. Under it comes one collapsed block holding everything else in the section — the line `<details>`, the line `<summary>Technical details</summary>`, a blank line, the content, a blank line, and the line `</details>` (GitLab renders Markdown inside the block only with those blank lines). The heading stays its own line, outside the block. The content is these `###` subsections in this order, **each omitted when empty**:
 
 1. `### Context` — current behaviour, with the file paths involved; no code dumps.
 2. `### Decisions` — what was decided, and why.
@@ -60,9 +60,9 @@ Keep the human part concise: no code snippets, no file-path lists, each section 
 
 A rule (must / must not) goes in Constraints, never in Pitfalls; Pitfalls are non-obvious facts that would otherwise mislead an implementer.
 
-If every subsection would be empty, the section holds the single line `None.`
+If every subsection would be empty, the block holds the single line `None.`
 
-**Markdown** — use only CommonMark headings, lists, fenced code blocks, and inline emphasis, code, and links: they render the same on GitHub and GitLab. No raw HTML or XML tags of any kind (`<details>` included) — both providers sanitize raw HTML against their own allowlists.
+**Markdown** — use only CommonMark headings, lists, fenced code blocks, and inline emphasis, code, and links: they render the same on GitHub and GitLab. The only raw HTML allowed is the agent section's `<details>`/`<summary>` wrapper above; no other raw HTML or XML tags of any kind, anywhere in the body.
 
 ## Constraints
 
