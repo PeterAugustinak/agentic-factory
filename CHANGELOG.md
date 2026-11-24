@@ -5,6 +5,22 @@ All notable changes to PAF are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.0] - 2026-11-24
+
+### Changed
+
+- Issues from `/paf:create-issue` collapse everything under the `## For implementation agent`
+  heading into a `Technical details` `<details>` block; the heading itself stays visible. This
+  wrapper is the only raw HTML an issue may hold (#167).
+
+### Fixed
+
+- `/paf:implement-issue` and `/paf:check-out` recognise an issue's acceptance criteria by what the
+  section says, whatever its heading, and fall back to the issue body as the spec when there is
+  none. `/paf:implement-issue` no longer stops a hand-written issue for lacking an exact
+  `## Acceptance criteria` heading: `issue-validator` judges by content whether it states a
+  checkable outcome. An issue with the agent section and no criteria still stops the run (#166).
+
 ## [0.38.2] - 2026-11-23
 
 ### Fixed
