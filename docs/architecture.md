@@ -672,8 +672,14 @@ Implemented — see [`docs/skills/check-out.md`](skills/check-out.md) for the cu
 **PAF-validated heading**
 
 - **Decision:** The cross-skill contract, defined here: every issue `create-issue` posts carries an agent section headed by a line reading exactly `## For implementation agent`, written by `issue-writer` (`agents/issue-writer.md`). It is `implement-issue`'s signal that PAF already validated the issue. Because the heading is the contract, `issue-writer` never rewords it and `implement-issue` matches the whole line exactly.
-- **Why:** A plain CommonMark ATX heading renders on both providers and survives any rendering, so fetching the issue through `paf-vcs` stays a one-liner.
-- **Source:** PAF design choice. Verified: `gh issue view`'s non-interactive output prints the raw issue body; the GitLab path — whether `glab issue view` prints raw Markdown when not attached to a terminal — inherits the pending #14 validation caveat.
+- **Why:** A plain CommonMark ATX heading renders on both providers and survives any rendering, so fetching the issue through `paf-vcs` stays a one-liner. The heading stays outside the collapsed block that wraps the section's content (see **Collapsed agent section**), so this holds unchanged.
+- **Source:** PAF design choice. Verified: the non-interactive output of `gh issue view` and of `glab issue view` is the raw issue body (`glab` 1.97.0, empirically against a public gitlab.com issue: the printed body equals the API `description` verbatim).
+
+**Collapsed agent section**
+
+- **Decision:** Everything under the agent-section heading sits in one `<details>`/`<summary>` block; the heading stays a visible line outside it. `<details>`/`<summary>` are the only raw HTML an issue may carry, and only as this wrapper. Applies to newly created issues; posted issues are not rewritten. As implemented: the Issue template of `agents/issue-writer.md` and steps 5–6 of `skills/paf-create-issue/SKILL.md`.
+- **Why:** A human reader sees the short human part at a glance, while `implement-issue` still gets the full raw body and the exact heading line. Both providers render the block collapsed by default with the Markdown inside rendered, and GitLab allows `details` and `summary` past its sanitizer. The earlier ban (#101) rested on GitHub support being unverified; it is now documented. Other raw HTML stays banned because both providers sanitize raw HTML against their own allowlists.
+- **Source:** #167; (41) GitHub collapsed sections; (42) GitLab Flavored Markdown, Collapsible section.
 
 **Heading present**
 
@@ -914,3 +920,5 @@ Decisions are grounded in the official Claude Code documentation or an establish
 38. GitLab REST API — Create MR (`iid`, `web_url` in the response). https://docs.gitlab.com/api/merge_requests/#create-mr
 39. GitLab REST API — Namespaced paths (URL-encode the project path, `/` as `%2F`). https://docs.gitlab.com/api/rest/#namespaced-paths
 40. GitLab CLI — `glab api` (`--hostname`, `--input`, `-f`/`-F`). https://docs.gitlab.com/cli/api/
+41. GitHub Docs — Organizing information with collapsed sections (Markdown inside `<details>` is rendered; the block is collapsed unless it carries `open`). https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/organizing-information-with-collapsed-sections
+42. GitLab Flavored Markdown — Collapsible section (`details` and `summary` are allowed; Markdown inside needs a blank line before and after it). https://docs.gitlab.com/user/markdown/#collapsible-section

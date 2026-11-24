@@ -13,7 +13,7 @@ Discuss the idea in the conversation first (freely, or with `/grill-me`), then r
 ## The issue it writes
 
 - **Human part**: Problem, Goal, Approach, and Acceptance criteria. It is short, with no code and no file lists.
-- **`## For implementation agent`**: the technical context (Context, Decisions, Open decisions, Constraints, Scope of changes, Pitfalls, References). Open decisions are choices that do not change the Goal or the acceptance criteria; `/paf:implement-issue` settles them in plan mode. Empty subsections are left out. It is context, not a plan; planning happens in `/paf:implement-issue`.
+- **`## For implementation agent`**: the technical context (Context, Decisions, Open decisions, Constraints, Scope of changes, Pitfalls, References). Open decisions are choices that do not change the Goal or the acceptance criteria; `/paf:implement-issue` settles them in plan mode. Empty subsections are left out. It is context, not a plan; planning happens in `/paf:implement-issue`. The heading stays visible; everything under it is collapsed in a `Technical details` block you expand on click.
 
 ## How it works
 
