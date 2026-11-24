@@ -12,8 +12,8 @@ Run `/paf:implement-issue <issue-number>`.
 
 ## How it works
 
-1. **Read.** The skill fetches the issue via `paf-vcs`. An issue with no acceptance criteria (a missing or empty section) stops the run at once with `Result: failure`. It also checks whether `claude` is on `PATH`, and reads the Bash timeout limit for the agent steps.
-2. **Validate.** Only for an issue without the `## For implementation agent` line: `issue-validator` checks it, and the skill posts its findings and asks you whether a factual blocker is folded into the plan or stops the run. An uncovered behaviour case that changes the acceptance criteria or the issue's in/out-of-scope statements always stops it; any other is an open decision, settled in the plan.
+1. **Read.** The skill fetches the issue via `paf-vcs`. The acceptance criteria are the section that holds them, whatever its heading; without one (or with an empty one), the issue body is the spec, silently. An issue with the `## For implementation agent` line but no acceptance criteria stops the run at once with `Result: failure`. It also checks whether `claude` is on `PATH`, and reads the Bash timeout limit for the agent steps.
+2. **Validate.** Only for an issue without the `## For implementation agent` line: `issue-validator` checks it, and the skill posts its findings and asks you whether a factual blocker is folded into the plan or stops the run. An uncovered behaviour case that changes the acceptance criteria or the issue's in/out-of-scope statements always stops it, and so does an issue that states no checkable outcome; any other is an open decision, settled in the plan.
 3. **Plan.** In plan mode the skill starts from the agent section's Context and Scope of changes as a hint (the real code wins where they differ, unreported), and sweeps every place a changed fact is stated. It settles each of the issue's open decisions using the codebase, and builds them as settled. Otherwise it builds only what the issue states; a must-have item the issue missed is listed in its own plan part for your approval. Only something the code makes impossible stops the run with `Result: failure`.
 4. **Approve.** The plan opens with a short summary (what changes and where), then the open decisions it settled (one short line each: the item and the choice) and any must-have items beyond the issue, with the exact edits below it. You approve it or ask for changes.
 5. **Branch.** The skill creates `feature/<issue>-<short-description>` from the base branch.
@@ -22,7 +22,7 @@ Run `/paf:implement-issue <issue-number>`.
 8. **Review.** Five reviewers run in parallel. All of them read the same review input file, which a helper writes under `~/.claude/paf/review-input/` (never in the project) straight from the fetched issue and git: the issue verbatim, the created files, and a change manifest whose removed lines are kept exactly as printed. Each prompt holds only the reviewer's lens and the file's path. The file is deleted once the reviewers finish, and a leftover is wiped at the start of the next run; a helper failure stops the run with `Result: failure`. What the issue decides or puts out of scope (its Decisions and Constraints) is not a finding.
 9. **Triage.** `full-stack-dev` decides which findings to apply and applies them. It fixes defects only; a warning that would add behaviour beyond the plan is skipped.
 10. **Re-verify.** `implementation-verifier` runs again; `full-stack-dev` fixes a failure, at most twice. The reviewers are never re-run.
-11. **Acceptance check.** `quality-assurer` checks every acceptance criterion. An unmet one is fixed in the main thread and re-verified, at most twice; then the run stops with `Result: failure`. If the fix needs a must-have item beyond the issue, you are asked whether to add it; no (or no answer) stops the run.
+11. **Acceptance check.** `quality-assurer` checks every acceptance criterion (or, without a criteria section, the issue body). An unmet one is fixed in the main thread and re-verified, at most twice; then the run stops with `Result: failure`. If the fix needs a must-have item beyond the issue, you are asked whether to add it; no (or no answer) stops the run.
 12. **Hand off.** The changes stay uncommitted. The skill prints Result, How to test (at most three steps), one line each only when they apply (code location, UI not verified, behaviour changes beyond the plan, each skipped error), and Next last, with a blank line between fields. Nothing else. The code location line, `Code location: <worktree top-level folder> (git worktree)`, comes directly after How to test, only when the run is in a linked git worktree and something was built, on a success or a failure; if the detection fails the line is left out and the run continues. What the run set up for How to test (ignored files, local database records, running services) stays in place, and How to test names it; a set-up file git reports as untracked is removed before the review, with How to test saying how to create it. The run removes or stops only what it set up itself and testing does not need, never anything else, on a success or a failure. It records a fingerprint so `/paf:check-out` can skip its safety-net review when nothing changed, and saves a snapshot of the code under `~/.claude/paf/` (never in the project) so `/paf:check-out` can suggest conventions from what you change afterwards. A failure of either prints its error and the run continues. On a success, the worktree check, fingerprint, snapshot and cost record run together in one Bash call before the hand-off is printed, each whether or not another failed; a fingerprint or snapshot error is still printed after the hand-off, before the cost. On a failure the worktree check runs on its own.
 13. **Cost.** The run's cost goes into the feature's cost ledger; its summary is printed last.
 
@@ -32,10 +32,10 @@ Run `/paf:implement-issue <issue-number>`.
 /paf:implement-issue <n>
         |
         v
-  [skill] read issue --- no acceptance criteria --> STOP
+  [skill] read issue --- agent section, no acceptance criteria --> STOP
         |
         |--- no agent section --> [agent] issue-validator --> factual blocker? ask you
-        |                                                      crucial uncovered case? STOP
+        |                                                      crucial uncovered case / no checkable outcome? STOP
         v
   [skill + human] plan mode (impossible? STOP) --> ExitPlanMode (summary first) --> branch --> build
         |
@@ -75,7 +75,7 @@ Legend: `[skill]` = orchestration and external I/O done by the skill itself in t
 - **Must-have item beyond the issue** (`AskUserQuestion`): only when the acceptance check's fix needs one; no or no answer stops the run.
 - **Skill boundary**: you review the uncommitted diff, which is the record of every applied fix, and then run `/paf:check-out`.
 
-When verification, or the acceptance check, still fails after its cap, the run stops and prints the same hand-off with `Result: failure` and the blocker under Next. An issue with no acceptance criteria, something the issue requires that the code makes impossible, or a declined must-have item stops the same way. Design rationale (why plan mode, the two fix owners, the loop caps): [`architecture.md` §2](../architecture.md#2-skill-to-agent-orchestration) and [§5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
+When verification, or the acceptance check, still fails after its cap, the run stops and prints the same hand-off with `Result: failure` and the blocker under Next. An issue with the agent section but no acceptance criteria, something the issue requires that the code makes impossible, or a declined must-have item stops the same way. Design rationale (why plan mode, the two fix owners, the loop caps): [`architecture.md` §2](../architecture.md#2-skill-to-agent-orchestration) and [§5](../architecture.md#5-loop-cap-escalation-and-cost-reporting).
 
 ## Cost reporting
 

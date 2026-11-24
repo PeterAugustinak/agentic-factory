@@ -28,6 +28,6 @@ caller continues when it fails or returns malformed output (`docs/architecture.m
 escalation).
 
 `issue-writer` and `issue-validator` never settle an open choice. A crucial one — it changes the Goal or
-the acceptance criteria — is reported for the developer (`Undecided:` / `Uncovered:`); any other is left
+the acceptance criteria (in an issue without them, the outcomes its body states) — is reported for the developer (`Undecided:` / `Uncovered:`); any other is left
 for `/paf:implement-issue` to settle in plan mode (`### Open decisions` in the issue / an `Open decision:`
 warning).
